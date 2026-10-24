@@ -1,0 +1,130 @@
+{
+  "alembic.drop": {
+    "subtitle": "subtitles.immersive_brewing.alembic.drop",
+    "sounds": [
+      {
+        "name": "immersive_brewing:alembic/drop"
+      }
+    ]
+  },
+  "alembic.receiver": {
+    "subtitle": "subtitles.immersive_brewing.alembic.receiver",
+    "sounds": [
+      {
+        "name": "immersive_brewing:alembic/receiver"
+      }
+    ]
+  },
+  "alembic.valve": {
+    "subtitle": "subtitles.immersive_brewing.alembic.valve",
+    "sounds": [
+      {
+        "name": "immersive_brewing:alembic/valve"
+      }
+    ]
+  },
+  "bottle.clink": {
+    "subtitle": "subtitles.immersive_brewing.bottle.clink",
+    "sounds": [
+      {
+        "name": "immersive_brewing:bottle/clink"
+      }
+    ]
+  },
+  "brew.complete": {
+    "subtitle": "subtitles.immersive_brewing.brew.complete",
+    "sounds": [
+      {
+        "name": "immersive_brewing:brew/complete"
+      }
+    ]
+  },
+  "cue.ready": {
+    "subtitle": "subtitles.immersive_brewing.cue.ready",
+    "sounds": [
+      {
+        "name": "immersive_brewing:cue/ready"
+      }
+    ]
+  },
+  "cue.warning": {
+    "subtitle": "subtitles.immersive_brewing.cue.warning",
+    "sounds": [
+      {
+        "name": "immersive_brewing:cue/warning"
+      }
+    ]
+  },
+  "kettle.add": {
+    "subtitle": "subtitles.immersive_brewing.kettle.add",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/add"
+      }
+    ]
+  },
+  "kettle.boil": {
+    "subtitle": "subtitles.immersive_brewing.kettle.boil",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/boil"
+      }
+    ]
+  },
+  "kettle.foam": {
+    "subtitle": "subtitles.immersive_brewing.kettle.foam",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/foam"
+      }
+    ]
+  },
+  "kettle.simmer": {
+    "subtitle": "subtitles.immersive_brewing.kettle.simmer",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/simmer"
+      }
+    ]
+  },
+  "kettle.swirl": {
+    "subtitle": "subtitles.immersive_brewing.kettle.swirl",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/swirl"
+      }
+    ]
+  },
+  "mortar.crush": {
+    "subtitle": "subtitles.immersive_brewing.mortar.crush",
+    "sounds": [
+      {
+        "name": "immersive_brewing:mortar/crush"
+      }
+    ]
+  },
+  "mortar.grind": {
+    "subtitle": "subtitles.immersive_brewing.mortar.grind",
+    "sounds": [
+      {
+        "name": "immersive_brewing:mortar/grind"
+      }
+    ]
+  },
+  "mortar.lift": {
+    "subtitle": "subtitles.immersive_brewing.mortar.lift",
+    "sounds": [
+      {
+        "name": "immersive_brewing:mortar/lift"
+      }
+    ]
+  },
+  "mortar.mash": {
+    "subtitle": "subtitles.immersive_brewing.mortar.mash",
+    "sounds": [
+      {
+        "name": "immersive_brewing:mortar/mash"
+      }
+    ]
+  }
+}

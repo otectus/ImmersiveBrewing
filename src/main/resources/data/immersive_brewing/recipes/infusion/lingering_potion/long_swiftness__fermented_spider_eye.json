@@ -1,0 +1,29 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:long_swiftness",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:fermented_spider_eye"
+      },
+      "phase": "infuse",
+      "role": "corruption",
+      "preparation_profile": "immersive_brewing:fermented_spider_eye"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:long_slowness"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:floating_motes"
+}

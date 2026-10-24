@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:spent_alchemical_salt"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.reclaim.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.reclaim.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:purify",
+  "criteria": {
+    "reclaim": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "reclaim"
+      }
+    }
+  }
+}

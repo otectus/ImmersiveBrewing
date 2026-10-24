@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:wooden_brewing_paddle"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.fine_batch.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.fine_batch.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:first_brew",
+  "criteria": {
+    "fine_batch": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "fine_batch"
+      }
+    }
+  }
+}

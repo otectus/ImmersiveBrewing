@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "floating_motes",
+    "heat_band": [
+      0.44,
+      0.58
+    ],
+    "circulation_band": [
+      0.15,
+      0.4
+    ]
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#E8F0E0",
+    "particle": "mote"
+  }
+}

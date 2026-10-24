@@ -1,0 +1,33 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "immersive_tanning"
+    },
+    {
+      "type": "immersive_brewing:tanning_enabled"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " L ",
+    "PBP",
+    " P "
+  ],
+  "key": {
+    "L": {
+      "tag": "forge:leather"
+    },
+    "P": {
+      "tag": "minecraft:planks"
+    },
+    "B": {
+      "item": "minecraft:glass_bottle"
+    }
+  },
+  "result": {
+    "item": "immersive_brewing:batch_carrier",
+    "nbt": "{Strapped:1b}"
+  }
+}

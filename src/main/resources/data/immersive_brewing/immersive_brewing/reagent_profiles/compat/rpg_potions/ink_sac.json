@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "rpg_potions"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:ink_sac"
+    ]
+  },
+  "preparation": {
+    "mode": "soft",
+    "duration_ticks": 240,
+    "endpoint": [
+      0.55,
+      0.75
+    ],
+    "pressure_limit": 0.5,
+    "overwork_threshold": 0.85
+  },
+  "reaction": {
+    "profile": "immersive_brewing:dark_whorls",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 1.0
+  }
+}

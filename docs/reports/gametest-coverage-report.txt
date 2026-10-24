@@ -1,0 +1,34 @@
+Immersive Brewing coverage report
+Generated 2026-10-23T15:42:55.523902312Z
+Mode: COEXIST
+Tipped-arrow override active: true
+
+Loaded mods:
+  forge 47.4.23
+  immersive_brewing 1.0.2
+  immersive_smithing 1.1.0
+  immersive_tanning 1.1.0
+  jei 15.20.0.135
+  minecraft 1.20.1
+
+Adapters:
+  immersive_brewing:forge_registry v1 priority 0
+
+Brewing data generation 1: 19 reagent profiles, 10 brew profiles, 1 effect policies
+  error: reagent_profiles ib_test:inverted_endpoint: endpoint: low 0.9 is above high 0.2
+
+Infusion recipes: {SUPPORTED=166, EXCLUDED=3, UNSUPPORTED=1}
+  unsupported ib_test:infusion/wrong_result: plan.immersive_brewing.unsupported.result_differs minecraft:potion{Potion:"minecraft:swiftness"}
+  excluded immersive_brewing:infusion/lingering_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+  excluded immersive_brewing:infusion/potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+  excluded immersive_brewing:infusion/splash_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+
+Optional potion mods (data under compat/, loaded only with its mod):
+  apothecary: not installed
+  morepotions: not installed
+  potionsmaster: not installed
+  rpg_potions: not installed
+
+Discovery: 2193 queries, 251 transformations, 0 not covered by a plan, 3 excluded by data, 0 loose (not offered)
+
+Replacement-mode coverage pairs: 96

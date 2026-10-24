@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "immersive_brewing:item/batch_carrier"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "immersive_brewing:strapped": 1
+      },
+      "model": "immersive_brewing:item/batch_carrier_strapped"
+    }
+  ]
+}

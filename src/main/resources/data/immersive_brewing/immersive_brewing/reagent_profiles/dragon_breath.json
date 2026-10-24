@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:dragon_breath"
+    ]
+  },
+  "reaction": {
+    "addition_cooling": 0.05,
+    "sensitivity": 1.0
+  }
+}

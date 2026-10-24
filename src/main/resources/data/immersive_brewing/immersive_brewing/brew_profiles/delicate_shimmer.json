@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "delicate_shimmer",
+    "heat_band": [
+      0.38,
+      0.52
+    ],
+    "circulation_band": [
+      0.1,
+      0.36
+    ]
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#FFE0F0",
+    "particle": "glint"
+  }
+}

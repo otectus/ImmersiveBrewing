@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:fermented_spider_eye"
+    ]
+  },
+  "preparation": {
+    "mode": "soft",
+    "duration_ticks": 240,
+    "endpoint": [
+      0.55,
+      0.75
+    ],
+    "pressure_limit": 0.5,
+    "overwork_threshold": 0.85
+  },
+  "reaction": {
+    "profile": "immersive_brewing:dark_whorls",
+    "addition_cooling": 0.07,
+    "foam_sensitivity": 1.2
+  }
+}

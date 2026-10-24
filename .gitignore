@@ -1,0 +1,26 @@
+.gradle/
+build/
+run/
+run-data/
+run-gametest/
+out/
+bin/
+runs/
+.cache/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+logs/
+*.log
+__pycache__/
+src/generated/resources/.cache/
+
+# Local compatibility dependencies; obtain separately (see README).
+/libs/*.jar
+
+# JVM crash reports and heap dumps.
+hs_err_pid*.log
+replay_pid*.log
+*.hprof

@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "N",
+    "N",
+    "S"
+  ],
+  "key": {
+    "N": {
+      "item": "minecraft:iron_nugget"
+    },
+    "S": {
+      "item": "minecraft:stick"
+    }
+  },
+  "result": {
+    "item": "immersive_brewing:iron_brewing_paddle"
+  },
+  "conditions": [
+    {
+      "type": "immersive_brewing:smithing_fallback"
+    }
+  ]
+}

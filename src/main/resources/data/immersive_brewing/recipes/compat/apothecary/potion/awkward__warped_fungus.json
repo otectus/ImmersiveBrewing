@@ -1,0 +1,35 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:awkward",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:warped_fungus"
+      },
+      "phase": "infuse",
+      "role": "effect",
+      "preparation_profile": "immersive_brewing:compat/apothecary/warped_fungus"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:potion",
+    "potion": "apothecary:resistance"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:dense_sediment"
+}

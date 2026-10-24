@@ -1,0 +1,41 @@
+Immersive Brewing coverage report
+Generated 2026-10-23T15:49:07.71196592Z
+Mode: COEXIST
+Tipped-arrow override active: true
+
+Loaded mods:
+  apothecary 1.5.2
+  forge 47.4.23
+  immersive_brewing 1.0.2
+  immersive_enchanting 1.1.0
+  immersive_jewelry 1.1.0
+  immersive_smithing 1.1.0
+  immersive_tanning 1.1.0
+  jei 15.20.0.135
+  minecraft 1.20.1
+  morepotions 1.0.4
+  potionsmaster 0.6.0
+  rpg_potions 1.1.3
+
+Adapters:
+  immersive_brewing:forge_registry v1 priority 0
+
+Brewing data generation 1: 82 reagent profiles, 10 brew profiles, 5 effect policies
+  error: reagent_profiles ib_test:inverted_endpoint: endpoint: low 0.9 is above high 0.2
+
+Infusion recipes: {SUPPORTED=351, EXCLUDED=3, UNSUPPORTED=2}
+  unsupported ib_test:infusion/wrong_result: plan.immersive_brewing.unsupported.result_differs minecraft:potion{Potion:"minecraft:swiftness"}
+  unsupported immersive_brewing:compat/apothecary/potion/awkward__magma_block: plan.immersive_brewing.unsupported.result_differs minecraft:potion{Potion:"morepotions:fire_potion"}
+  excluded immersive_brewing:infusion/lingering_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+  excluded immersive_brewing:infusion/potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+  excluded immersive_brewing:infusion/splash_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
+
+Optional potion mods (data under compat/, loaded only with its mod):
+  apothecary 1.5.2: plans {SUPPORTED=84, UNSUPPORTED=1}, 22 reagent profiles, effect policy active
+  morepotions 1.0.4: plans {SUPPORTED=69}, 8 reagent profiles, effect policy active
+  potionsmaster 0.6.0: plans {SUPPORTED=24}, 24 reagent profiles, effect policy active
+  rpg_potions 1.1.3: plans {SUPPORTED=8}, 8 reagent profiles, effect policy active
+
+Discovery: 4096 queries (budget reached), 631 transformations, 0 not covered by a plan, 1 excluded by data, 400 loose (not offered)
+
+Replacement-mode coverage pairs: 187

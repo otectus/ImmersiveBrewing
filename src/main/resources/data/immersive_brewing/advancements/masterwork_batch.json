@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:iron_brewing_paddle"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.masterwork_batch.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.masterwork_batch.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:fine_batch",
+  "criteria": {
+    "masterwork_batch": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "masterwork_batch"
+      }
+    }
+  }
+}

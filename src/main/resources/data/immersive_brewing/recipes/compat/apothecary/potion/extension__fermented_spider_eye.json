@@ -1,0 +1,35 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:potion",
+    "potion": "apothecary:extension",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:fermented_spider_eye"
+      },
+      "phase": "infuse",
+      "role": "corruption",
+      "preparation_profile": "immersive_brewing:fermented_spider_eye"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:potion",
+    "potion": "apothecary:reversion"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:dark_whorls"
+}

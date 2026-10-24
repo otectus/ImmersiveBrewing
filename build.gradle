@@ -1,0 +1,172 @@
+buildscript {
+    repositories { maven { url = 'https://maven.minecraftforge.net/' }; mavenCentral() }
+    dependencies { classpath 'org.spongepowered:mixingradle:0.7.38' }
+}
+plugins {
+    id 'eclipse'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+}
+// Five narrow vanilla mixins carry brewing quality through drinking, splash, lingering and arrow paths and guard the
+// brewing stand in replacement mode (docs/ARCHITECTURE.md, ADR-1 and ADR-4).
+apply plugin: 'org.spongepowered.mixin'
+
+version = mod_version
+group = mod_group
+base { archivesName = mod_archive }
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+    config "${mod_id}.mixins.json"
+}
+
+sourceSets {
+    // Reference players for the three minigames, shared by the unit tests, the GameTests and the smoke test. Never shipped.
+    test { java { srcDir 'src/testShared/java' } }
+    gameTest {
+        java { srcDir 'src/testShared/java' }
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+    // Test-only agent mod (immersive_brewing_smoketest): drives a dev client into a fresh flat world, stages every
+    // station state, plays a preparation and a brew through the real screens with the reference bots, saves screenshots
+    // and smoketest-result.json, then quits. Used by runClient -PsmokeTest. Never shipped.
+    smokeTest {
+        java { srcDir 'src/testShared/java' }
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: minecraft_version
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            mods { immersive_brewing { source sourceSets.main } }
+        }
+        client {
+            if (project.hasProperty('smokeTest')) {
+                property 'immersive_brewing.smoketest.output', file('run/smoketest').absolutePath
+                if (project.hasProperty('guiScale')) property 'immersive_brewing.smoketest.guiScale', project.property('guiScale')
+                if (project.hasProperty('window')) property 'immersive_brewing.smoketest.window', project.property('window')
+                if (project.hasProperty('variant')) property 'immersive_brewing.smoketest.variant', project.property('variant')
+                mods { immersive_brewing_smoketest { source sourceSets.smokeTest } }
+            }
+        }
+        server { args '--nogui' }
+        gameTestServer {
+            workingDirectory project.file('run-gametest')
+            // The coverage report GameTest writes its output here (docs/reports).
+            property 'immersive_brewing.reportDir', file('docs/reports').absolutePath
+            mods { immersive_brewing { source sourceSets.gameTest } }
+        }
+    }
+}
+
+repositories {
+    flatDir { dirs 'libs' }
+    // RPG Potions keeps its CurseForge file name (with spaces), which flatDir can not express; this maps
+    // local:rpg_potions:<version> onto it.
+    ivy {
+        name = 'rpgPotionsJar'
+        url = file('libs')
+        patternLayout { artifact 'RPG Potions - Forge - MC 1.20.1 - [revision].[ext]' }
+        metadataSources { artifact() }
+        content { includeModule 'local', 'rpg_potions' }
+    }
+    maven { url = 'https://maven.blamejared.com/' }
+    maven {
+        url = 'https://www.cursemaven.com'
+        content { includeGroup 'curse.maven' }
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
+    compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}")
+    runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
+
+    // Station overlays (compat/jade). Jade discovers the plugin by annotation; nothing references it otherwise.
+    compileOnly fg.deobf("curse.maven:jade-324717:${jade_curse_file}")
+    // In a dev environment Jade refuses to start while any loaded plugin's config keys lack translations, and the
+    // sister jars in libs/ ship without theirs; the smoke-test agent supplies them, so Jade joins only that run.
+    if (project.hasProperty('smokeTest')) {
+        runtimeOnly fg.deobf("curse.maven:jade-324717:${jade_curse_file}")
+    }
+
+    // Iron paddle smithing recipe and paddle metadata (integration/smithing, reached only after a ModList check).
+    compileOnly fg.deobf("local:immersive-smithing:${immersive_smithing_version}")
+    if (!project.hasProperty('noSmithing')) {
+        runtimeOnly fg.deobf("local:immersive-smithing:${immersive_smithing_version}")
+    }
+    // Binding-leather carrier strap (integration/tanning, reached only after a ModList check).
+    compileOnly fg.deobf("local:immersive-tanning:${immersive_tanning_version}")
+    if (!project.hasProperty('noTanning')) {
+        runtimeOnly fg.deobf("local:immersive-tanning:${immersive_tanning_version}")
+    }
+    // Coexistence only (spec 17): nothing references these; they join the dev runtime for the compatibility matrix.
+    if (project.hasProperty('withJewelry')) {
+        runtimeOnly fg.deobf("local:immersive-jewelry:${immersive_jewelry_version}")
+    }
+    if (project.hasProperty('withEnchanting')) {
+        runtimeOnly fg.deobf("local:immersive-enchanting:${immersive_enchanting_version}")
+    }
+    // Third-party potion mods (spec 18): their plans, reagent and effect policies and Alembic recipes are data under
+    // compat/, each conditioned on forge:mod_loaded; GameTests read them only after a ModList check. Never shipped.
+    def potionMods = [withApothecary    : "local:apothecary:${apothecary_version}",
+                      withMorePotions   : "local:morepotions:${morepotions_version}",
+                      withPotionsMaster : "local:potionsmaster:${potionsmaster_version}",
+                      withRpgPotions    : "local:rpg_potions:${rpg_potions_version}"]
+    potionMods.each { flag, notation ->
+        compileOnly fg.deobf(notation)
+        if (project.hasProperty(flag) || project.hasProperty('withPotionMods')) {
+            runtimeOnly fg.deobf(notation)
+        }
+    }
+
+    testImplementation "org.junit.jupiter:junit-jupiter:${junit_version}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    def properties = [mod_id: mod_id, mod_name: mod_name, mod_version: mod_version, mod_license: mod_license,
+                      mod_authors: mod_authors, minecraft_version_range: minecraft_version_range,
+                      forge_version_range: forge_version_range, loader_version_range: loader_version_range,
+                      jei_version_range: jei_version_range, jade_version_range: jade_version_range,
+                      immersive_smithing_version_range: immersive_smithing_version_range,
+                      immersive_tanning_version_range: immersive_tanning_version_range,
+                      immersive_jewelry_version_range: immersive_jewelry_version_range,
+                      immersive_enchanting_version_range: immersive_enchanting_version_range]
+    inputs.properties properties
+    filesMatching('META-INF/mods.toml') { expand properties }
+}
+
+tasks.named('processSmokeTestResources', ProcessResources).configure {
+    inputs.properties mod_version: mod_version, mod_license: mod_license
+    filesMatching('META-INF/mods.toml') { expand mod_version: mod_version, mod_license: mod_license }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.named('jar', Jar).configure {
+    manifest.attributes('Specification-Title': mod_id, 'Specification-Vendor': mod_authors,
+                        'Specification-Version': '1', 'Implementation-Title': project.name,
+                        'Implementation-Version': mod_version, 'Implementation-Vendor': mod_authors,
+                        'MixinConfigs': "${mod_id}.mixins.json")
+    finalizedBy 'reobfJar'
+}

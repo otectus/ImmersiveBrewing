@@ -1,0 +1,22 @@
+{
+  "type": "immersive_brewing:distillation",
+  "schema_version": 1,
+  "input": {
+    "items": [
+      "minecraft:potion",
+      "minecraft:splash_potion",
+      "minecraft:lingering_potion"
+    ],
+    "potion_namespaces": [
+      "minecraft"
+    ],
+    "requires_effects": true
+  },
+  "group_size": 3,
+  "yield": 2,
+  "fuel_charges": 1,
+  "quality_cap": 70,
+  "container": {
+    "item": "minecraft:glass_bottle"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:trapped_chest"
+    ]
+  },
+  "reaction": {
+    "profile": "immersive_brewing:dark_whorls",
+    "addition_cooling": 0.08,
+    "foam_sensitivity": 1.0
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:awkward",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:golden_carrot"
+      },
+      "phase": "infuse",
+      "role": "effect",
+      "preparation_profile": "immersive_brewing:golden_carrot"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:night_vision"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:aligning_glints"
+}

@@ -1,0 +1,35 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:awkward",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:skeleton_skull"
+      },
+      "phase": "infuse",
+      "role": "effect",
+      "preparation_profile": "immersive_brewing:compat/apothecary/skeleton_skull"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:potion",
+    "potion": "apothecary:archery"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:light_foam"
+}

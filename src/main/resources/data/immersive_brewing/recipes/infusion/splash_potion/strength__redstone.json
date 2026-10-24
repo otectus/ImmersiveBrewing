@@ -1,0 +1,28 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:strength",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:redstone"
+      },
+      "phase": "settle",
+      "role": "modifier"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:long_strength"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:dense_sediment"
+}

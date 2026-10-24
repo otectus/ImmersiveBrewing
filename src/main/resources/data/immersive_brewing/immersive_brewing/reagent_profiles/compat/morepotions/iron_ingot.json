@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "morepotions"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:iron_ingot"
+    ]
+  },
+  "reaction": {
+    "profile": "immersive_brewing:suspended_bubbles",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 1.0
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "dark_whorls",
+    "heat_band": [
+      0.42,
+      0.56
+    ],
+    "circulation_band": [
+      0.05,
+      0.3
+    ]
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#3A2A40",
+    "particle": "steam"
+  }
+}

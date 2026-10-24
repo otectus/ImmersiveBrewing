@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:heart_of_the_sea"
+    ]
+  },
+  "preparation": {
+    "mode": "brittle",
+    "duration_ticks": 220,
+    "endpoint": [
+      0.58,
+      0.76
+    ],
+    "pressure_limit": 0.65,
+    "overwork_threshold": 0.86
+  },
+  "reaction": {
+    "profile": "immersive_brewing:delicate_shimmer",
+    "addition_cooling": 0.08,
+    "foam_sensitivity": 0.8
+  }
+}

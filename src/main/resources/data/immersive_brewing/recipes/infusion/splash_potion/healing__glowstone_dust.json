@@ -1,0 +1,28 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:healing",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:glowstone_dust"
+      },
+      "phase": "settle",
+      "role": "modifier"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:strong_healing"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:delicate_shimmer"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:or",
+      "values": [
+        {
+          "type": "forge:mod_loaded",
+          "modid": "apothecary"
+        },
+        {
+          "type": "forge:mod_loaded",
+          "modid": "morepotions"
+        }
+      ]
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:magma_block"
+    ]
+  },
+  "reaction": {
+    "profile": "immersive_brewing:magma_streaks",
+    "addition_cooling": 0.02,
+    "foam_sensitivity": 1.0
+  }
+}

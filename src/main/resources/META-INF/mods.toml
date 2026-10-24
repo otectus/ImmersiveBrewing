@@ -1,0 +1,71 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+issueTrackerURL="https://github.com/otectus/ImmersiveBrewing/issues"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+logoFile="logo.png"
+description='''
+Brew by hand. Prepare reagents in the Apothecary's Mortar, tend a living reaction in the Brewer's Kettle and catch the heart of a batch in the Alembic. The recipe decides the magic; your craftsmanship decides the quality.
+'''
+
+[[dependencies.${mod_id}]]
+    modId="forge"
+    mandatory=true
+    versionRange="${forge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="jei"
+    mandatory=false
+    versionRange="${jei_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="jade"
+    mandatory=false
+    versionRange="${jade_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Ordering only: the iron paddle's smithing recipe registers through Immersive Smithing's API when it is present.
+[[dependencies.${mod_id}]]
+    modId="immersive_smithing"
+    mandatory=false
+    versionRange="${immersive_smithing_version_range}"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="immersive_tanning"
+    mandatory=false
+    versionRange="${immersive_tanning_version_range}"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="immersive_enchanting"
+    mandatory=false
+    versionRange="${immersive_enchanting_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="immersive_jewelry"
+    mandatory=false
+    versionRange="${immersive_jewelry_version_range}"
+    ordering="NONE"
+    side="BOTH"

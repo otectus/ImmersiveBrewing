@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:end_rod"
+    ]
+  },
+  "reaction": {
+    "profile": "immersive_brewing:aligning_glints",
+    "addition_cooling": 0.05,
+    "foam_sensitivity": 1.0
+  }
+}

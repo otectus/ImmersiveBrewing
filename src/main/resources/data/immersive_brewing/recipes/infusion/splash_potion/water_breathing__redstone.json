@@ -1,0 +1,28 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:water_breathing",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:redstone"
+      },
+      "phase": "settle",
+      "role": "modifier"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:long_water_breathing"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:suspended_bubbles"
+}

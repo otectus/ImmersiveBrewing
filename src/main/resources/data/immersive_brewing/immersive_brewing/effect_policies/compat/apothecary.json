@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "priority": 0,
+  "effects": [
+    "apothecary:iron_skin",
+    "apothecary:diamond_skin",
+    "apothecary:magic_shield",
+    "apothecary:archery",
+    "apothecary:quick_draw",
+    "apothecary:wrath",
+    "apothecary:flight",
+    "apothecary:reach",
+    "apothecary:repairing",
+    "apothecary:magic_power",
+    "apothecary:thorns",
+    "apothecary:spelunker",
+    "apothecary:broken_armor",
+    "apothecary:ruptured_armor",
+    "apothecary:misfire",
+    "apothecary:lethargy",
+    "apothecary:frail",
+    "apothecary:vulnerable",
+    "apothecary:corrosion",
+    "apothecary:magic_drain",
+    "apothecary:confusion",
+    "apothecary:burning",
+    "apothecary:shocked"
+  ],
+  "quality_mode": "duration",
+  "minimum_multiplier": 0.8,
+  "maximum_multiplier": 1.2,
+  "allow_amplifier_change": false,
+  "allow_infinite_duration_change": false
+}

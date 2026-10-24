@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "potionsmaster"
+    }
+  ],
+  "priority": 0,
+  "effects": [
+    "potionsmaster:coalpotioneffect",
+    "potionsmaster:ironpotioneffect",
+    "potionsmaster:redstonepotioneffect",
+    "potionsmaster:lapispotioneffect",
+    "potionsmaster:goldpotioneffect",
+    "potionsmaster:diamondpotioneffect",
+    "potionsmaster:emeraldpotioneffect",
+    "potionsmaster:aluminiumpotioneffect",
+    "potionsmaster:copperpotioneffect",
+    "potionsmaster:tinpotioneffect",
+    "potionsmaster:nickelpotioneffect",
+    "potionsmaster:uraniumpotioneffect",
+    "potionsmaster:leadpotioneffect",
+    "potionsmaster:silverpotioneffect",
+    "potionsmaster:zincpotioneffect",
+    "potionsmaster:osmiumpotioneffect",
+    "potionsmaster:quartzpotioneffect",
+    "potionsmaster:bismuthpotioneffect",
+    "potionsmaster:crimsonironpotioneffect",
+    "potionsmaster:platinumpotioneffect",
+    "potionsmaster:netheritepotioneffect",
+    "potionsmaster:allthemodiumpotioneffect",
+    "potionsmaster:vibraniumpotioneffect",
+    "potionsmaster:unobtainiumpotioneffect"
+  ],
+  "quality_mode": "duration",
+  "minimum_multiplier": 0.8,
+  "maximum_multiplier": 1.2,
+  "allow_amplifier_change": false,
+  "allow_infinite_duration_change": false
+}

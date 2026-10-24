@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:turtle_helmet"
+    ]
+  },
+  "preparation": {
+    "mode": "brittle",
+    "duration_ticks": 280,
+    "endpoint": [
+      0.55,
+      0.72
+    ],
+    "pressure_limit": 0.75,
+    "overwork_threshold": 0.84
+  },
+  "reaction": {
+    "profile": "immersive_brewing:dense_sediment",
+    "addition_cooling": 0.1,
+    "foam_sensitivity": 1.0
+  }
+}

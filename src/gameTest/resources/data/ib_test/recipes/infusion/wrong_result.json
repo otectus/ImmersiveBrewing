@@ -1,0 +1,23 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:awkward",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:sugar"
+      },
+      "phase": "infuse",
+      "role": "effect"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:strength"
+  }
+}

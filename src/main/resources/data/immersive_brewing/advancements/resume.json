@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:recovery_batch"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.resume.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.resume.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:first_brew",
+  "criteria": {
+    "resume": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "resume"
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "CBC",
+    "RLR",
+    "OOO"
+  ],
+  "key": {
+    "C": {
+      "item": "minecraft:copper_ingot"
+    },
+    "B": {
+      "item": "minecraft:brewing_stand"
+    },
+    "R": {
+      "item": "minecraft:brick"
+    },
+    "L": {
+      "item": "minecraft:cauldron"
+    },
+    "O": {
+      "tag": "forge:cobblestone"
+    }
+  },
+  "result": {
+    "item": "immersive_brewing:brewers_kettle"
+  }
+}

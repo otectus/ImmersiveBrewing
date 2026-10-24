@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "suspended_bubbles",
+    "heat_band": [
+      0.44,
+      0.58
+    ],
+    "circulation_band": [
+      0.25,
+      0.55
+    ]
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#A0D8FF",
+    "particle": "bubble"
+  }
+}

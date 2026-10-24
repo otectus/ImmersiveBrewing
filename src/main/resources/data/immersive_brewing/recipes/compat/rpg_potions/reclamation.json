@@ -1,0 +1,31 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "rpg_potions"
+    }
+  ],
+  "type": "immersive_brewing:reclamation",
+  "schema_version": 1,
+  "input": {
+    "items": [
+      "minecraft:potion",
+      "minecraft:splash_potion",
+      "minecraft:lingering_potion"
+    ],
+    "potion_namespaces": [
+      "rpg_potions"
+    ],
+    "requires_effects": false
+  },
+  "group_size": 3,
+  "result": {
+    "item": "immersive_brewing:spent_alchemical_salt",
+    "count": 1
+  },
+  "container": {
+    "item": "minecraft:glass_bottle"
+  },
+  "fuel_charges": 1,
+  "duration_ticks": 200
+}

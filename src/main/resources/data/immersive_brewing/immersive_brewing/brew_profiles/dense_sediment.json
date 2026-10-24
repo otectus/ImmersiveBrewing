@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "dense_sediment",
+    "heat_band": [
+      0.5,
+      0.64
+    ],
+    "circulation_band": [
+      0.25,
+      0.52
+    ]
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#7A1E1E",
+    "particle": "steam"
+  }
+}

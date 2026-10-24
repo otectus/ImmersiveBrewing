@@ -1,0 +1,28 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:regeneration",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:redstone"
+      },
+      "phase": "settle",
+      "role": "modifier"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:potion",
+    "potion": "minecraft:long_regeneration"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:delicate_shimmer"
+}

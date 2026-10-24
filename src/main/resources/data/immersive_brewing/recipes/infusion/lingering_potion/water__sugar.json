@@ -1,0 +1,27 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:water",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:sugar"
+      },
+      "phase": "bloom",
+      "role": "base"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:lingering_potion",
+    "potion": "minecraft:mundane"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:phantom_membrane"
+    ]
+  },
+  "preparation": {
+    "mode": "fibrous",
+    "duration_ticks": 260,
+    "endpoint": [
+      0.58,
+      0.78
+    ],
+    "pressure_limit": 0.55,
+    "overwork_threshold": 0.87
+  },
+  "reaction": {
+    "profile": "immersive_brewing:floating_motes",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 0.9
+  }
+}

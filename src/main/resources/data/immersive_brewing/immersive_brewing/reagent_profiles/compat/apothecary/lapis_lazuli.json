@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "apothecary"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:lapis_lazuli"
+    ]
+  },
+  "preparation": {
+    "mode": "crystalline",
+    "duration_ticks": 240,
+    "endpoint": [
+      0.6,
+      0.78
+    ],
+    "pressure_limit": 0.7,
+    "overwork_threshold": 0.86
+  },
+  "reaction": {
+    "profile": "immersive_brewing:delicate_shimmer",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 0.8
+  }
+}

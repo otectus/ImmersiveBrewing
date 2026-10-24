@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "aligning_glints",
+    "heat_band": [
+      0.44,
+      0.58
+    ],
+    "circulation_band": [
+      0.2,
+      0.45
+    ]
+  },
+  "settle": {
+    "signature": "aligning_glints",
+    "heat_band": [
+      0.36,
+      0.48
+    ],
+    "circulation_band": [
+      0.0,
+      0.22
+    ],
+    "initial_trouble": 0.3
+  },
+  "disturbances": [
+    "cold_draft",
+    "burner_flare",
+    "surge"
+  ],
+  "inertia": 1.0,
+  "presentation": {
+    "accent": "#FFF8C0",
+    "particle": "glint"
+  }
+}

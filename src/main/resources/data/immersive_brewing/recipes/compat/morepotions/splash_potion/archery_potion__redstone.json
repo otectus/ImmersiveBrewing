@@ -1,0 +1,34 @@
+{
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "morepotions"
+    }
+  ],
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "potion": "morepotions:archery_potion",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:redstone"
+      },
+      "phase": "settle",
+      "role": "modifier"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:splash_potion",
+    "potion": "morepotions:archery_potion_longer"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:light_foam"
+}

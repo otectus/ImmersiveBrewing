@@ -1,0 +1,6 @@
+{
+  "config.jade.plugin_immersive_smithing.anvil": "Smithing Anvil",
+  "config.jade.plugin_immersive_smithing.forge": "Smithing Forge",
+  "config.jade.plugin_immersive_smithing.grindstone": "Smithing Grindstone",
+  "config.jade.plugin_immersive_smithing.trough": "Quench Trough"
+}

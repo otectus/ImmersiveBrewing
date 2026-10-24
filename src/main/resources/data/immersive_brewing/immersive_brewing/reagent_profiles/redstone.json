@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:redstone"
+    ]
+  },
+  "reaction": {
+    "addition_cooling": 0.03,
+    "sensitivity": 1.0
+  }
+}

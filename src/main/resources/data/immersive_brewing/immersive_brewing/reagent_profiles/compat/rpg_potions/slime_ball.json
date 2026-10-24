@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "rpg_potions"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:slime_ball"
+    ]
+  },
+  "preparation": {
+    "mode": "liquid",
+    "duration_ticks": 260,
+    "endpoint": [
+      0.6,
+      0.8
+    ],
+    "pressure_limit": 0.8,
+    "overwork_threshold": 0.9
+  },
+  "reaction": {
+    "profile": "immersive_brewing:dark_whorls",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 1.0
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "match": "item"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:dragon_breath"
+      },
+      "phase": "settle",
+      "role": "container"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:lingering_potion",
+    "potion": "same"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  }
+}

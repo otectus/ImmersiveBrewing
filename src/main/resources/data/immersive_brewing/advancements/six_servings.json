@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:batch_carrier"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.six_servings.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.six_servings.description"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:first_brew",
+  "criteria": {
+    "six_servings": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "six_servings"
+      }
+    }
+  }
+}

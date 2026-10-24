@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:nether_wart"
+    ]
+  },
+  "reaction": {
+    "addition_cooling": 0.04,
+    "sensitivity": 1.0
+  }
+}

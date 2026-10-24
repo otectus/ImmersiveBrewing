@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "priority": 50,
+  "selector": {
+    "items": [
+      "minecraft:rabbit_hide"
+    ]
+  },
+  "preparation": {
+    "mode": "fibrous",
+    "duration_ticks": 200,
+    "endpoint": [
+      0.55,
+      0.75
+    ],
+    "pressure_limit": 0.72,
+    "overwork_threshold": 0.88
+  },
+  "reaction": {
+    "profile": "ib_test:still_water",
+    "addition_cooling": 0.06,
+    "foam_sensitivity": 0.4
+  }
+}

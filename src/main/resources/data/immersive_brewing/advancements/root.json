@@ -1,0 +1,34 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:brewers_kettle"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.root.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.root.description"
+    },
+    "frame": "task",
+    "show_toast": false,
+    "announce_to_chat": false,
+    "hidden": false,
+    "background": "minecraft:textures/block/bricks.png"
+  },
+  "criteria": {
+    "has_station": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "immersive_brewing:apothecary_mortar",
+              "immersive_brewing:brewers_kettle",
+              "immersive_brewing:alembic"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

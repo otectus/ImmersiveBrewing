@@ -1,0 +1,29 @@
+{
+  "type": "immersive_brewing:infusion",
+  "schema_version": 1,
+  "adapter": "immersive_brewing:forge_registry",
+  "input": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:awkward",
+    "match": "canonical"
+  },
+  "steps": [
+    {
+      "reagent": {
+        "item": "minecraft:magma_cream"
+      },
+      "phase": "infuse",
+      "role": "effect",
+      "preparation_profile": "immersive_brewing:magma_cream"
+    }
+  ],
+  "expected_output": {
+    "item": "minecraft:splash_potion",
+    "potion": "minecraft:fire_resistance"
+  },
+  "batch": {
+    "max_servings": 6,
+    "servings_per_reagent": 3
+  },
+  "brew_profile": "immersive_brewing:magma_streaks"
+}

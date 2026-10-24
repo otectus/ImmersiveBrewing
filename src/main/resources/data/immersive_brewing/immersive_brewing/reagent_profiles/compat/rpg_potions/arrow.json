@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "rpg_potions"
+    }
+  ],
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:arrow"
+    ]
+  },
+  "reaction": {
+    "profile": "immersive_brewing:light_foam",
+    "addition_cooling": 0.03,
+    "foam_sensitivity": 1.0
+  }
+}

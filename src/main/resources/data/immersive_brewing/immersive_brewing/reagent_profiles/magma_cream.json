@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:magma_cream"
+    ]
+  },
+  "preparation": {
+    "mode": "liquid",
+    "duration_ticks": 260,
+    "endpoint": [
+      0.6,
+      0.8
+    ],
+    "pressure_limit": 0.8,
+    "overwork_threshold": 0.9
+  },
+  "reaction": {
+    "profile": "immersive_brewing:magma_streaks",
+    "addition_cooling": 0.03,
+    "foam_sensitivity": 1.0
+  }
+}

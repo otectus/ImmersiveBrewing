@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="${mod_license}"
+
+[[mods]]
+modId="immersive_brewing_smoketest"
+version="${mod_version}"
+displayName="Immersive Brewing Smoke Test Agent"
+authors="Otectus"
+description='''
+Test-only agent. Inert unless -Dimmersive_brewing.smoketest.output is set. Never ship this.
+'''
+
+[[dependencies.immersive_brewing_smoketest]]
+    modId="immersive_brewing"
+    mandatory=true
+    versionRange="[${mod_version},)"
+    ordering="AFTER"
+    side="BOTH"

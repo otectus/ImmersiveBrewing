@@ -1,0 +1,31 @@
+Immersive Brewing coverage report
+Generated 2026-10-23T15:53:27.481427313Z
+Mode: COEXIST
+Tipped-arrow override active: true
+
+Loaded mods:
+  forge 47.4.23
+  immersive_brewing 1.0.2
+  immersive_brewing_smoketest 1.0.2
+  immersive_smithing 1.1.0
+  immersive_tanning 1.1.0
+  jade 11.13.1+forge
+  jei 15.20.0.135
+  minecraft 1.20.1
+
+Adapters:
+  immersive_brewing:forge_registry v1 priority 0
+
+Brewing data generation 1: 17 reagent profiles, 9 brew profiles, 1 effect policies
+
+Infusion recipes: {SUPPORTED=168}
+
+Optional potion mods (data under compat/, loaded only with its mod):
+  apothecary: not installed
+  morepotions: not installed
+  potionsmaster: not installed
+  rpg_potions: not installed
+
+Discovery: 2193 queries, 251 transformations, 0 not covered by a plan, 0 excluded by data, 0 loose (not offered)
+
+Replacement-mode coverage pairs: 99

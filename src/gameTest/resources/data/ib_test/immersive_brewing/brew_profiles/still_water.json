@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "none",
+    "heat_band": [
+      0.44,
+      0.6
+    ],
+    "circulation_band": [
+      0.22,
+      0.52
+    ]
+  },
+  "bloom": {
+    "signature": "none",
+    "heat_band": [
+      0.4,
+      0.58
+    ],
+    "circulation_band": [
+      0.2,
+      0.5
+    ]
+  },
+  "disturbances": [
+    "cold_draft"
+  ],
+  "inertia": 1.1,
+  "presentation": {
+    "accent": "#9FC6E8",
+    "particle": "steam"
+  }
+}

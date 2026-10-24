@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "priority": 10,
+  "selector": {
+    "items": [
+      "minecraft:rabbit_hide"
+    ]
+  },
+  "preparation": {
+    "mode": "fibrous",
+    "duration_ticks": 200,
+    "endpoint": [
+      0.9,
+      0.2
+    ],
+    "pressure_limit": 0.72,
+    "overwork_threshold": 0.88
+  }
+}

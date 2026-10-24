@@ -1,0 +1,26 @@
+{
+  "display": {
+    "icon": {
+      "item": "immersive_brewing:alembic"
+    },
+    "title": {
+      "translate": "advancements.immersive_brewing.purify.title"
+    },
+    "description": {
+      "translate": "advancements.immersive_brewing.purify.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "immersive_brewing:first_brew",
+  "criteria": {
+    "purify": {
+      "trigger": "immersive_brewing:milestone",
+      "conditions": {
+        "milestone": "purify"
+      }
+    }
+  }
+}

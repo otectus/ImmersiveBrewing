@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "immersive_brewing:recovery_batch",
+    "immersive_brewing:batch_carrier",
+    "minecraft:bundle"
+  ]
+}
