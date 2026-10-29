@@ -51,7 +51,13 @@ public final class StationParticles {
             if (visual.trouble() > 0.6F && random.nextFloat() < 0.25 * rate) {
                 emit(level, ParticleTypes.SPLASH, pos, 0.5, 0.95, 0.5, 0.25, 0.0, random);
             } else if (random.nextFloat() < (0.08 + 0.22 * visual.heat()) * rate) {
-                emit(level, visual.heat() > 0.55F ? ParticleTypes.CLOUD : ParticleTypes.BUBBLE_POP, pos, 0.5, 0.92, 0.5, 0.25, 0.015, random);
+                ParticleOptions particle=switch(visual.particle()) {
+                    case "bubble", "foam" -> ParticleTypes.BUBBLE_POP;
+                    case "glint" -> ParticleTypes.END_ROD;
+                    case "mote" -> new DustParticleOptions(new Vector3f((visual.accent()>>16&255)/255F,(visual.accent()>>8&255)/255F,(visual.accent()&255)/255F),.65F);
+                    default -> visual.heat()>0.55F?ParticleTypes.CLOUD:ParticleTypes.BUBBLE_POP;
+                };
+                emit(level,particle,pos,.5,.92,.5,visual.particle().equals("foam")?.4:.25,.015,random);
             }
         } else if (station instanceof AlembicBlockEntity) {
             if (view.operation() == Operation.PURIFY) {

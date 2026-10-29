@@ -1,0 +1,38 @@
+{
+  "platform": "Minecraft 1.20.1 / Forge 47.4.23 / Java 17",
+  "note": "Obtain these optional jars separately; no redistribution. RPG file 1.2.0 reports mod version 1.1.3. Remote APIs: JEI15.20.0.135, Jade11.13(file6271651).",
+  "fixtures": [
+    {
+      "file": "RPG Potions - Forge - MC 1.20.1 - 1.2.0.jar",
+      "sha256": "204d7df5c6b02941e61a16c1279aba53d52945beab101cb0560089e083ce2c37"
+    },
+    {
+      "file": "apothecary-1.5.2-1.20.1.jar",
+      "sha256": "89aae07e9d2de5837bffc440d27636ed3d9c657930e910696480221136d3d495"
+    },
+    {
+      "file": "immersive-enchanting-1.1.0.jar",
+      "sha256": "3e62d4b86c5655f511192fc5d7b563c50bd3b22e3bf892cf9f3f6a1d02d28f94"
+    },
+    {
+      "file": "immersive-jewelry-1.1.0.jar",
+      "sha256": "b29c7a83248ef80b5bc98aa351d7b9dc0af63b472185c47183b2641e793ecbbd"
+    },
+    {
+      "file": "immersive-smithing-1.1.0.jar",
+      "sha256": "1b78ea504f273c7f454440d6ca7c08d1569ef862237a33c923c072fca13e2e80"
+    },
+    {
+      "file": "immersive-tanning-1.1.0.jar",
+      "sha256": "8107f07140dc165df075e2be96ce20231cd6cfd435692c32ebf3b8a100e464d7"
+    },
+    {
+      "file": "morepotions-1.0.4.jar",
+      "sha256": "8d7f1977cf4addda0dcffff1d687ce6983f7012c25a40c00e5390cdc84fb22c7"
+    },
+    {
+      "file": "potionsmaster-1.20.1-47.1.70-0.6.0.jar",
+      "sha256": "5d120ba6e1bec21da8a26e6cc94d7b64fc49c34b098b7ba03bf1135a3a31c51f"
+    }
+  ]
+}

@@ -31,8 +31,9 @@ public final class CarrierItemHandler implements IItemHandlerModifiable {
     @Override
     public void setStackInSlot(int slot, @NotNull ItemStack stack) {
         if (slot < 0 || slot >= CarrierContents.SLOTS) return;
+        if (!stack.isEmpty() && !isItemValid(slot, stack)) return;
         List<ItemStack> contents = CarrierContents.read(carrier);
-        contents.set(slot, stack.copy());
+        contents.set(slot, stack.copyWithCount(Math.min(stack.getCount(), stack.getMaxStackSize())));
         CarrierContents.write(carrier, contents);
     }
 

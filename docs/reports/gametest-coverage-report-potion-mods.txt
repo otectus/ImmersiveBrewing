@@ -1,41 +1,40 @@
 Immersive Brewing coverage report
-Generated 2026-10-23T15:49:07.71196592Z
+Generated 2026-10-28T20:46:37.113899199Z
 Mode: COEXIST
 Tipped-arrow override active: true
 
 Loaded mods:
-  apothecary 1.5.2
   forge 47.4.23
-  immersive_brewing 1.0.2
-  immersive_enchanting 1.1.0
-  immersive_jewelry 1.1.0
-  immersive_smithing 1.1.0
-  immersive_tanning 1.1.0
+  immersive_brewing 1.1.0
   jei 15.20.0.135
   minecraft 1.20.1
-  morepotions 1.0.4
-  potionsmaster 0.6.0
-  rpg_potions 1.1.3
 
 Adapters:
   immersive_brewing:forge_registry v1 priority 0
 
-Brewing data generation 1: 82 reagent profiles, 10 brew profiles, 5 effect policies
+Brewing data generation 1: 19 reagent profiles, 10 brew profiles, 1 effect policies
   error: reagent_profiles ib_test:inverted_endpoint: endpoint: low 0.9 is above high 0.2
+  warning: data/ib_test/immersive_brewing/reagent_profiles/hide_tie_b.json: selector and priority conflict with ib_test:hide_tie_a; lowest id wins
 
-Infusion recipes: {SUPPORTED=351, EXCLUDED=3, UNSUPPORTED=2}
+Infusion recipes: {SUPPORTED=166, EXCLUDED=3, UNSUPPORTED=1}
+Catalog 6386325222618244596: 1 supported destinations, 1 alternative routes, 0 omitted alternatives; 4 candidate inspections; destination traversal finished
+Catalog -5023987108493716149: 2 supported destinations, 2 alternative routes, 0 omitted alternatives; 6 candidate inspections; destination traversal finished
+Catalog 5961289013216347459: 1 supported destinations, 1 alternative routes, 0 omitted alternatives; 4 candidate inspections; destination traversal finished
+Catalog -6925329610315834330: 0 supported destinations, 0 alternative routes, 0 omitted alternatives; 2 candidate inspections; destination traversal finished
+Catalog -7068640016886469643: 11 supported destinations, 11 alternative routes, 0 omitted alternatives; 32 candidate inspections; search incomplete
+Catalog -899099453173701786: 96 supported destinations, 125 alternative routes, 12 omitted alternatives; 288 candidate inspections; search incomplete
   unsupported ib_test:infusion/wrong_result: plan.immersive_brewing.unsupported.result_differs minecraft:potion{Potion:"minecraft:swiftness"}
-  unsupported immersive_brewing:compat/apothecary/potion/awkward__magma_block: plan.immersive_brewing.unsupported.result_differs minecraft:potion{Potion:"morepotions:fire_potion"}
   excluded immersive_brewing:infusion/lingering_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
   excluded immersive_brewing:infusion/potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
   excluded immersive_brewing:infusion/splash_potion/awkward__phantom_membrane: plan.immersive_brewing.excluded.item
 
 Optional potion mods (data under compat/, loaded only with its mod):
-  apothecary 1.5.2: plans {SUPPORTED=84, UNSUPPORTED=1}, 22 reagent profiles, effect policy active
-  morepotions 1.0.4: plans {SUPPORTED=69}, 8 reagent profiles, effect policy active
-  potionsmaster 0.6.0: plans {SUPPORTED=24}, 24 reagent profiles, effect policy active
-  rpg_potions 1.1.3: plans {SUPPORTED=8}, 8 reagent profiles, effect policy active
+  apothecary: not installed
+  morepotions: not installed
+  potionsmaster: not installed
+  rpg_potions: not installed
 
-Discovery: 4096 queries (budget reached), 631 transformations, 0 not covered by a plan, 1 excluded by data, 400 loose (not offered)
+Discovery: 2193 queries, 251 transformations, 0 not covered by a plan, 3 excluded by data, 0 loose (not offered)
+Unresolved contextual steps: 0; omitted discovery pairs: 0 in enumerated search; arbitrary handlers may remain non-enumerable
 
-Replacement-mode coverage pairs: 187
+Replacement-mode coverage pairs: 96

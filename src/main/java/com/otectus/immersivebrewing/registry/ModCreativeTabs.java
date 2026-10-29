@@ -16,6 +16,7 @@ public final class ModCreativeTabs {
             .icon(() -> new ItemStack(ModItems.BREWERS_KETTLE.get()))
             .displayItems((params, output) -> {
                 output.accept(ModItems.APOTHECARY_MORTAR.get());
+                output.accept(ModItems.APOTHECARY_RACK.get());
                 output.accept(ModItems.BREWERS_KETTLE.get());
                 output.accept(ModItems.ALEMBIC.get());
                 output.accept(ModItems.WOODEN_BREWING_PADDLE.get());

@@ -66,6 +66,7 @@ import static com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.
 @GameTestHolder(ImmersiveBrewing.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompatGameTests {
+    static final boolean CHANGED_APOTHECARY = Boolean.getBoolean("immersive_brewing.apothecaryConfigFixture");
     static final List<String> MODS = PotionMods.IDS;
 
     static boolean loaded(String mod) {
@@ -126,6 +127,11 @@ public final class CompatGameTests {
                 PlanIndex.Entry e = index.entry(r.getId());
                 boolean shadowed = r.getId().getPath().equals("compat/apothecary/potion/awkward__magma_block") && loaded("morepotions");
                 if (shadowed) continue;
+                if (CHANGED_APOTHECARY && r.getId().getPath().equals("compat/apothecary/potion/awkward__iron_block")) {
+                    h.assertTrue(e != null && e.status() == PlanIndex.Status.UNSUPPORTED,
+                            "old configured Iron Skin reagent is explicitly unavailable, not stale authority");
+                    continue;
+                }
                 if (e == null || (e.status() != PlanIndex.Status.SUPPORTED && e.status() != PlanIndex.Status.METADATA_ONLY)) {
                     problems.add(r.getId() + ": " + (e == null ? "not indexed" : e.status() + " " + e.reason()));
                 } else {
@@ -162,7 +168,11 @@ public final class CompatGameTests {
             if (f.covered() || f.excluded() || f.loose()) continue;
             boolean pmContainer = "potionsmaster".equals(ForgeRegistries.POTIONS.getKey(PotionUtils.getPotion(f.output())).getNamespace())
                     && !f.input().is(Items.POTION);
-            if (pmContainer) {
+            boolean changedIngredient = CHANGED_APOTHECARY && f.ingredient() == Items.IRON_INGOT
+                    && PotionUtils.getPotion(f.output()) == potion("apothecary:iron_skin");
+            if (changedIngredient) h.assertTrue(index(h).contextualPlans(f.input(), List.of(new ItemStack(Items.IRON_INGOT)), List.of())
+                    .stream().anyMatch(p -> PotionContentsService.sameCanonical(p.output(), f.output())), "configured ingredient remains usable via exact tray context");
+            if (pmContainer || changedIngredient) {
                 contextual++;
                 continue;
             }
@@ -216,10 +226,14 @@ public final class CompatGameTests {
         }
         ItemStack ironSkin = bottle(Items.POTION, "apothecary:iron_skin");
         ItemStack awkward = BrewingRecipeRegistry.getOutput(TestSupport.water(), new ItemStack(Items.NETHER_WART));
-        ItemStack registry = BrewingRecipeRegistry.getOutput(awkward, new ItemStack(Items.IRON_BLOCK));
-        BrewersKettleBlockEntity kettle = brew(h, "Ironbrewer", TestSupport.water(), ironSkin, new ItemStack(Items.NETHER_WART), new ItemStack(Items.IRON_BLOCK));
-        h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.IRON_BLOCK) == 0 && TestSupport.count(kettle, TRAY, 6, Items.NETHER_WART) == 0,
-                "one wart and one iron block reserved for three servings");
+        Item reagent = CHANGED_APOTHECARY ? Items.IRON_INGOT : Items.IRON_BLOCK;
+        ItemStack registry = BrewingRecipeRegistry.getOutput(awkward, new ItemStack(reagent));
+        h.assertTrue(PotionContentsService.sameCanonical(registry, ironSkin), "live Apothecary config produces Iron Skin");
+        BrewersKettleBlockEntity kettle = CHANGED_APOTHECARY
+                ? brew(h, "Ironbrewer", awkward, ironSkin, new ItemStack(reagent))
+                : brew(h, "Ironbrewer", TestSupport.water(), ironSkin, new ItemStack(Items.NETHER_WART), new ItemStack(reagent));
+        h.assertTrue(TestSupport.count(kettle, TRAY, 6, reagent) == 0 && TestSupport.count(kettle, TRAY, 6, Items.NETHER_WART) == 0,
+                "the actual configured reagent is reserved once for three servings");
         expectBrewed(h, kettle, ironSkin, registry);
     }
 
@@ -465,16 +479,21 @@ public final class CompatGameTests {
         }
         ItemStack awkward = PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.AWKWARD);
         ItemStack registry = BrewingRecipeRegistry.getOutput(awkward.copy(), new ItemStack(Items.MAGMA_BLOCK));
-        ItemStack fire = bottle(Items.POTION, "morepotions:fire_potion");
-        h.assertTrue(PotionContentsService.sameCanonical(registry, fire), "More Potions answers first (its recipe is added during setup): " + describe(registry));
-        PlanIndex.Entry burning = index(h).entry(ImmersiveBrewing.id("compat/apothecary/potion/awkward__magma_block"));
-        h.assertTrue(burning != null && burning.status() == PlanIndex.Status.UNSUPPORTED
-                && burning.reason().startsWith("plan.immersive_brewing.unsupported.result_differs"), "Apothecary's Burning plan is reported: " + burning);
         List<BrewPlan> plans = index(h).plansFrom(awkward);
         h.assertTrue(plans.stream().anyMatch(p -> p.steps().size() == 1 && p.steps().get(0).reagent() == Items.MAGMA_BLOCK
-                && PotionContentsService.sameCanonical(p.output(), fire)), "Fire is offered");
-        h.assertTrue(plans.stream().noneMatch(p -> PotionContentsService.sameCanonical(p.output(), bottle(Items.POTION, "apothecary:burning"))),
-                "Burning is never offered from Awkward");
+                && PotionContentsService.sameCanonical(p.output(), registry)), "the actual live registry winner is offered");
+        for (String id : List.of("apothecary:burning", "morepotions:fire_potion")) {
+            ItemStack expected = bottle(Items.POTION, id);
+            String path = id.startsWith("apothecary") ? "compat/apothecary/potion/awkward__magma_block" : "compat/morepotions/potion/awkward__magma_block";
+            PlanIndex.Entry entry = index(h).entry(ImmersiveBrewing.id(path));
+            if (!PotionContentsService.sameCanonical(registry, expected)) {
+                h.assertTrue(entry != null && entry.status() == PlanIndex.Status.UNSUPPORTED
+                        && entry.reason().startsWith("plan.immersive_brewing.unsupported.result_differs"), "shadowed recipe reports the actual mismatch: " + entry);
+                h.assertTrue(plans.stream().noneMatch(p -> p.steps().size() == 1 && p.steps().get(0).reagent() == Items.MAGMA_BLOCK
+                        && PotionContentsService.sameCanonical(p.output(), expected)), "the losing transformation is not offered");
+            }
+        }
+        ImmersiveBrewing.LOGGER.info("[compat] actual shared magma-block recipe winner: {}", describe(registry));
         h.succeed();
     }
 
@@ -495,7 +514,10 @@ public final class CompatGameTests {
         Map<Item, Integer> previous = new HashMap<>();
         for (Item item : potions) previous.put(item, item.getMaxStackSize());
         try {
-            for (Item item : potions) setMaxStackSize(item, 16);
+            if (CHANGED_APOTHECARY) {
+                h.assertTrue(loaded("apothecary"), "real stack fixture requires Apothecary");
+                for (Item item : potions) h.assertTrue(item.getMaxStackSize() == 16, "Apothecary Stack_Size=16 reached the actual item: " + item);
+            } else for (Item item : potions) setMaxStackSize(item, 16);
             h.assertTrue(TestSupport.water().getMaxStackSize() == 16, "potions stack to 16 for this test");
             BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
             for (int i = 0; i < kettle.inventory().getSlots(); i++) kettle.inventory().setStackInSlot(i, ItemStack.EMPTY);
@@ -521,7 +543,7 @@ public final class CompatGameTests {
             ItemStack rest = alembic.inventory().insertItem(AlembicBlockEntity.INPUT, graded(Potions.STRENGTH, 40).copyWithCount(5), false);
             h.assertTrue(rest.getCount() == 4, "an Alembic input slot takes one bottle of a stack");
         } finally {
-            previous.forEach(CompatGameTests::setMaxStackSize);
+            if (!CHANGED_APOTHECARY) previous.forEach(CompatGameTests::setMaxStackSize);
         }
         h.succeed();
     }

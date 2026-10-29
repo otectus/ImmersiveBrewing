@@ -20,7 +20,7 @@ import java.util.UUID;
  * never discarded and never reinterpreted.
  */
 public final class LedgerCodec {
-    public static final int SCHEMA = 1;
+    public static final int SCHEMA = 2;
     public static final int MAX_STACKS = 32;
     public static final int MAX_BYTES = 256 * 1024;
 

@@ -60,7 +60,7 @@ public final class ImmersiveBrewingAPI {
         return PotionContentsService.canonical(stack);
     }
 
-    /** Supported catalog plans from this input and their costs for {@code servings}. Server thread only. */
+    /** Legacy bounded list (at most 512 routes), retained unchanged for API v1 callers. Use catalog for discovery. Server thread only. */
     public static List<PlanQuery> plans(MinecraftServer server, ItemStack input, int servings) {
         List<PlanQuery> out = new ArrayList<>();
         for (BrewPlan plan : PlanIndex.get(server.getRecipeManager()).plansFrom(input)) {
@@ -74,6 +74,41 @@ public final class ImmersiveBrewingAPI {
                     plan.fuelCharges(servings), plan.remainders(servings), plan.contextual()));
         }
         return out;
+    }
+
+    /** Incremental search by stable output/reagent/source ids, filtering before 24-route pages. Server thread only.
+     * Each call advances at most 64 graph operations; callers must schedule calls, not spin until complete. */
+    public static CatalogPage catalog(MinecraftServer server, ItemStack input, int servings, String search, int page, int workBudget) {
+        if (!server.isSameThread()) throw new IllegalStateException("Catalog queries require the server thread");
+        if (servings < 1 || servings > 6 || page < 0 || page > 4096 || search.length() > 128)
+            throw new IllegalArgumentException("catalog query bounds");
+        var index = PlanIndex.get(server.getRecipeManager());
+        var catalog = index.catalog(input);
+        catalog.advance(Math.max(0, Math.min(64, workBudget)));
+        String query = search.toLowerCase(java.util.Locale.ROOT);
+        var matches = catalog.plans().stream().filter(plan -> query.isBlank()
+                || String.valueOf(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(plan.output().getItem())).contains(query)
+                || String.valueOf(net.minecraftforge.registries.ForgeRegistries.POTIONS.getKey(net.minecraft.world.item.alchemy.PotionUtils.getPotion(plan.output()))).contains(query)
+                || plan.steps().stream().anyMatch(step -> step.source().toString().contains(query)
+                    || String.valueOf(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(step.reagent())).contains(query))).toList();
+        int first = Math.min(matches.size(), page * 24);
+        return new CatalogPage(index.generation(), matches.subList(first, Math.min(matches.size(), first + 24)).stream()
+                .map(plan -> query(plan, servings)).toList(), matches.size(), !catalog.done(), catalog.budgetLimited(), catalog.omittedAlternatives());
+    }
+
+    /** Resolves the exact route against current recipes and adapters, independent of discovery page limits. */
+    public static Optional<PlanQuery> resolve(MinecraftServer server, String key, ItemStack input, List<ItemStack> tray, int servings) {
+        if (!server.isSameThread()) throw new IllegalStateException("Plan resolution requires the server thread");
+        var parsed = com.otectus.immersivebrewing.recipe.PlanKey.parse(key);
+        if (parsed == null || servings < 1 || servings > 6 || tray.size() > 8) return Optional.empty();
+        BrewPlan plan = PlanIndex.get(server.getRecipeManager()).resolve(parsed, input, tray);
+        return plan == null || servings > plan.servingLimit() ? Optional.empty() : Optional.of(query(plan, servings));
+    }
+
+    private static PlanQuery query(BrewPlan plan, int servings) {
+        var costs = plan.costs(servings);
+        return new PlanQuery(plan.key().serialize(), plan.input().copy(), plan.output().copy(), costs.stream().map(BrewPlan.Cost::item).toList(),
+                costs.stream().map(BrewPlan.Cost::count).toList(), plan.fuelCharges(servings), plan.remainders(servings), plan.contextual());
     }
 
     public static void processIMC(InterModProcessEvent event) {

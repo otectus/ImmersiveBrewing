@@ -8,9 +8,9 @@ Data never invents a transformation. A plan only describes a step that a brewing
 is Forge's brewing registry) already performs; the server checks every step against that system when it builds the plan
 index and refuses plans whose result differs.
 
-**Field status.** *Accepted*: read and used. *Reserved*: read (and synced), but has no effect in 1.0; kept so packs
-written now keep working. *Rejected*: the file fails to load with an error naming the field. Unknown fields are ignored
-with a warning.
+**Field status.** *Accepted*: read and used. *Reserved*: read but not used by development version 1.1.0. *Rejected*:
+the file fails to load with an error naming the field. Unknown fields are ignored with a warning. This is development
+documentation, not a release announcement.
 
 ## Where files go
 
@@ -42,11 +42,35 @@ and is conditioned on that mod. Its recipes and policies are excluded by id like
   receive it. Either way, every running session is sealed first (nothing is lost; it resumes afterwards, revalidated
   against the active data).
 * Recipes follow Minecraft's own rules; an infusion recipe that parses but does not validate is listed as unsupported
-  rather than offered.
+  rather than offered. The server support report is sent to clients atomically in pages of at most 256 entries after
+  login and reload; a partial transfer never replaces the client's previous complete report.
 
 Diagnostics, for operators: `/immersivebrewing report` (writes `<world>/immersive_brewing/coverage-report.txt` with
 every recipe's status, data errors and warnings, and transformations no plan covers), `/immersivebrewing recipe <id>`,
-`/immersivebrewing profile <item>` (which reagent profile wins, at which layer, and any tie).
+`/immersivebrewing profile <item>` (which reagent profile wins, at which layer, and any tie), and
+`/immersivebrewing explain` for the held potion's effect-policy decisions. Given a stable key from a journal/report,
+`/immersivebrewing explain plan <key>` re-resolves that route and shows each source, adapter id/version, contents policy,
+quick-finishing eligibility and an actionable refusal when the route no longer resolves.
+
+### Server support statuses and destination search
+
+The Notebook Compatibility page and favourite availability use the current server report, not a client reconstruction:
+
+| Status | Meaning |
+| --- | --- |
+| `SUPPORTED` | The authored recipe validated through its live adapter and its registered effects may use the quality policy. |
+| `METADATA_ONLY` | The recipe validated, but quality is recorded without scaling its effects. |
+| `EXCLUDED` | A current item, recipe, policy or adapter exclusion deliberately removed it. |
+| `UNSUPPORTED` | Validation failed, for example because an adapter/reagent is missing, live output differs, the path cycles or declared input is too loose. The translated player reason and operator report retain the distinction. |
+
+These statuses describe recipes. Destination search describes reachable *chains* and has separate limits. Search runs
+incrementally on the server thread, shortest paths first: at most 256 graph edges per server tick globally and 64 per
+active request slice. A cached catalog stops after 32,768 examined edges or 8,192 pending nodes, keeps at most 32 input
+catalogs, and obeys `maxPlanSteps` (1-8). Results are filtered before 24-entry paging. A response says when traversal
+is incomplete or budget-limited and reports omitted alternatives; an omitted route is not relabeled unsupported.
+Contextual adapters are checked against the currently open Kettle tray and are deliberately not advertised as fully
+enumerable. Selecting, repeating or pinning a stable authored plan directly replays its current segments, independent
+of search pages and tray-list caps.
 
 ## Infusion plans: `immersive_brewing:infusion`
 
@@ -89,10 +113,9 @@ every recipe's status, data errors and warnings, and transformations no plan cov
 The server validates every plan through its adapter on copies: each step's real result must equal the next step's
 input, a step may not return to a potion already in the chain, and the final result must match `expected_output`.
 Plans that fail are reported (`/immersivebrewing recipe <id>`) and never offered. Plans chain: from any potion the
-Kettle offers every validated path up to `maxPlanSteps`, deduplicated by result and reagents. When two recipes describe
-the same result with the same reagents, the one whose id sorts first is offered. The catalog from one potion holds at
-most 512 plans; the paths whose reagents are all in the Kettle's tray are searched separately (with the same bound), so
-a full catalog does not hide what the tray can brew.
+Kettle searches validated paths up to `maxPlanSteps`, deduplicated by result and reagents. When two recipes describe
+the same result with the same reagents, the one whose id sorts first is offered. Search is incremental and bounded as
+described above; current tray context is appended before filtering and paging.
 
 A plain Forge brewing recipe whose declared input names a potion (an input stack with that potion's NBT) brews only that
 potion at the Kettle, even where its vanilla ingredient lets a brewing stand accept any potion in the same container; a
@@ -101,6 +124,18 @@ decides its inputs itself.
 
 Costs: a step consumes `ceil(servings / servings_per_reagent)` reagents and as many fuel charges. A Prepared Reagent Kit
 replaces one reagent unit. Reagents with a crafting remainder (dragon's breath) return it once per unit consumed.
+Raw items remain valid wherever the underlying recipe accepts them. A raw preparable reagent contributes extraction
+50; a reagent profile never makes Mortar preparation mandatory for an otherwise valid brew.
+
+### Container-only plans and quick finishing
+
+A `role: "container"` label does not by itself authorize data preservation or finishing. Development version 1.1.0
+offers quick finishing only when every resolved step is a proven potion→splash or splash→lingering conversion, the
+live winning registry recipe is the trusted vanilla conversion, and canonical potion contents remain equivalent. The
+server still resolves the live plan, consumes its real reagents/fuel, returns crafting remainders and checks output
+space. The complete source stack data is preserved. Finishing adds no quality score or milestone and its configured
+loaded-world duration is snapshotted when the ledger starts. A normal interactive reaction remains available when the
+proof or server setting does not allow finishing.
 
 ## Purification: `immersive_brewing:distillation`
 
@@ -181,8 +216,8 @@ than `maxPurificationsPerLineage`. Ordinary potions start from quality 50.
 | `<phase>.initial_trouble` | accepted | 0 to 0.6, default 0. |
 | `disturbances` | accepted | Any of `cold_draft`, `burner_flare`, `surge`. Omitted: all three; `[]`: none. |
 | `inertia` | accepted | 0.5 to 2.0, default 1.0: how slowly the liquid follows the burner. |
-| `presentation.accent` | reserved | `#RRGGBB`, validated and synced; not drawn in 1.0. |
-| `presentation.particle` | reserved | Synced; not drawn in 1.0. |
+| `presentation.accent` | accepted | `#RRGGBB`, validated and synced for client/world presentation. Accessible palettes remain authoritative for critical UI colors. |
+| `presentation.particle` | accepted | One of `steam`, `foam`, `bubble`, `glint`, `mote`; default `steam`. An unknown value warns and falls back to `steam`. Client density and reduced-motion settings bound emission. |
 
 Difficulty tier, phase lengths and disturbance timing come from the plan and the seeded schedule, not from the profile.
 
@@ -256,11 +291,17 @@ by field.
 
 | Condition | True when |
 | --- | --- |
+| Forge `forge:mod_loaded` | The named mod is loaded. Valid on recipes and Immersive Brewing definition files through their `conditions` array. |
 | `immersive_brewing:smithing_fallback` | Immersive Smithing is absent or its integration is off. |
 | `immersive_brewing:smithing_active` | Immersive Smithing is present and its integration is on. |
 | `immersive_brewing:tanning_enabled` | Immersive Tanning is present and its integration is on. |
 
 ## A complete small pack
+
+[`docs/examples/1.1.0/`](examples/1.1.0/) is a copyable pack-format-15 example for Minecraft 1.20.1. It contains one
+small valid file for an ingredient/reagent profile, brew presentation, duration effect policy, generic container
+transformation and Forge `mod_loaded` condition. The examples use only existing schema-1 fields and registered vanilla
+ids; their README explains that an infusion plan describes a transformation the live adapter already performs.
 
 The GameTest resources carry a working example under `src/gameTest/resources/data/ib_test/`: a plan with its own brew
 profile (`recipes/infusion/mundane_from_redstone.json`, `immersive_brewing/brew_profiles/still_water.json`), two equal

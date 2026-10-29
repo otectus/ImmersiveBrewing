@@ -81,9 +81,10 @@ final class KeyboardDriver {
         }
         for (KeyMapping k : held) if (!want.contains(k)) screen.keyReleased(k.getKey().getValue(), 0, 0);
         for (KeyMapping k : want) {
-            if (held.contains(k)) continue;
+            // A resize/focus interruption releases the screen's held state. Reassert the physical hold;
+            // GameScreen itself suppresses repeated key-down edges while a key remains held.
             screen.keyPressed(k.getKey().getValue(), 0, 0);
-            presses++;
+            if (!held.contains(k)) presses++;
         }
         held = want;
         for (KeyMapping k : taps) {

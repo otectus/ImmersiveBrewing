@@ -56,6 +56,9 @@ public record BrewProfile(ResourceLocation id, KettleSetup.Reaction infuse, @Nul
         JsonObject presentation = Json.optObject(json, "presentation");
         int accent = color(Json.optString(presentation, "accent", "#FFFFFF"), "presentation.accent");
         String particle = Json.optString(presentation, "particle", "steam");
+        if(!Set.of("steam","foam","bubble","glint","mote").contains(particle)) {
+            warnings.add("presentation.particle: unknown '"+particle+"'; using steam"); particle="steam";
+        }
         for (String field : Json.unknown(json, KNOWN)) warnings.add(field + ": unknown field ignored");
         return new BrewProfile(id, infuse, bloom, settle, List.copyOf(disturbances), inertia, accent, particle);
     }

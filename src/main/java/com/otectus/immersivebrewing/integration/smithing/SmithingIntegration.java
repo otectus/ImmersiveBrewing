@@ -1,7 +1,6 @@
 package com.otectus.immersivebrewing.integration.smithing;
 
 import com.otectus.immersivebrewing.registry.ModItems;
-import com.otectus.immersivesmithing.api.ImmersiveSmithingAPI;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fml.InterModComms;
 
@@ -19,7 +18,8 @@ public final class SmithingIntegration {
     public static final String MOD_ID = "immersive_smithing";
 
     public static void enqueueIMC() {
-        InterModComms.sendTo(MOD_ID, ImmersiveSmithingAPI.IMC_EXCLUSION, () -> (Predicate<ItemStack>) SmithingIntegration::holdsItems);
+        // Public IMC v1 key; no classes from the optional jar are needed by the core build.
+        InterModComms.sendTo(MOD_ID, "exclusion", () -> (Predicate<ItemStack>) SmithingIntegration::holdsItems);
     }
 
     static boolean holdsItems(ItemStack stack) {

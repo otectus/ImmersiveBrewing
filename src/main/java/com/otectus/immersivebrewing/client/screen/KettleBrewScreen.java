@@ -4,7 +4,10 @@ import com.otectus.immersivebrewing.batch.LedgerCodec;
 import com.otectus.immersivebrewing.client.ClientSession;
 import com.otectus.immersivebrewing.client.Keys;
 import com.otectus.immersivebrewing.client.sound.BrewingSounds;
+import com.otectus.immersivebrewing.client.tutorial.GuidedPractice;
 import com.otectus.immersivebrewing.config.ClientConfig;
+import com.otectus.immersivebrewing.data.BrewProfile;
+import com.otectus.immersivebrewing.data.BrewingDefinitions;
 import com.otectus.immersivebrewing.minigame.brewing.AdditionSpec;
 import com.otectus.immersivebrewing.minigame.brewing.Disturbance;
 import com.otectus.immersivebrewing.minigame.brewing.KettleInput;
@@ -40,6 +43,7 @@ public class KettleBrewScreen extends GameScreen {
     private boolean addQueued;
     private boolean toggledCcw;
     private boolean toggledCw;
+    private boolean toggledVigorous;
     private int mouseStir;
     private double lastAngle = Double.NaN;
     private double swirl;
@@ -92,7 +96,7 @@ public class KettleBrewScreen extends GameScreen {
         trayY = py + ph - 44;
         for (int i = 0; i < 3; i++) {
             int level = i;
-            draftButtons[i] = gameButton(Component.empty(), colL, draftY(i), colW, 18, b -> draft = level);
+            draftButtons[i] = gameButton(Component.empty(), colL, draftY(i), colW, 18, b -> setDraft(level));
         }
         Button ccw = gameButton(Component.literal("↶ ").append(key(Keys.STIR_CCW)), colR, vy + 4, stirW(), 20, b -> buttonStir = -1);
         ccw.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("screen.immersive_brewing.stir_ccw").append(" ").append(key(Keys.STIR_CCW))));
@@ -107,7 +111,7 @@ public class KettleBrewScreen extends GameScreen {
     @Override
     protected int frame() {
         int stir = 0;
-        boolean vigorous = down(Keys.VIGOROUS);
+        boolean vigorous = ClientConfig.get(ClientConfig.REDUCED_INPUT) ? toggledVigorous : down(Keys.VIGOROUS);
         boolean toggle = ClientConfig.get(ClientConfig.TOGGLE_STIR);
         boolean ccw = toggle ? toggledCcw : down(Keys.STIR_CCW);
         boolean cw = toggle ? toggledCw : down(Keys.STIR_CW);
@@ -119,15 +123,19 @@ public class KettleBrewScreen extends GameScreen {
         mouseStir = (int) Math.round(mouseStir * 0.5);
         boolean add = addQueued;
         addQueued = false;
-        return new KettleInput(draft, stir, add).pack();
+        KettleInput input = new KettleInput(draft, stir, add);
+        GuidedPractice.Stage stage = GuidedPractice.stage(session);
+        if (stage != null) input = GuidedPractice.filter(stage, input, sim().draft());
+        return input.pack();
     }
 
     @Override
     protected boolean pressed(KeyMapping key) {
         if (session.countingIn() && key != Keys.DRAFT_UP && key != Keys.DRAFT_DOWN) return true;
-        if (key == Keys.DRAFT_UP) draft = Math.min(2, draft + 1);
-        else if (key == Keys.DRAFT_DOWN) draft = Math.max(0, draft - 1);
+        if (key == Keys.DRAFT_UP) setDraft(draft + 1);
+        else if (key == Keys.DRAFT_DOWN) setDraft(draft - 1);
         else if (key == Keys.ADD) addQueued = true;
+        else if (key == Keys.VIGOROUS && ClientConfig.get(ClientConfig.REDUCED_INPUT)) toggledVigorous = !toggledVigorous;
         else if (key == Keys.STIR_CCW && ClientConfig.get(ClientConfig.TOGGLE_STIR)) {
             toggledCcw = !toggledCcw;
             toggledCw = false;
@@ -138,10 +146,19 @@ public class KettleBrewScreen extends GameScreen {
         return true;
     }
 
+    private void setDraft(int level) {
+        int next = Math.max(0, Math.min(2, level));
+        if (next == draft) return;
+        draft = next;
+        if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("narration.immersive_brewing.draft",
+                Component.translatable("draft.immersive_brewing." + (draft == 0 ? "low" : draft == 1 ? "medium" : "high"))));
+    }
+
     @Override
     protected void onReleaseAll() {
         toggledCcw = false;
         toggledCw = false;
+        toggledVigorous = false;
         buttonStir = 0;
         mouseStir = 0;
         lastAngle = Double.NaN;
@@ -203,11 +220,16 @@ public class KettleBrewScreen extends GameScreen {
         if (!session.countingIn()) swirl += s.circulation() * 0.25;
         BrewingSounds.kettle(s.heat(), s.circulation(), s.foam(), session.countingIn());
         int phase = s.params().phaseIndex(Math.min(s.step(), s.params().totalSteps() - 1));
-        if (phase != lastPhase) lastPhase = phase;
+        if (phase != lastPhase && !session.countingIn()) {
+            lastPhase = phase;
+            if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("narration.immersive_brewing.phase",
+                    Component.translatable("phase.immersive_brewing." + s.phase().phase().serialized())));
+        }
         Disturbance warning = s.warning();
         if (warning != null && warning.step() != lastWarned && s.step() < warning.step()) {
             lastWarned = warning.step();
             BrewingSounds.cue(true);
+            if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("cue.immersive_brewing.warning." + warning.kind().serialized()));
         }
         int next = s.nextAddition();
         if (next < s.params().additions().size()) {
@@ -215,6 +237,8 @@ public class KettleBrewScreen extends GameScreen {
             if (s.step() >= a.openStep() && lastCued != next) {
                 lastCued = next;
                 BrewingSounds.cue(false);
+                if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("narration.immersive_brewing.add_now",
+                        itemFor(a.item()).getHoverName()));
             }
         }
     }
@@ -262,6 +286,11 @@ public class KettleBrewScreen extends GameScreen {
         int remaining = (s.remainingSteps() + 19) / 20;
         Component right = Component.translatable("screen.immersive_brewing.kettle.phase_time", phaseText, remaining);
         if (ClientConfig.get(ClientConfig.NUMERIC_DISPLAY)) right = right.copy().append(" · C " + s.score().control());
+        double momentum = s.burner() - s.heat();
+        String trend = momentum > 0.015 ? "rising" : momentum < -0.015 ? "falling" : "steady";
+        // Share the wide, dark status row; the old 54px label above the gauge crossed the progress bar.
+        right = right.copy().append(" · ").append(Component.translatable("screen.immersive_brewing.heat_trend." + trend)
+                .withStyle(style -> style.withColor(Math.abs(momentum) > 0.08 ? Ui.onDark(p.warn()) : p.insetMuted())));
         header(g, output, Component.translatable("screen.immersive_brewing.kettle.making", servings, output.getHoverName()), right, px, py, pw);
         Ui.progress(g, px + 6, py + 35, pw - 12, 4, (double) s.step() / params.totalSteps(), p.accent());
 
@@ -310,6 +339,11 @@ public class KettleBrewScreen extends GameScreen {
 
         renderTray(g, s);
         renderCues(g, s, phase, cuesTop);
+        Component guided = GuidedPractice.cue(session);
+        if (!guided.getString().isEmpty()) {
+            // Lessons use the reserved cue strip as well; floating them at y=24 covered the header status.
+            cueText(g, guided, px + 8, trayY - 26, pw - 16, 2, p.accent());
+        }
     }
 
     private void renderVessel(GuiGraphics g, KettleSimulation s, ItemStack output, float partialTick) {
@@ -321,6 +355,8 @@ public class KettleBrewScreen extends GameScreen {
         int liquidTop = vy + 10;
         int base = colourFor(output, s);
         g.fill(vx, liquidTop, vx + vw, vy + vh, base);
+        BrewProfile profile = profile();
+        renderProfileMotes(g, s, profile, liquidTop, partialTick);
         // sediment
         int sediment = (int) Math.round(s.sediment() * (vh - 14) * 0.45);
         if (sediment > 0) g.fill(vx, vy + vh - sediment, vx + vw, vy + vh, Ui.withAlpha(0x5A2A1A, 220));
@@ -399,6 +435,29 @@ public class KettleBrewScreen extends GameScreen {
         }
     }
 
+    private BrewProfile profile() {
+        ResourceLocation id = ResourceLocation.tryParse(session.display.getString("profile"));
+        return BrewingDefinitions.client().brewProfile(id);
+    }
+
+    /** Uses synced authored presentation without overriding the accessible semantic palette or reduced-motion setting. */
+    private void renderProfileMotes(GuiGraphics g, KettleSimulation s, BrewProfile profile, int liquidTop, float partialTick) {
+        double density = ClientConfig.get(ClientConfig.PARTICLE_DENSITY);
+        if (density <= 0) return;
+        int color = Ui.profileAccent(profile.accentColor());
+        int count = Math.max(1, (int) Math.round(6 * density * (ClientConfig.get(ClientConfig.REDUCED_MOTION) ? 0.35 : 1.0)));
+        boolean falling = profile.particle().contains("ash") || profile.particle().contains("sediment");
+        boolean sparkle = profile.particle().contains("spark") || profile.particle().contains("glint");
+        double time = s.step() + (session.paused() ? 0 : partialTick);
+        for (int i = 0; i < count; i++) {
+            int x = vx + 5 + Math.floorMod(i * 43 + (int) (time / 3), Math.max(1, vw - 10));
+            int span = Math.max(1, vy + vh - liquidTop - 8);
+            int y = liquidTop + 4 + Math.floorMod(i * 17 + (int) (time * (falling ? 0.35 : -0.45)), span);
+            g.fill(x, y, x + (sparkle ? 2 : 1), y + 1, color);
+            if (sparkle) g.fill(x, y - 1, x + 1, y + 2, color);
+        }
+    }
+
     private static int colourFor(ItemStack output, KettleSimulation s) {
         int water = 0x385DC6;
         int target = output.isEmpty() ? water : PotionUtils.getColor(output);
@@ -412,7 +471,7 @@ public class KettleBrewScreen extends GameScreen {
         KettleParams params = s.params();
         int next = s.nextAddition();
         addButton.active = !session.countingIn() && next < params.additions().size();
-        addButton.visible = !help && next < params.additions().size();
+        addButton.visible = !controlsBlocked() && next < params.additions().size();
         if (next >= params.additions().size()) {
             fitted(g, Component.translatable("screen.immersive_brewing.tray.done"), trayX + 6, trayY + 16, trayW - 12, p.insetMuted());
             return;
@@ -506,6 +565,23 @@ public class KettleBrewScreen extends GameScreen {
             cues.add(Component.translatable("screen.immersive_brewing.tray.refused"));
             colors.add(p.bad());
         }
+        Component priority = null;
+        int priorityColor = p.warn();
+        int nextAddition = s.nextAddition();
+        if (written && nextAddition < s.params().additions().size()) {
+            AdditionSpec addition = s.params().additions().get(nextAddition);
+            if (s.step() >= addition.openStep() && s.step() < addition.closeStep()) {
+                priority = Component.translatable("screen.immersive_brewing.tray.now");
+                priorityColor = p.good();
+            } else if (s.step() >= addition.cueStep() && s.step() < addition.openStep()) {
+                priority = Component.translatable("screen.immersive_brewing.tray.soon");
+            }
+        }
+        int phaseIndex = s.params().phaseIndex(Math.min(s.step(), s.params().totalSteps() - 1));
+        if (written && priority == null && phaseIndex + 1 < s.params().phases().size() && phase.end() - s.step() <= 40) {
+            priority = Component.translatable("screen.immersive_brewing.phase_next",
+                    Component.translatable("phase.immersive_brewing." + s.params().phases().get(phaseIndex + 1).phase().serialized()));
+        }
         int y = top;
         int w = Math.max(60, px + pw - 8 - colR);
         int bottom = trayY - 30;
@@ -519,7 +595,11 @@ public class KettleBrewScreen extends GameScreen {
             y += lines * 10 + 2;
         }
         // The most important cue has its own bounded area under the vessel.
-        if (written) cueText(g, cues.get(cues.size() - 1), px + 8, trayY - 26, pw - 16, 2, colors.get(colors.size() - 1));
+        if (written && GuidedPractice.stage(session) == null) {
+            Component important = priority != null ? priority : cues.get(cues.size() - 1);
+            int importantColor = priority != null ? priorityColor : colors.get(colors.size() - 1);
+            cueText(g, important, px + 8, trayY - 26, pw - 16, 2, importantColor);
+        }
         return y + 2;
     }
 

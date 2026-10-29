@@ -56,7 +56,7 @@ public class KettleRenderer implements BlockEntityRenderer<BrewersKettleBlockEnt
             RenderBits.surface(pose, buffers, 0.16F, 0.16F, 0.84F, 0.84F, level, 0xC0000000 | color, light);
             if (active && visual.trouble() > 0.2F) {
                 int alpha = (int) Math.min(200, visual.trouble() * 220);
-                RenderBits.surface(pose, buffers, 0.18F, 0.18F, 0.82F, 0.82F, level + 0.01F, alpha << 24 | 0xF2F2EA, light);
+                RenderBits.surface(pose, buffers, 0.18F, 0.18F, 0.82F, 0.82F, level + 0.01F, alpha << 24 | visual.accent() & 0xFFFFFF, light);
             }
             if (state == JobState.SEALED || state == JobState.RECOVERY) {
                 // A tied cloth over the mouth: linen when sealed for resuming, dull red when held for recovery.

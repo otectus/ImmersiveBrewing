@@ -7,7 +7,21 @@
       "translate": "advancements.immersive_brewing.fine_batch.title"
     },
     "description": {
-      "translate": "advancements.immersive_brewing.fine_batch.description"
+      "translate": "advancements.immersive_brewing.fine_batch.description",
+      "extra": [
+        {
+          "text": " \u2014 "
+        },
+        {
+          "translate": "item.immersive_brewing.brewers_notebook"
+        },
+        {
+          "text": ": "
+        },
+        {
+          "translate": "notebook.immersive_brewing.tab.quality"
+        }
+      ]
     },
     "frame": "task",
     "show_toast": true,

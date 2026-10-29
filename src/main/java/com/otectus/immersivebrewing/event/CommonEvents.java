@@ -48,7 +48,10 @@ public final class CommonEvents {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) SessionManager.tick(event.getServer());
+        if (event.phase == TickEvent.Phase.END) {
+            SessionManager.tick(event.getServer());
+            com.otectus.immersivebrewing.recipe.CatalogSearch.tick(event.getServer());
+        }
     }
 
     @SubscribeEvent
@@ -68,6 +71,7 @@ public final class CommonEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         SessionManager.clear();
+        com.otectus.immersivebrewing.recipe.CatalogSearch.clear();
         PlanIndex.invalidate();
         BrewingDataLoader.reset();
     }
@@ -92,6 +96,7 @@ public final class CommonEvents {
 
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if(event.getEntity() instanceof ServerPlayer player) com.otectus.immersivebrewing.recipe.CatalogSearch.leave(player);
         if (event.getEntity() instanceof ServerPlayer player) SessionManager.sealPlayer(player, "session.immersive_brewing.end.disconnected");
     }
 

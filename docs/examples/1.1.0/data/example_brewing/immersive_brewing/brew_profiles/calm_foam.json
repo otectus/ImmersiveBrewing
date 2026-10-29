@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "infuse": {
+    "signature": "light_foam",
+    "heat_band": [
+      0.44,
+      0.6
+    ],
+    "circulation_band": [
+      0.24,
+      0.5
+    ],
+    "initial_trouble": 0.1
+  },
+  "disturbances": [
+    "cold_draft"
+  ],
+  "inertia": 1.1,
+  "presentation": {
+    "accent": "#78B8A0",
+    "particle": "mote"
+  }
+}

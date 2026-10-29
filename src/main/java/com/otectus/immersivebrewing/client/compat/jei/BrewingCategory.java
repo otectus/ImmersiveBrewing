@@ -107,8 +107,11 @@ final class BrewingCategory implements IRecipeCategory<InfusionRecipe> {
         int y = 68 + Ui.wrapped(g, Component.translatable("jei.immersive_brewing.brewing.fuel", recipe.steps().size(), recipe.maxServings()),
                 2, 66, WIDTH - 4, 0xFF404040);
         PlanIndex.Status status = statuses.getOrDefault(recipe.getId(), PlanIndex.Status.SUPPORTED);
-        Component quality = Component.translatable(status == PlanIndex.Status.METADATA_ONLY ? "jei.immersive_brewing.brewing.recorded"
-                : "jei.immersive_brewing.brewing.quality");
+        ItemStack example = recipe.expectedOutput().stack(PotionUtils.getPotion(recipe.input().stack(null)));
+        boolean scales = com.otectus.immersivebrewing.potion.PotionContentsService.durationCanScale(example,
+                com.otectus.immersivebrewing.data.BrewingDefinitions.client());
+        Component quality = Component.translatable(recipe.generic() ? "jei.immersive_brewing.brewing.container"
+                : status == PlanIndex.Status.METADATA_ONLY || !scales ? "jei.immersive_brewing.brewing.recorded" : "jei.immersive_brewing.brewing.quality");
         Ui.wrapped(g, quality, 2, y, WIDTH - 4, 0xFF404040);
     }
 }

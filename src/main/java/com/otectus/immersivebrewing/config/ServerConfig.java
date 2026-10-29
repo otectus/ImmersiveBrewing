@@ -15,6 +15,8 @@ public final class ServerConfig {
 
     public static final ForgeConfigSpec.EnumValue<BrewingMode> BREWING_MODE;
     public static final ForgeConfigSpec.BooleanValue REPLACE_MODIFIERS;
+    public static final ForgeConfigSpec.BooleanValue QUICK_FINISHING;
+    public static final ForgeConfigSpec.IntValue FINISHING_SECONDS;
     public static final ForgeConfigSpec.IntValue MAX_BATCH_SERVINGS;
     public static final ForgeConfigSpec.IntValue SERVINGS_PER_VANILLA_REAGENT;
     public static final ForgeConfigSpec.IntValue FUEL_CHARGES_PER_BLAZE_POWDER;
@@ -53,6 +55,10 @@ public final class ServerConfig {
                 .defineEnum("brewingMode", BrewingMode.COEXIST);
         REPLACE_MODIFIERS = b.comment("In REPLACE_COVERED, also route covered redstone, glowstone and container conversions through the Kettle.")
                 .define("replaceModifiers", false);
+        QUICK_FINISHING = b.comment("Allow proven container-only transformations to preserve complete potion data without a minigame.")
+                .define("quickFinishing",true);
+        FINISHING_SECONDS = b.comment("Loaded-world seconds for container finishing. Existing jobs retain their saved duration.")
+                .defineInRange("finishingSeconds",7,5,10);
         b.pop();
 
         b.comment("Batches, reagents and fuel").push("batches");

@@ -159,6 +159,11 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     }
 
     public void setVisual(StationVisual visual) {
+        if(ledger!=null&&(ledger.operation()==Operation.BREW||ledger.operation()==Operation.FINISH)) {
+            var id=net.minecraft.resources.ResourceLocation.tryParse(ledger.snapshot().getString("profile"));
+            var profile=com.otectus.immersivebrewing.data.BrewingDefinitions.server().brewProfile(id==null?com.otectus.immersivebrewing.data.BrewingDefinitions.GENERIC_PROFILE:id);
+            visual=new StationVisual(visual.phase(),visual.signature(),visual.heat(),visual.circulation(),visual.trouble(),visual.progress(),visual.active(),profile.accentColor(),profile.particle());
+        }
         this.visual = visual;
         if (syncCooldown <= 0) queueSync();
     }

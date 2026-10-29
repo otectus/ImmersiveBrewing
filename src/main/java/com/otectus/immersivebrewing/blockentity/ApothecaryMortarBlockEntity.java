@@ -153,6 +153,8 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
         CompoundTag snapshot = new CompoundTag();
         snapshot.putString("profile", profile.id().toString());
         snapshot.putInt("kits", count);
+        snapshot.putFloat("assistTime", (float) assist[0]);
+        snapshot.putFloat("assistBand", (float) assist[1]);
         long seed = ((ServerLevel) level).getRandom().nextLong();
         ledger = new JobLedger(UUID.randomUUID(), Operation.PREPARE, JobState.RESERVED, List.of(taken), List.of(), 0, snapshot,
                 new KitData(taken, 1, profile.id(), 0).toStack(count), params, new long[0], seed, 0, player.getUUID(),
@@ -168,6 +170,10 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
         tag.put("reagent", LedgerCodec.saveStack(reagent.copyWithCount(1)));
         tag.putString("profile", profile.toString());
         tag.putInt("kits", kits);
+        if(ledger!=null) {
+            tag.putFloat("assistTime",Math.max(1,ledger.snapshot().getFloat("assistTime")));
+            tag.putFloat("assistBand",Math.max(1,ledger.snapshot().getFloat("assistBand")));
+        }
         return tag;
     }
 

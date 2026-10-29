@@ -3,6 +3,7 @@ package com.otectus.immersivebrewing.registry;
 import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.menu.AlembicMenu;
 import com.otectus.immersivebrewing.menu.BatchCarrierMenu;
+import com.otectus.immersivebrewing.menu.ApothecaryRackMenu;
 import com.otectus.immersivebrewing.menu.KettleMenu;
 import com.otectus.immersivebrewing.menu.MortarMenu;
 import net.minecraft.world.inventory.MenuType;
@@ -16,6 +17,8 @@ public final class ModMenus {
 
     public static final RegistryObject<MenuType<MortarMenu>> MORTAR = MENUS.register("apothecary_mortar",
             () -> IForgeMenuType.create(MortarMenu::fromNetwork));
+    public static final RegistryObject<MenuType<ApothecaryRackMenu>> APOTHECARY_RACK = MENUS.register("apothecary_rack",
+            () -> IForgeMenuType.create(ApothecaryRackMenu::fromNetwork));
     public static final RegistryObject<MenuType<KettleMenu>> KETTLE = MENUS.register("brewers_kettle",
             () -> IForgeMenuType.create(KettleMenu::fromNetwork));
     public static final RegistryObject<MenuType<AlembicMenu>> ALEMBIC = MENUS.register("alembic",

@@ -8,9 +8,12 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
-/** Notebook preferences: add or remove a favourite plan, set the preferred batch size, mark a tutorial step done. */
+/** Bounded Notebook preferences and journal actions. Recipe selections remain hints and are re-resolved by the server. */
 public record NotebookPrefsC2S(Action action, String key, ItemStack display, int value) {
-    public enum Action { ADD_FAVORITE, REMOVE_FAVORITE, SET_SERVINGS, TUTORIAL_STEP }
+    public enum Action {
+        ADD_FAVORITE, REPLACE_FAVORITE, REMOVE_FAVORITE, SET_SERVINGS, TUTORIAL_STEP,
+        CLEAR_HISTORY, SET_SEARCH, SET_FILTER, SET_TAB, SET_ONBOARDING, PIN_RECIPE, DISMISS_PIN, REPEAT_SETUP, PRACTICE_PLAN
+    }
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeEnum(action);

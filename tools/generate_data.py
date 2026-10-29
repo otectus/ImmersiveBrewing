@@ -191,6 +191,9 @@ CRAFTING = {
     'brewers_notebook': shapeless([{'item': 'minecraft:book'}, {'item': 'minecraft:glass_bottle'}], f'{MOD}:brewers_notebook'),
     'batch_carrier': shaped([' P ', 'PBP', ' P '], {'P': {'tag': 'minecraft:planks'}, 'B': {'item': 'minecraft:glass_bottle'}},
                             f'{MOD}:batch_carrier'),
+    'apothecary_rack': shaped(['S S', 'PPP', 'S S'], {'S': {'item': 'minecraft:stick'}, 'P': {'tag': 'minecraft:planks'}}, f'{MOD}:apothecary_rack'),
+    'light_gray_glass_from_spent_salt': shapeless([{'item': f'{MOD}:spent_alchemical_salt'}, {'item': 'minecraft:glass'}], 'minecraft:light_gray_stained_glass'),
+    'light_gray_pane_from_spent_salt': shapeless([{'item': f'{MOD}:spent_alchemical_salt'}, {'item': 'minecraft:glass_pane'}], 'minecraft:light_gray_stained_glass_pane'),
     'gray_dye_from_spent_salt': shapeless([{'item': f'{MOD}:spent_alchemical_salt'}, {'item': 'minecraft:ink_sac'}], 'minecraft:gray_dye', 2),
 }
 
@@ -461,6 +464,8 @@ def advancement(name, icon, parent, frame='task', criteria=None, toast=True):
     display = {'icon': {'item': icon}, 'title': {'translate': f'advancements.{MOD}.{name}.title'},
                'description': {'translate': f'advancements.{MOD}.{name}.description'}, 'frame': frame,
                'show_toast': toast, 'announce_to_chat': toast, 'hidden': False}
+    topic = {'root': 'start', 'first_brew': 'controls', 'prepare_kit': 'reagents', 'resume': 'recovery', 'fine_batch': 'quality', 'masterwork_batch': 'quality'}.get(name, 'stations')
+    display['description']['extra'] = [{'text': ' — '}, {'translate': f'item.{MOD}.brewers_notebook'}, {'text': ': '}, {'translate': f'notebook.{MOD}.tab.{topic}'}]
     if parent is None:
         display['background'] = 'minecraft:textures/block/bricks.png'
     out = {'display': display}
@@ -572,6 +577,10 @@ def alembic_model():
     return {'parent': 'block/block', 'render_type': 'minecraft:translucent', 'textures': t, 'elements': els}
 
 
+def rack_model():
+    return {'parent': 'block/block', 'textures': {'particle': 'minecraft:block/spruce_planks', 'wood': 'minecraft:block/spruce_planks', 'edge': 'minecraft:block/dark_oak_planks'}, 'elements': [{'from': [0, 0, 2], 'to': [16, 2, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 7, 2], 'to': [16, 9, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 14, 2], 'to': [16, 16, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 0, 7], 'to': [1, 16, 9], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#wood'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [15, 0, 7], 'to': [16, 16, 9], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#wood'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [5.2, 2, 6.8], 'to': [5.7, 14, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}}}, {'from': [10.3, 2, 6.8], 'to': [10.8, 14, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}}}]}
+
+
 def blockstate(block):
     variants = {}
     for facing, y in (('north', 0), ('east', 90), ('south', 180), ('west', 270)):
@@ -634,6 +643,12 @@ def files():
     out[ASSETS / 'models/block/brewers_kettle.json'] = kettle_model()
     out[ASSETS / 'models/block/apothecary_mortar.json'] = mortar_model()
     out[ASSETS / 'models/block/alembic.json'] = alembic_model()
+    out[ASSETS / 'models/block/apothecary_rack.json'] = rack_model()
+    out[ASSETS / 'models/item/apothecary_rack.json'] = {'parent': f'{MOD}:block/apothecary_rack'}
+    rack_loot = loot('apothecary_rack')
+    rack_loot['pools'][0]['entries'][0].pop('functions', None)
+    out[DATA / 'loot_tables/blocks/apothecary_rack.json'] = rack_loot
+    out[ASSETS / 'blockstates/apothecary_rack.json'] = {'variants': {f'facing={facing}': {'model': f'{MOD}:block/apothecary_rack', **({'y': angle} if angle else {})} for facing, angle in [('north', 0), ('east', 90), ('south', 180), ('west', 270)]}}
     for name, model in ITEM_MODELS.items():
         out[ASSETS / f'models/item/{name}.json'] = model
     return out

@@ -19,10 +19,20 @@ tones and envelopes (bubbles, grinding, glass, valves, drips).
 
 Block models are built from boxes in `tools/generate_data.py` and use only these textures.
 
-The project listing icon lives at `../project-icon-128.png` (128×128 source) and `../project-icon.png` (512×512 export),
-matching the sister mods' filenames and 32-color pixel-art style. Its kettle, paddle and burner artwork was created
-with the built-in image generation tool using [this prompt](project-icon-prompt.txt), then reduced to 128×128 with
-nearest-neighbor sampling and quantized to 32 colors without dithering. Rebuild the export with
+The complete project listing icon, including its copper tubing border, lives at `../project-icon-64.png`
+(64×64 master), with `../project-icon-128.png` (128×128 export) and `../project-icon.png` (512×512 export).
+Its copper-necked flask and green reagent artwork follows the supplied MCA icon references. The thematic
+border was reworked with the built-in image generation tool using [this prompt](project-icon-prompt.txt),
+then the entire image was reduced to 64×64 with nearest-neighbor sampling and quantized to 32 colors
+without dithering.
+
+The complete 32×32 variant, `../project-icon-32.png`, is an independently simplified design with larger shapes,
+a thin copper pipe border and at most 16 colors. It was redrawn using the built-in image generation tool with
+[this 32px prompt](project-icon-32-prompt.txt), then normalized to a 32×32 grid without dithering.
+This file is the source for `../project-icon-32-512.png`, an exact 16× enlargement.
+
+Rebuild the three enlarged exports from their respective 64px and 32px masters with
 `python3 tools/generate_textures.py --project-icon --write`; verify it with
-`python3 tools/generate_textures.py --project-icon --check`. The export uses Pillow's `Image.Resampling.NEAREST`,
-so each source pixel becomes one solid 4×4 block with identical color and alpha, without smoothing or antialiasing.
+`python3 tools/generate_textures.py --project-icon --check`. All resize operations use Pillow's `Image.Resampling.NEAREST`.
+The 64px artwork enlarges into solid 2×2 or 8×8 pixel blocks, while the 32px variant enlarges into solid 16×16 blocks,
+with identical color and alpha throughout each block, including the border, without smoothing or antialiasing.

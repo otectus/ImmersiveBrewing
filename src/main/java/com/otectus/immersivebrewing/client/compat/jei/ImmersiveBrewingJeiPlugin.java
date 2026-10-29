@@ -39,6 +39,8 @@ import java.util.Map;
 public class ImmersiveBrewingJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = ImmersiveBrewing.id("jei_plugin");
     private final Map<ResourceLocation, PlanIndex.Status> statuses = new HashMap<>();
+    private mezz.jei.api.runtime.IJeiRuntime runtime;
+    private List<InfusionRecipe> visible=List.of();
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -64,17 +66,17 @@ public class ImmersiveBrewingJeiPlugin implements IModPlugin {
         if (level == null) return;
         RecipeManager recipes = level.getRecipeManager();
         BrewingDefinitions defs = BrewingDefinitions.client();
-        PlanIndex index = PlanIndex.forClient(recipes, defs);
         statuses.clear();
         List<InfusionRecipe> shown = new ArrayList<>();
         for (InfusionRecipe recipe : recipes.getAllRecipesFor(ModRecipeTypes.INFUSION.get())) {
-            PlanIndex.Entry entry = index.entry(recipe.getId());
+            PlanIndex.Entry entry = com.otectus.immersivebrewing.client.ServerCatalog.entry(recipe.getId());
             if (entry == null || entry.status() == PlanIndex.Status.UNSUPPORTED || entry.status() == PlanIndex.Status.EXCLUDED) continue;
             statuses.put(recipe.getId(), entry.status());
             shown.add(recipe);
         }
         shown.sort(java.util.Comparator.comparing(r -> r.getId().toString()));
         registration.addRecipes(BrewingCategory.TYPE, shown);
+        visible=List.copyOf(shown);
         List<PreparationCategory.Entry> preparation = new ArrayList<>();
         for (ReagentProfile profile : defs.reagentProfiles()) {
             if (profile.preparation() == null) continue;
@@ -111,15 +113,38 @@ public class ImmersiveBrewingJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
-        registration.addRecipeTransferHandler(new KettleTransferInfo());
+        registration.addRecipeTransferHandler(new KettleBatchTransfer(registration.getTransferHelper()),BrewingCategory.TYPE);
     }
 
     @Override
     public void onRuntimeAvailable(mezz.jei.api.runtime.IJeiRuntime runtime) {
+        this.runtime=runtime;
+        com.otectus.immersivebrewing.client.ServerCatalog.changed=this::refresh;
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(this::recipesUpdated);
+        refresh();
         java.util.Map<String, Long> counts = new java.util.LinkedHashMap<>();
         for (mezz.jei.api.recipe.RecipeType<?> type : List.of(BrewingCategory.TYPE, PreparationCategory.TYPE, DistillationCategory.TYPE, ReclamationCategory.TYPE)) {
             counts.put(type.getUid().getPath(), runtime.getRecipeManager().createRecipeLookup(type).get().count());
         }
         JeiStatus.record(counts);
+    }
+
+    private void recipesUpdated(net.minecraftforge.client.event.RecipesUpdatedEvent event) { refresh(); }
+
+    private void refresh() {
+        var level=Minecraft.getInstance().level;
+        if(runtime==null||level==null)return;
+        var manager=runtime.getRecipeManager();
+        manager.hideRecipes(BrewingCategory.TYPE,visible);
+        List<InfusionRecipe> next=new ArrayList<>(); statuses.clear();
+        for(var recipe:level.getRecipeManager().getAllRecipesFor(ModRecipeTypes.INFUSION.get())) {
+            var entry=com.otectus.immersivebrewing.client.ServerCatalog.entry(recipe.getId());
+            if(entry==null||entry.status()==PlanIndex.Status.UNSUPPORTED||entry.status()==PlanIndex.Status.EXCLUDED)continue;
+            statuses.put(recipe.getId(),entry.status()); next.add(recipe);
+            if(!visible.contains(recipe)) manager.addRecipes(BrewingCategory.TYPE,List.of(recipe));
+        }
+        manager.unhideRecipes(BrewingCategory.TYPE,next); visible=List.copyOf(next);
+        java.util.Map<String,Long> counts=new java.util.LinkedHashMap<>(JeiStatus.counts());
+        counts.put("brewing",(long)visible.size()); JeiStatus.record(counts);
     }
 }

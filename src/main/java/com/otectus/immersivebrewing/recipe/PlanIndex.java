@@ -47,7 +47,7 @@ import java.util.TreeSet;
  * <li>Plans chain validated segments end to start (a modifier recipe after an effect recipe, a container conversion
  * after either), up to {@code maxPlanSteps} steps, never revisiting a state, and at most {@link #MAX_PLANS} per input.</li>
  * <li>Generic container recipes ({@code match: item}) are checked per concrete state when a chain uses them.</li>
- * <li>The catalog from one input stops at {@link #MAX_PLANS}; {@link #plansUsing} completes it for what a tray holds.</li>
+ * <li>The legacy plansFrom API stops at {@link #MAX_PLANS}; catalog queries instead traverse destinations incrementally and report budgets explicitly.</li>
  * </ul>
  */
 public final class PlanIndex {
@@ -80,15 +80,117 @@ public final class PlanIndex {
     }
 
     private static volatile PlanIndex server;
+    private static final java.util.concurrent.atomic.AtomicInteger EPOCHS = new java.util.concurrent.atomic.AtomicInteger();
 
     private final RecipeManager recipes;
     private final int generation;
+    private final int dataGeneration;
     private final int configKey;
     private final BrewingDefinitions defs;
     private final Map<ResourceLocation, Validated> validated = new LinkedHashMap<>();
     private final Map<Long, List<Segment>> byStart = new HashMap<>();
     private final List<InfusionRecipe> generic = new ArrayList<>();
+    private final Map<ResourceLocation, InfusionRecipe> genericById = new LinkedHashMap<>();
     private final List<Entry> report = new ArrayList<>();
+    private final Map<Long, Catalog> catalogs = new LinkedHashMap<>(16, .75F, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<Long, Catalog> entry) { return size() > 32; }
+    };
+
+    /** Incremental destination search. The first (shortest) path to each state is expanded before alternatives.
+     * Work counts every concrete/generic candidate inspected, including refusals, on the server tick service. */
+    public final class Catalog {
+        private final ItemStack input;
+        private final java.util.PriorityQueue<Node> pending = new java.util.PriorityQueue<>(Comparator.comparingInt(Node::steps));
+        private final Map<Long, Integer> expanded = new HashMap<>();
+        private final Set<String> dedupe = new HashSet<>();
+        private final List<BrewPlan> results = new ArrayList<>();
+        private Node active;
+        private List<Segment> activeSegments = List.of();
+        private int segmentCursor, genericCursor, work, omitted;
+        private boolean limited;
+        private Catalog(ItemStack input) {
+            this.input = input.copyWithCount(1);
+            pending.add(new Node(this.input, List.of(), 0, Set.of(PotionContentsService.fingerprint(input))));
+        }
+        public void advance(int budget) {
+            int maxSteps = ServerConfig.get(ServerConfig.MAX_PLAN_STEPS);
+            while (budget-- > 0 && !limited) {
+                if (work >= 32768 || pending.size() >= 8192) { limited = true; return; }
+                if (active == null) {
+                    if (pending.isEmpty()) return;
+                    active = pending.poll();
+                    long fp = PotionContentsService.fingerprint(active.state());
+                    int visits = expanded.merge(fp, 1, Integer::sum);
+                    if (visits > 4) { omitted++; active = null; work++; continue; }
+                    activeSegments = byStart.getOrDefault(fp, List.of());
+                    segmentCursor = 0;
+                    genericCursor = 0;
+                }
+                work++;
+                Node node = active;
+                Chained next = inspectNextCandidate();
+                if (segmentCursor >= activeSegments.size() && genericCursor >= generic.size()) active = null;
+                if (next == null) continue;
+                int steps = node.steps() + next.steps().size();
+                if (steps > maxSteps || node.chain().size() >= PlanKey.MAX_PARTS) continue;
+                Set<Long> seen = new HashSet<>(node.seen());
+                boolean cycle = false;
+                for (BrewPlan.Step step : next.steps()) if (!seen.add(PotionContentsService.fingerprint(step.after()))) { cycle = true; break; }
+                if (cycle) continue;
+                List<Chained> chain = new ArrayList<>(node.chain());
+                chain.add(next);
+                BrewPlan plan = assemble(input, chain, false);
+                if (plan == null || !dedupe.add(dedupeKey(plan))) continue;
+                results.add(plan);
+                if (steps < maxSteps) pending.add(new Node(plan.output(), chain, steps, seen));
+            }
+        }
+        @Nullable
+        private Chained inspectNextCandidate() {
+            if (segmentCursor < activeSegments.size()) {
+                Segment segment = activeSegments.get(segmentCursor++);
+                return PotionContentsService.sameCanonical(active.state(), segment.start()) ? chain(segment) : null;
+            }
+            if (genericCursor < generic.size()) {
+                InfusionRecipe recipe = generic.get(genericCursor++);
+                List<BrewPlan.Step> steps = applyGeneric(recipe, active.state(), null);
+                return steps == null ? null : new Chained(authoredPart(recipe.getId(), 0, recipe.steps().size()), steps);
+            }
+            return null;
+        }
+        public List<BrewPlan> plans() { return Collections.unmodifiableList(results); }
+        public boolean done() { return limited || active == null && pending.isEmpty(); }
+        public boolean budgetLimited() { return limited; }
+        public int omittedAlternatives() { return omitted; }
+        public int work() { return work; }
+        public long destinations() { return results.stream().map(p -> PotionContentsService.fingerprint(p.output())).distinct().count(); }
+    }
+
+    public Catalog catalog(ItemStack input) {
+        ItemStack canonical = PotionContentsService.canonical(input).copyWithCount(1);
+        return catalogs.computeIfAbsent(PotionContentsService.fingerprint(canonical), k -> new Catalog(canonical));
+    }
+
+    public int generation() { return generation; }
+    public List<String> catalogDiagnostics() {
+        List<String> lines=new ArrayList<>();
+        for(var entry:catalogs.entrySet()) {
+            Catalog c=entry.getValue();
+            lines.add("Catalog "+entry.getKey()+": "+c.destinations()+" supported destinations, "+c.plans().size()
+                    +" alternative routes, "+c.omittedAlternatives()+" omitted alternatives; "+c.work()+" candidate inspections; "
+                    +(c.budgetLimited()?"budget limited":c.done()?"destination traversal finished":"search incomplete"));
+        }
+        if(lines.isEmpty())lines.add("Catalog: no destination queries yet; contextual handlers are not assumed enumerable");
+        return lines;
+    }
+
+    /** Resolve the start of an authored segment without guessing from a truncated list. */
+    public ItemStack inputForKey(PlanKey key,ItemStack fallback) {
+        PlanKey.Part part=key.parts().get(0);
+        Validated v=validated.get(part.source());
+        if(v!=null&&part.from()>=0&&part.from()<v.steps().size()) return v.steps().get(part.from()).before().copy();
+        return fallback.copyWithCount(1);
+    }
     private final Map<Long, List<BrewPlan>> cache = Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75F, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<Long, List<BrewPlan>> eldest) {
@@ -105,7 +207,8 @@ public final class PlanIndex {
     private PlanIndex(RecipeManager recipes, BrewingDefinitions defs, int configKey) {
         this.recipes = recipes;
         this.defs = defs;
-        this.generation = defs.generation();
+        this.dataGeneration = defs.generation();
+        this.generation = EPOCHS.incrementAndGet();
         this.configKey = configKey;
     }
 
@@ -119,12 +222,12 @@ public final class PlanIndex {
         BrewingDefinitions defs = BrewingDefinitions.server();
         int key = configKey();
         PlanIndex current = server;
-        if (current != null && current.recipes == recipes && current.generation == defs.generation() && current.configKey == key) {
+        if (current != null && current.recipes == recipes && current.dataGeneration == defs.generation() && current.configKey == key) {
             return current;
         }
         synchronized (PlanIndex.class) {
             current = server;
-            if (current != null && current.recipes == recipes && current.generation == defs.generation() && current.configKey == key) {
+            if (current != null && current.recipes == recipes && current.dataGeneration == defs.generation() && current.configKey == key) {
                 return current;
             }
             PlanIndex index = new PlanIndex(recipes, defs, key);
@@ -136,7 +239,7 @@ public final class PlanIndex {
     }
 
     /**
-     * A one-off index validated against the client's synced recipes and data (JEI, the Notebook). Never becomes the server
+     * A one-off diagnostic index against client recipes. JEI and the Notebook consume synchronized server statuses. Never becomes the server
      * index and never feeds replacement-mode coverage.
      */
     public static PlanIndex forClient(RecipeManager recipes, BrewingDefinitions defs) {
@@ -176,7 +279,7 @@ public final class PlanIndex {
     }
 
     public boolean isValidated(ResourceLocation recipe) {
-        return validated.containsKey(recipe) || generic.stream().anyMatch(r -> r.getId().equals(recipe));
+        return validated.containsKey(recipe) || genericById.containsKey(recipe);
     }
 
     // ---- build ----
@@ -225,6 +328,10 @@ public final class PlanIndex {
             report.add(new Entry(id, Status.UNSUPPORTED, "plan.immersive_brewing.unsupported.too_long", recipe.warnings()));
             return;
         }
+        for(PlanStep step:recipe.steps()) if(step.reagent().getItems().length>16) {
+            report.add(new Entry(id,Status.UNSUPPORTED,"plan.immersive_brewing.unsupported.expansion",List.of("data/"+id.getNamespace()+"/recipes/"+id.getPath()+".json: steps[].reagent expands beyond 16 items")));
+            return;
+        }
         if (recipe.generic()) {
             for (PlanStep step : recipe.steps()) {
                 if (reagents(step.reagent()).isEmpty()) {
@@ -233,6 +340,7 @@ public final class PlanIndex {
                 }
             }
             generic.add(recipe);
+            genericById.put(id, recipe);
             report.add(new Entry(id, Status.SUPPORTED, "plan.immersive_brewing.supported.generic", recipe.warnings()));
             return;
         }
@@ -423,15 +531,24 @@ public final class PlanIndex {
             if (only != null) {
                 for (int i = seg.from; i < seg.recipe.steps.size(); i++) if (!only.contains(seg.recipe.steps.get(i).reagent())) continue segments;
             }
-            List<BrewPlan.Step> steps = new ArrayList<>();
-            for (int i = seg.from; i < seg.recipe.steps.size(); i++) steps.add(toPlanStep(seg.recipe, i));
-            out.add(new Chained(new PlanKey.Part(seg.recipe.recipe.getId(), seg.from, seg.recipe.steps.size(), seg.recipe.recipe.getId()), steps));
+            out.add(chain(seg));
         }
         for (InfusionRecipe recipe : generic) {
             List<BrewPlan.Step> steps = applyGeneric(recipe, state, only);
-            if (steps != null) out.add(new Chained(new PlanKey.Part(recipe.getId(), 0, recipe.steps().size(), recipe.getId()), steps));
+            if (steps != null) out.add(new Chained(authoredPart(recipe.getId(), 0, recipe.steps().size()), steps));
         }
         return out;
+    }
+
+    private Chained chain(Segment segment) {
+        List<BrewPlan.Step> steps = new ArrayList<>();
+        for (int i = segment.from; i < segment.recipe.steps.size(); i++) steps.add(toPlanStep(segment.recipe, i));
+        ResourceLocation id = segment.recipe.recipe.getId();
+        return new Chained(authoredPart(id, segment.from, segment.recipe.steps.size()), steps);
+    }
+
+    private static PlanKey.Part authoredPart(ResourceLocation id, int from, int to) {
+        return new PlanKey.Part(id, from, to, id);
     }
 
     private BrewPlan.Step toPlanStep(Validated v, int i) {
@@ -454,9 +571,11 @@ public final class PlanIndex {
             if (only != null && !only.contains(reagent)) return null;
             BrewingAdapter.Preview preview = adapter.preview(current, new ItemStack(reagent));
             if (!preview.supported()) return null;
+            ItemStack after=step.role()==KettleSetup.Role.CONTAINER
+                    ? QuickFinishing.preserve(current,new ItemStack(reagent),preview.output()) : preview.output();
             BrewingAdapter.BatchPolicy policy = effectivePolicy(adapter.batchPolicy(current, new ItemStack(reagent)), recipe);
-            steps.add(new BrewPlan.Step(recipe.getId(), step, reagent, adapter.id(), adapter.version(), policy, current.copy(), preview.output().copy()));
-            current = preview.output();
+            steps.add(new BrewPlan.Step(recipe.getId(), step, reagent, adapter.id(), adapter.version(), policy, current.copy(), after.copy()));
+            current = after;
         }
         if (!recipe.expectedOutput().accepts(current, state)) return null;
         if (defs.exclusions().excludesItem(current.getItem())) return null;
@@ -500,8 +619,8 @@ public final class PlanIndex {
     private ResourceLocation explicitProfile(ResourceLocation recipeId) {
         Validated v = validated.get(recipeId);
         if (v != null) return v.recipe.brewProfile();
-        for (InfusionRecipe g : generic) if (g.getId().equals(recipeId)) return g.brewProfile();
-        return null;
+        InfusionRecipe g = genericById.get(recipeId);
+        return g == null ? null : g.brewProfile();
     }
 
     /**
@@ -548,6 +667,22 @@ public final class PlanIndex {
         return null;
     }
 
+    /** Resolves exactly one authored key part without enumerating unrelated recipes. */
+    @Nullable
+    private Chained resolveAuthoredPart(PlanKey.Part part, ItemStack state) {
+        if (!part.equals(authoredPart(part.source(), part.from(), part.to()))) return null;
+        Validated concrete = validated.get(part.source());
+        if (concrete != null) {
+            if (part.from() < 0 || part.from() >= concrete.steps().size() || part.to() != concrete.steps().size()) return null;
+            if (!PotionContentsService.sameCanonical(state, concrete.steps().get(part.from()).before())) return null;
+            return chain(new Segment(concrete, part.from()));
+        }
+        InfusionRecipe recipe = genericById.get(part.source());
+        if (recipe == null || part.from() != 0 || part.to() != recipe.steps().size()) return null;
+        List<BrewPlan.Step> steps = applyGeneric(recipe, state, null);
+        return steps == null ? null : new Chained(part, steps);
+    }
+
     /**
      * Re-resolves a client's key against the actual input: the same plan if it is still valid, otherwise null. The tray
      * decides contextual keys and the paths {@link #plansUsing} adds beyond the bounded catalog.
@@ -567,10 +702,21 @@ public final class PlanIndex {
             }
             return null;
         }
-        for (BrewPlan plan : plansFrom(canonical)) if (plan.key().equals(key)) return plan;
-        List<Item> loaded = new ArrayList<>();
-        for (ItemStack tray : trayItems) if (!tray.isEmpty()) loaded.add(tray.getItem());
-        for (BrewPlan plan : plansUsing(canonical, loaded)) if (plan.key().equals(key)) return plan;
-        return null;
+        // Replay the referenced segments directly. A page limit or unloaded tray is never recipe authority.
+        if (defs.exclusions().excludesItem(canonical.getItem())) return null;
+        List<Chained> chain = new ArrayList<>();
+        ItemStack state = canonical;
+        Set<Long> seen = new HashSet<>();
+        seen.add(PotionContentsService.fingerprint(state));
+        int count = 0;
+        for (PlanKey.Part part : key.parts()) {
+            if (part.contextual()) return null;
+            Chained found = resolveAuthoredPart(part, state);
+            if (found == null || (count += found.steps().size()) > ServerConfig.get(ServerConfig.MAX_PLAN_STEPS)) return null;
+            for (BrewPlan.Step step : found.steps()) if (!seen.add(PotionContentsService.fingerprint(step.after()))) return null;
+            chain.add(found);
+            state = found.steps().get(found.steps().size() - 1).after();
+        }
+        return assemble(canonical, chain, false);
     }
 }

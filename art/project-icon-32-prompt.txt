@@ -1,0 +1,12 @@
+Built-in image_gen: independent 32px simplification
+
+Use case: style-transfer. Redraw this existing project icon as a deliberately SIMPLIFIED 32x32 game-inventory sprite. Use the input only for the recognizable project identity, broad palette and subject. Replace its detailed rendering with newly composed, much larger flat shapes that can be read at native 32 pixels. The complete icon INCLUDING ITS BORDER lives on ONE 32x32 logical pixel grid. Design actual chunky 1-pixel and 2-pixel steps; a high-resolution display is merely a nearest-neighbor enlargement of those 32 pixels. No drawn grid or size labels.
+Visual rules: at most 12 to 16 flat colors for the entire image; near-black outline, solid charcoal background, high-contrast subject. Two tones per material at most. NO smooth shading, gradients, texture, noise, tiny highlights, grain, scratches, intricate linework, filigree or dithering. Eliminate incidental decorations and small secondary elements. Each important form must have a strong solid silhouette and open negative space. Aim for a central motif about 20 to 23 logical pixels across. Keep the border quiet and narrow, usually 1 to 2 logical pixels thick with at most two small thematic ornaments; do not repeat the old dense border ornament. Keep a small dark gap between motif and border. All edge decorations fit inside the square. One opaque square image. No words, lettering, watermark, mockup or comparison sheet.
+Project: ImmersiveBrewing.
+Simplified central design: One large round flask with a short copper stopper and vivid green liquid. Thick pale glass outline, one flat green liquid surface and only one large pale reflection. No bubbles or small neck fittings.
+Simplified thematic border: Thin copper pipe rails with four square elbows, one small green sight-glass dash on the left, and a single copper valve bump on the right.
+Prioritize bold readability at 32x32 over preserving small details. The result must be visibly simpler than the input.
+
+Input reference: /home/otectus/Projects/output/imagegen/project-icons-32-2026-10-27/icons/ImmersiveBrewing/project-icon-32-512.png
+
+Export: Normalize the full generated icon, border included, to 32x32 with nearest-neighbor resizing, quantize to at most 16 colors without dithering, then enlarge that master to 512x512 with exact 16x nearest-neighbor scaling. The 32px file is an independent artwork master.

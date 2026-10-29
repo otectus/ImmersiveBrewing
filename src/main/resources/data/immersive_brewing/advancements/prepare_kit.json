@@ -7,7 +7,21 @@
       "translate": "advancements.immersive_brewing.prepare_kit.title"
     },
     "description": {
-      "translate": "advancements.immersive_brewing.prepare_kit.description"
+      "translate": "advancements.immersive_brewing.prepare_kit.description",
+      "extra": [
+        {
+          "text": " \u2014 "
+        },
+        {
+          "translate": "item.immersive_brewing.brewers_notebook"
+        },
+        {
+          "text": ": "
+        },
+        {
+          "translate": "notebook.immersive_brewing.tab.reagents"
+        }
+      ]
     },
     "frame": "task",
     "show_toast": true,

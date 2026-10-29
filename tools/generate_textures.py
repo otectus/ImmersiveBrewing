@@ -4,8 +4,8 @@
   python3 tools/generate_textures.py            # --check (default): verify every texture exists and matches
   python3 tools/generate_textures.py --write    # write every texture into src/main/resources
   python3 tools/generate_textures.py --preview sheet.png   # contact sheet at 8x for review
-  python3 tools/generate_textures.py --project-icon --write  # upscale project-icon-128.png to project-icon.png
-  python3 tools/generate_textures.py --project-icon --check  # verify the exact 4x upscale
+  python3 tools/generate_textures.py --project-icon --write  # enlarge the independent 64px and 32px masters
+  python3 tools/generate_textures.py --project-icon --check  # verify all nearest-neighbor icon variants
 
 Pixels are compared, not file bytes, so a re-save by an image tool does not count as a difference.
 """
@@ -29,22 +29,34 @@ def main():
     group.add_argument('--check', action='store_true')
     group.add_argument('--preview')
     parser.add_argument('--project-icon', action='store_true',
-                        help='use the 128x128 project icon source and its 512x512 nearest-neighbor export')
+                        help='use the independent 64x64 and 32x32 project icon masters and their nearest-neighbor enlargements')
     args = parser.parse_args()
     output_root = RES
     label = 'textures'
     if args.project_icon:
         if args.preview:
             parser.error('--preview is only available for block and item textures')
-        source_path = ROOT / 'project-icon-128.png'
+        source_path = ROOT / 'project-icon-64.png'
         try:
             with Image.open(source_path) as source:
-                if source.size != (128, 128):
-                    parser.error('project-icon-128.png must be exactly 128x128 pixels')
+                if source.size != (64, 64):
+                    parser.error('project-icon-64.png must be exactly 64x64 pixels')
                 icon = source.convert('RGBA')
         except OSError as exc:
             parser.error(f'cannot read {source_path.name}: {exc}')
-        textures = {'project-icon.png': icon.resize((512, 512), Image.Resampling.NEAREST)}
+        small_source_path = ROOT / 'project-icon-32.png'
+        try:
+            with Image.open(small_source_path) as source:
+                if source.size != (32, 32):
+                    parser.error('project-icon-32.png must be exactly 32x32 pixels')
+                small_icon = source.convert('RGBA')
+        except OSError as exc:
+            parser.error(f'cannot read {small_source_path.name}: {exc}')
+        textures = {
+            'project-icon-32-512.png': small_icon.resize((512, 512), Image.Resampling.NEAREST),
+            'project-icon-128.png': icon.resize((128, 128), Image.Resampling.NEAREST),
+            'project-icon.png': icon.resize((512, 512), Image.Resampling.NEAREST),
+        }
         output_root = ROOT
         label = 'project icons'
     else:

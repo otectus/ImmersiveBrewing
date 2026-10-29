@@ -68,12 +68,41 @@ that throws is logged and the item's own effects apply.
 
 ## Queries
 
+The catalog additions are additive API-v1 members; `ImmersiveBrewingAPI.VERSION` remains `1`, and the existing
+`plans(...)` signature and behavior are unchanged. All plan queries run on the logical server thread.
+
 | Call | Returns |
 | --- | --- |
 | `metadata(stack)` | `Optional<BrewingMetadataView>`: extraction, control, quality, grade (`crude`, `standard`, `fine`, `masterwork`), lineage, purification count, brewer UUID and name, refiner, label, note. Empty for ordinary potions. |
 | `quality(stack)` | The recorded quality, or 50 for an ordinary potion. |
 | `canonical(stack)` | A copy without Immersive Brewing's compound: what brewing queries and recipe identity use. |
-| `plans(server, input, servings)` | Every supported catalog plan from `input` with exact reagent counts, fuel charges and remainders for `servings`, as the server would charge them. |
+| `plans(server, input, servings)` | Legacy bounded query, retained for API-v1 callers: at most 512 routes from `input`, with exact reagent counts, fuel charges and remainders for `servings`. It is not an exhaustive catalog contract. |
+| `catalog(server, input, servings, search, page, workBudget)` | Advances the cached incremental catalog for the canonical input, filters before returning one 24-route page, and reports current traversal state in a `CatalogPage`. `servings` is 1-6, `search` is at most 128 characters, and `page` is 0-4096. |
+| `resolve(server, key, input, tray, servings)` | Revalidates one exact stable route against current recipes and adapters, independent of catalog pages and discovery limits. Returns empty for an invalid/stale key, invalid serving count, more than eight tray stacks, a route that no longer resolves, or a serving count above the route's limit. |
+
+`catalog(...)` advances at most `clamp(workBudget, 0, 64)` graph operations in one call. That per-call clamp is not a
+global per-tick scheduler. An integration should schedule one bounded advance for each active query on server ticks,
+apply its own aggregate per-tick budget and return control between advances; it must not spin repeated calls until the
+search finishes. Calls with the same canonical input share the server's cached traversal.
+
+`CatalogPage` has these public record components:
+
+| Component | Meaning |
+| --- | --- |
+| `generation` | Current server brewing-definition generation used by the page. |
+| `plans` | Immutable list for this page, containing at most 24 currently discovered matching routes. |
+| `knownMatches` | Number of matching routes discovered so far, before paging. It may grow while `incomplete` is true. |
+| `incomplete` | Traversal still has work that a later scheduled call may advance. |
+| `budgetLimited` | Traversal stopped at an internal safety limit; the current result is not complete. |
+| `omittedAlternatives` | Number of alternative routes skipped by bounded traversal so far. A value above zero forbids an exhaustive-result claim. |
+
+Never describe a page as complete when `incomplete` or `budgetLimited` is true, or when `omittedAlternatives` is above
+zero. In particular, `incomplete == false` can mean that a safety limit stopped traversal; check all three fields.
+
+Every returned route is a `PlanQuery` with the active public components `key`, `input`, `output`, parallel `reagents`
+and `reagentCounts` lists, `fuelCharges`, `remainders`, and `contextual`. Pass `key` back to `resolve(...)` before acting
+on a saved selection. For a contextual route, supply the current explicit tray stacks; the API never guesses unopened
+inventory contents.
 
 Read brewing data through `metadata(stack)` rather than the stack's NBT. For reference, it lives in the stack tag under
 `immersive_brewing` (schema 1): `schema`, `E`, `C`, `Q` (bytes), optional `lineage` (long), `purified` (byte),
@@ -97,5 +126,6 @@ events for progression and rewards; they fire exactly once per committed result.
 
 ## Stability
 
-Within API version 1: the classes and members above keep their signatures and meaning; new members may be added. A
-breaking change raises `ImmersiveBrewingAPI.VERSION`.
+Within API version 1: the classes and members above keep their signatures and meaning; new members such as
+`CatalogPage`, `catalog(...)` and `resolve(...)` may be added without changing the version. The legacy 512-route
+`plans(...)` bound remains part of its existing meaning. A breaking change raises `ImmersiveBrewingAPI.VERSION`.

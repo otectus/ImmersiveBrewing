@@ -8,7 +8,11 @@ import net.minecraft.nbt.CompoundTag;
  *
  * @param phase -1 when idle, else the kettle phase ordinal (or 0 for other stations)
  */
-public record StationVisual(int phase, int signature, float heat, float circulation, float trouble, float progress, boolean active) {
+public record StationVisual(int phase, int signature, float heat, float circulation, float trouble, float progress, boolean active,
+                            int accent,String particle) {
+    public StationVisual(int phase,int signature,float heat,float circulation,float trouble,float progress,boolean active) {
+        this(phase,signature,heat,circulation,trouble,progress,active,0xFFFFFF,"steam");
+    }
     public static final StationVisual IDLE = new StationVisual(-1, 0, 0, 0, 0, 0, false);
 
     public CompoundTag save() {
@@ -20,13 +24,16 @@ public record StationVisual(int phase, int signature, float heat, float circulat
         tag.putFloat("trouble", trouble);
         tag.putFloat("progress", progress);
         tag.putBoolean("active", active);
+        tag.putInt("accent",accent);
+        tag.putString("particle",particle);
         return tag;
     }
 
     public static StationVisual load(CompoundTag tag) {
         return new StationVisual(tag.getByte("phase"), tag.getByte("sig"), clamp(tag.getFloat("heat"), 0, 1),
                 clamp(tag.getFloat("circ"), -1, 1), clamp(tag.getFloat("trouble"), 0, 1), clamp(tag.getFloat("progress"), 0, 1),
-                tag.getBoolean("active"));
+                tag.getBoolean("active"),tag.contains("accent")?tag.getInt("accent"):0xFFFFFF,
+                tag.contains("particle")?tag.getString("particle"):"steam");
     }
 
     private static float clamp(float v, float min, float max) {

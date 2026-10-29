@@ -7,7 +7,21 @@
       "translate": "advancements.immersive_brewing.purify.title"
     },
     "description": {
-      "translate": "advancements.immersive_brewing.purify.description"
+      "translate": "advancements.immersive_brewing.purify.description",
+      "extra": [
+        {
+          "text": " \u2014 "
+        },
+        {
+          "translate": "item.immersive_brewing.brewers_notebook"
+        },
+        {
+          "text": ": "
+        },
+        {
+          "translate": "notebook.immersive_brewing.tab.stations"
+        }
+      ]
     },
     "frame": "task",
     "show_toast": true,

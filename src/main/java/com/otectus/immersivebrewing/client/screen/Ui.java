@@ -50,6 +50,18 @@ public final class Ui {
         };
     }
 
+    /** Authored profile colour in the standard palette; accessibility palettes retain their tested semantic accent. */
+    public static int profileAccent(int authoredRgb) {
+        if (ClientConfig.get(ClientConfig.PALETTE) != ClientConfig.Palette.STANDARD) return palette().accent();
+        int rgb = authoredRgb & 0xFFFFFF;
+        int r = rgb >> 16 & 255, g = rgb >> 8 & 255, b = rgb & 255;
+        // Keep authored data legible on both the light panel and dark vessel by avoiding either luminance extreme.
+        int luminance = (r * 299 + g * 587 + b * 114) / 1000;
+        if (luminance < 55) { r = (r + 120) / 2; g = (g + 160) / 2; b = (b + 210) / 2; }
+        if (luminance > 225) { r = r * 3 / 4; g = g * 3 / 4; b = b * 3 / 4; }
+        return 0xFF000000 | r << 16 | g << 8 | b;
+    }
+
     public static Font font() {
         return Minecraft.getInstance().font;
     }

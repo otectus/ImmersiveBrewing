@@ -2,6 +2,7 @@ package com.otectus.immersivebrewing.client;
 
 import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.batch.LedgerCodec;
+import com.otectus.immersivebrewing.client.tutorial.GuidedPractice;
 import com.otectus.immersivebrewing.data.BrewProfile;
 import com.otectus.immersivebrewing.data.BrewingDefinitions;
 import com.otectus.immersivebrewing.data.ReagentProfile;
@@ -73,6 +74,16 @@ public final class PracticeSetup {
                 yield ClientSession.practice(kind, DistillationParams.create(seed, 1.0, 1.0).encode(), display);
             }
         };
+    }
+
+    /** Creates a staged kettle lesson locally. Practice never sends input or produces a stack. */
+    public static ClientSession createGuided(GuidedPractice.Stage stage) {
+        CompoundTag display = new CompoundTag();
+        display.putBoolean("guided", true);
+        display.putString("guidedStage", GuidedPractice.id(stage));
+        display.put("output", LedgerCodec.saveStack(PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.SWIFTNESS)));
+        display.putInt("servings", 0);
+        return ClientSession.practice(SessionKind.BREWING, GuidedPractice.params(stage).encode(), display);
     }
 
     private PracticeSetup() {}

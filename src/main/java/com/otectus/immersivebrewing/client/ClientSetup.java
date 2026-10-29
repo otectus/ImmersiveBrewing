@@ -33,6 +33,14 @@ public final class ClientSetup {
         modBus.addListener((RegisterGuiOverlaysEvent event) -> StationNotices.register(event));
         modBus.addListener(ClientSetup::registerRenderers);
         MinecraftForge.EVENT_BUS.addListener(ClientSetup::onLogout);
+        MinecraftForge.EVENT_BUS.addListener(Keys::tick);
+        GuideHooks.installJournalHandler(request -> {
+            var mc=Minecraft.getInstance();
+            var key=com.otectus.immersivebrewing.recipe.PlanKey.parse(request.plan());
+            if(mc.player!=null&&mc.player.containerMenu instanceof com.otectus.immersivebrewing.menu.KettleMenu menu&&key!=null) {
+                com.otectus.immersivebrewing.network.ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.SelectPlanC2S(menu.pos(),key,request.servings()));
+            } else StationNotices.show(net.minecraft.network.chat.Component.translatable("staging.immersive_brewing.open_station"),true);
+        });
         GuideHooks.install((otherHand, hand) -> {
             Minecraft mc = Minecraft.getInstance();
             if (BrewingMetadata.read(otherHand).isPresent()) mc.setScreen(new LabelScreen(otherHand, hand));
@@ -46,6 +54,7 @@ public final class ClientSetup {
             MenuScreens.register(ModMenus.MORTAR.get(), MortarScreen::new);
             MenuScreens.register(ModMenus.ALEMBIC.get(), AlembicScreen::new);
             MenuScreens.register(ModMenus.BATCH_CARRIER.get(), BatchCarrierScreen::new);
+            MenuScreens.register(ModMenus.APOTHECARY_RACK.get(), com.otectus.immersivebrewing.client.screen.ApothecaryRackScreen::new);
             com.otectus.immersivebrewing.blockentity.StationBlockEntity.clientEffects = com.otectus.immersivebrewing.client.particle.StationParticles::tick;
             net.minecraft.client.renderer.item.ItemProperties.register(com.otectus.immersivebrewing.registry.ModItems.BATCH_CARRIER.get(),
                     com.otectus.immersivebrewing.ImmersiveBrewing.id("strapped"),
@@ -57,6 +66,7 @@ public final class ClientSetup {
         event.registerBlockEntityRenderer(ModBlockEntities.BREWERS_KETTLE.get(), KettleRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.APOTHECARY_MORTAR.get(), MortarRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.ALEMBIC.get(), AlembicRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.APOTHECARY_RACK.get(), com.otectus.immersivebrewing.client.render.ApothecaryRackRenderer::new);
     }
 
     private static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {

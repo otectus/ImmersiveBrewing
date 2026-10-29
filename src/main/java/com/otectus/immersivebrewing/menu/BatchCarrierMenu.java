@@ -9,6 +9,8 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
@@ -26,6 +28,7 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
     private final int lockedSlot;
     private final Player player;
     private final ItemStackHandler handler;
+    private final ContainerData preferences = new SimpleContainerData(4);
 
     public BatchCarrierMenu(int id, Inventory inventory, InteractionHand hand) {
         super(ModMenus.BATCH_CARRIER.get(), id);
@@ -56,10 +59,10 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
         }
         int locked = -1;
         for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 51 + row * 18));
+            for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 106 + row * 18));
         }
         for (int col = 0; col < 9; col++) {
-            Slot slot = new Slot(inventory, col, 8 + col * 18, 109) {
+            Slot slot = new Slot(inventory, col, 8 + col * 18, 164) {
                 @Override
                 public boolean mayPickup(Player p) {
                     return !(getItem().getItem() instanceof BatchCarrierItem) || hand != InteractionHand.MAIN_HAND || getContainerSlot() != p.getInventory().selected;
@@ -69,10 +72,33 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
             if (hand == InteractionHand.MAIN_HAND && col == inventory.selected) locked = slots.size() - 1;
         }
         this.lockedSlot = locked;
+        refreshPreferences();
+        addDataSlots(preferences);
     }
 
     public static BatchCarrierMenu fromNetwork(int id, Inventory inventory, FriendlyByteBuf buf) {
         return new BatchCarrierMenu(id, inventory, buf.readEnum(InteractionHand.class));
+    }
+
+    public InteractionHand hand() {
+        return hand;
+    }
+
+    public ItemStack carrier() {
+        return player.getItemInHand(hand);
+    }
+
+    public int selected() { return preferences.get(0); }
+    public int labelColor() { return preferences.get(1); }
+    public int emblem() { return preferences.get(2); }
+    public boolean advanceOnEmpty() { return preferences.get(3) != 0; }
+
+    private void refreshPreferences() {
+        CarrierContents.Meta meta = CarrierContents.meta(carrier());
+        preferences.set(0, meta.selected());
+        preferences.set(1, meta.labelColor());
+        preferences.set(2, meta.emblem());
+        preferences.set(3, meta.advanceOnEmpty() ? 1 : 0);
     }
 
     @Override
@@ -95,6 +121,7 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
     @Override
     public void broadcastChanges() {
         save();
+        if (!player.level().isClientSide) refreshPreferences();
         super.broadcastChanges();
     }
 

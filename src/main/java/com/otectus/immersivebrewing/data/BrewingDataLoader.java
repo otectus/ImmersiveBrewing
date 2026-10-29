@@ -112,6 +112,11 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
         // Cross-references: a reagent's reaction profile must exist.
         List<ReagentProfile> reagents = new ArrayList<>();
         for (ReagentProfile p : candidate.reagents()) {
+            boolean missing=false;
+            for(var item:p.selector().ids()) if(!net.minecraftforge.registries.ForgeRegistries.ITEMS.containsKey(item)) {
+                errors.add("data/"+p.id().getNamespace()+"/immersive_brewing/reagent_profiles/"+p.id().getPath()+".json: selector.items: unknown registry id "+item); missing=true;
+            }
+            if(missing)continue;
             ResourceLocation ref = p.reaction().profile();
             if (ref != null && !candidate.brews().containsKey(ref)) {
                 errors.add("reagent_profiles " + p.id() + ": reaction.profile: unknown brew profile " + ref);
@@ -121,6 +126,11 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
         }
         List<EffectPolicyDefinition> policies = new ArrayList<>();
         for (EffectPolicyDefinition p : candidate.policies()) {
+            boolean missing=false;
+            for(var effect:p.selector().ids()) if(!net.minecraftforge.registries.ForgeRegistries.MOB_EFFECTS.containsKey(effect)) {
+                errors.add("data/"+p.id().getNamespace()+"/immersive_brewing/effect_policies/"+p.id().getPath()+".json: effects: unknown registry id "+effect); missing=true;
+            }
+            if(missing)continue;
             if (candidate.exclusions().effectPolicies().contains(p.id())) {
                 warnings.add("effect_policies " + p.id() + ": excluded by an exclusions file");
                 continue;
@@ -128,6 +138,14 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
             policies.add(p);
         }
         BrewingDefinitions previous = BrewingDefinitions.server();
+        // Linear conflict diagnostics; do not turn reload into a pairwise scan of a large pack.
+        record SelectorKey(Selector selector, int priority) {}
+        java.util.Map<SelectorKey, ResourceLocation> selectors = new java.util.HashMap<>();
+        for (var profile : reagents) {
+            ResourceLocation first = selectors.putIfAbsent(new SelectorKey(profile.selector(), profile.priority()), profile.id());
+            if (first != null) warnings.add("data/" + profile.id().getNamespace() + "/immersive_brewing/reagent_profiles/"
+                    + profile.id().getPath() + ".json: selector and priority conflict with " + first + "; lowest id wins");
+        }
         boolean initial = previous.generation() == 0;
         if (!errors.isEmpty() && !initial) {
             lastReport = new Report(previous.generation(), List.copyOf(errors), List.copyOf(warnings), true);

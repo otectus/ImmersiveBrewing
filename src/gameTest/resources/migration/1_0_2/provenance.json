@@ -1,0 +1,33 @@
+{
+  "release": "Immersive Brewing 1.0.2",
+  "release_jar": {
+    "path": "build/libs/immersive-brewing-1.0.2.jar",
+    "sha256": "c8ebd1f38af7f97716a4dcc721b5ee19ed5bac3576f0ee4a5ef2a4d81b6fd679"
+  },
+  "baseline_commit": "53bcb5b27f2cd123eca5d426bc9bbbdccdbbbb48",
+  "runtime_evidence": [
+    {
+      "world": "run/saves/BrewingShowcase1792848240099",
+      "level_sha256": "3c090f3a8e973bd3ce05800a64ed41e3df40fa1638867a61d7318c95a4cee9e2",
+      "version_locator": "level.dat:/fml/LoadingModList[ModId=immersive_brewing]/ModVersion=1.0.2",
+      "region_sha256": "f8e7d646f86c25b432653c8d0d40d7f189f09b1d5b3e39cda7c939ed78455f4d",
+      "entities_sha256": "2af485cb58743417fb3b96c5be7736e732a82c747d6926ea152ce7ef19beccb4"
+    },
+    {
+      "world": "run/saves/BrewingSmokeTest1792765035381",
+      "level_sha256": "92598e38a368beee363d4dbd72b0d19e72e37a2ba9632a9ea4d9710a76999ec2",
+      "version_locator": "level.dat:/fml/LoadingModList[ModId=immersive_brewing]/ModVersion=1.0.2",
+      "region_sha256": "5419c06b8065aaa0738f010e3640bcfff7a317f59113c5e4cd11500c3c325ba5",
+      "playerdata_sha256": "1e5caa23764355a9a41c47828a81ef90f27dcb8cf974b5c1c15f89871f5339d8"
+    }
+  ],
+  "fixtures": {
+    "showcase_graded_potion.snbt": "Exact stack extracted from Showcase region r.0.0.mca chunk index 0, block_entities kettle Inventory.Items slot 0.",
+    "showcase_guide.snbt": "Exact guide compound extracted from Showcase level.dat Data.Player.ForgeData.PlayerPersisted.immersive_brewing.",
+    "showcase_notebook.snbt": "Exact untagged Notebook stack extracted from Showcase entities r.0.0.mca chunk index 0, Entities[2].Item.",
+    "smoketest_prepared_kit.snbt": "Exact stack extracted from SmokeTest region r.0.-1.mca chunk index 992, mortar LastResult.output.",
+    "smoketest_kettle_ledger.snbt": "Exact schema-1 compound extracted from SmokeTest region r.0.-1.mca chunk index 992, kettle Ledger.",
+    "smoketest_empty_carrier.snbt": "Exact empty carrier stack extracted from SmokeTest playerdata Inventory slot 0. No retained 1.0.2 world contained a non-empty carrier; the retained Notebook item itself was untagged and its player data is captured separately.",
+    "baseline_legacy_carrier.snbt": "Not runtime-captured. Derived from the 1.0.2 CarrierContents codec at baseline commit 53bcb5b, with a named sentinel field added to prove unrelated NBT survives first save."
+  }
+}

@@ -30,6 +30,8 @@ public final class ConfigEvents {
         server.execute(() -> {
             EffectPolicies.invalidate();
             PlanIndex.invalidate();
+            for (var player : server.getPlayerList().getPlayers()) com.otectus.immersivebrewing.network.ModNetwork.syncDefinitions(
+                    player, com.otectus.immersivebrewing.data.BrewingDefinitions.server());
         });
     }
 

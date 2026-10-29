@@ -14,6 +14,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.BooleanValue TOGGLE_STIR;
     public static final ForgeConfigSpec.BooleanValue TOGGLE_PRESSURE;
     public static final ForgeConfigSpec.BooleanValue MOUSE_STIRRING;
+    public static final ForgeConfigSpec.BooleanValue REDUCED_INPUT;
     public static final ForgeConfigSpec.EnumValue<Palette> PALETTE;
     public static final ForgeConfigSpec.BooleanValue LARGE_MARKERS;
     public static final ForgeConfigSpec.BooleanValue REDUCED_MOTION;
@@ -37,6 +38,7 @@ public final class ClientConfig {
         TOGGLE_STIR = b.comment("Tap a stir key to start or stop stirring instead of holding it.").define("toggleStir", false);
         TOGGLE_PRESSURE = b.comment("Tap the press key to start or stop pressing the pestle instead of holding it.").define("togglePressure", false);
         MOUSE_STIRRING = b.comment("Circles drawn with the mouse over the liquid also stir (capped exactly like the keys).").define("mouseStirring", true);
+        REDUCED_INPUT = b.comment("Use one-key/toggle control paths without requiring simultaneous key chords.").define("reducedInput", false);
         b.pop();
 
         b.comment("Display").push("display");

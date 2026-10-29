@@ -18,6 +18,11 @@ public final class PracticeResults {
 
     public static CompoundTag describe(SimHandle sim, CompoundTag tag) {
         tag.putBoolean("practice", true);
+        ClientSession active = ClientSession.active();
+        if (active != null && active.practice && active.display.getBoolean("guided")) {
+            tag.putBoolean("guided", true);
+            tag.putString("guidedStage", active.display.getString("guidedStage"));
+        }
         if (sim instanceof SimHandles.Brewing b) {
             BrewScore score = b.sim().score();
             tag.putString("kind", "brewing");

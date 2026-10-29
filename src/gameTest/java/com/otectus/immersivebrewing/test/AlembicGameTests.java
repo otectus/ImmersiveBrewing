@@ -150,7 +150,7 @@ public final class AlembicGameTests {
         h.succeedWhen(() -> {
             h.assertTrue(alembic.ledger() == null, "still distilling");
             List<ItemStack> batch = outputs(alembic, Items.POTION);
-            h.assertTrue(batch.size() == 2, "three ordinary bottles yield two potions");
+            h.assertTrue(count(batch) == 2, "three ordinary bottles yield two potions, regardless of legal stacking");
             long lineage = BrewingMetadata.read(batch.get(0)).orElseThrow().lineage();
             for (ItemStack p : batch) {
                 BrewingMetadata meta = BrewingMetadata.read(p).orElseThrow();
@@ -167,7 +167,7 @@ public final class AlembicGameTests {
         alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 1), 3));
         h.assertTrue("alembic.immersive_brewing.purify.once".equals(problemKey(alembic)), "once per lineage: " + problemKey(alembic));
         alembic = load(h, 1, graded(Potions.STRENGTH, 40, 0), graded(Potions.STRENGTH, 40, 0), graded(Potions.STRENGTH, 41, 0));
-        h.assertTrue("alembic.immersive_brewing.purify.mixed".equals(problemKey(alembic)), "identical bottles only: " + problemKey(alembic));
+        h.assertTrue("alembic.immersive_brewing.purify.mismatch.quality".equals(problemKey(alembic)), "quality mismatch is exact: " + problemKey(alembic));
         alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 4));
         h.assertTrue("alembic.immersive_brewing.purify.group".equals(problemKey(alembic)), "groups of three: " + problemKey(alembic));
         alembic = load(h, 0, copies(graded(Potions.STRENGTH, 40, 0), 3));
@@ -178,6 +178,38 @@ public final class AlembicGameTests {
         TestSupport.openAlembic(player, alembic);
         alembic.startPurification(player, 0);
         h.assertTrue(alembic.ledger() == null && TestSupport.session(player).isEmpty(), "a refused start reserves nothing");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void previewExplainsEconomyAndGroupingPreservesExactStacks(GameTestHelper h) {
+        ItemStack compatible = graded(Potions.STRENGTH, 40, 0);
+        ItemStack otherQuality = graded(Potions.STRENGTH, 41, 0);
+        ItemStack otherPotion = graded(Potions.SWIFTNESS, 40, 0);
+        AlembicBlockEntity alembic = load(h, 1, compatible.copy(), compatible.copy(), compatible.copy(), otherQuality.copy(), otherPotion.copy());
+        h.assertTrue("alembic.immersive_brewing.purify.mismatch.quality".equals(problemKey(alembic)), "preview names the quality mismatch");
+        FakePlayer player = TestSupport.player(h, "Sorter");
+        int moved = alembic.selectCompatibleGroup(player);
+        h.assertTrue(moved == 2 && TestSupport.count(alembic, INPUT, AlembicBlockEntity.INPUT_SIZE, Items.POTION) == 3,
+                "the largest complete compatible group remains");
+        h.assertTrue(player.getInventory().items.stream().anyMatch(s -> ItemStack.matches(s, otherQuality)), "mismatched exact tags were returned intact");
+        h.assertTrue(player.getInventory().items.stream().anyMatch(s -> ItemStack.matches(s, otherPotion)), "different contents were returned intact");
+        AlembicBlockEntity.OperationPreview preview = alembic.operationPreview();
+        h.assertTrue(preview.problem() == null && preview.inputCount() == 3 && preview.purifyOutput() == 2
+                && preview.returnedContainers() == 1 && preview.returnedContainer().is(Items.GLASS_BOTTLE), "three-to-two and returned bottle are explicit");
+        h.assertTrue(preview.purifyFuel() == 1 && preview.qualityMinimum() == 40 && preview.qualityMaximum() == 70
+                && preview.attemptsRemaining() == 1, "fuel, possible quality and one lineage attempt are explicit");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void approvedDistillationAssistIsSavedForDisplayAndResume(GameTestHelper h) {
+        AlembicBlockEntity alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
+        FakePlayer player = TestSupport.player(h, "Accessible");
+        TestSupport.openAlembic(player, alembic);
+        alembic.startPurification(player, StationActionC2S.withAssist(0, 1.5, 1.25));
+        h.assertTrue(alembic.ledger() != null && alembic.ledger().snapshot().getDouble("assistTime") >= 1.0
+                && alembic.ledger().snapshot().getDouble("assistBand") >= 1.0, "approved assist multipliers are persisted with the job");
         h.succeed();
     }
 

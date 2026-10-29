@@ -56,6 +56,19 @@ public final class Keys {
     public static final KeyMapping RECEIVER = key("receiver", GLFW.GLFW_KEY_R, Game.ALEMBIC);
     public static final KeyMapping HELP = key("help", GLFW.GLFW_KEY_H, Game.ANY);
 
+    public static final KeyMapping EQUIP_CARRIER = new KeyMapping("key.immersive_brewing.equip_carrier", net.minecraftforge.client.settings.KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
+
+    public static void tick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+        var mc = Minecraft.getInstance();
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END || mc.screen != null || mc.player == null) return;
+        while (EQUIP_CARRIER.consumeClick()) {
+            var hand = mc.player.getMainHandItem().getItem() instanceof com.otectus.immersivebrewing.item.BatchCarrierItem
+                    ? net.minecraft.world.InteractionHand.MAIN_HAND : net.minecraft.world.InteractionHand.OFF_HAND;
+            com.otectus.immersivebrewing.network.ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.EquipCarrierSelectedC2S(hand));
+        }
+    }
+
     public static final List<KeyMapping> ALL = List.of(DRAFT_UP, DRAFT_DOWN, STIR_CCW, STIR_CW, VIGOROUS, ADD, PESTLE_UP,
             PESTLE_DOWN, PESTLE_LEFT, PESTLE_RIGHT, PRESS, FOLD, FINISH, HEAT_UP, HEAT_DOWN, COOL_UP, COOL_DOWN, RECEIVER, HELP);
 
@@ -65,6 +78,7 @@ public final class Keys {
 
     public static void register(RegisterKeyMappingsEvent event) {
         ALL.forEach(event::register);
+        event.register(EQUIP_CARRIER);
     }
 
     /** True when the raw key event is this binding (rebinding-aware). */

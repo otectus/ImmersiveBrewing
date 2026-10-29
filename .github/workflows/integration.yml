@@ -1,0 +1,23 @@
+name: Provisioned integration fixtures
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    # Private, pre-provisioned fixture runner. This workflow never downloads or redistributes mod jars.
+    runs-on: [self-hosted, minecraft-fixtures]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify and run separately provisioned jars
+        run: python3 tools/run_compat_matrix.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-results
+          path: build/compat-matrix/

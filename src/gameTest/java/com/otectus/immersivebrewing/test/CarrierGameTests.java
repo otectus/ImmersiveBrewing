@@ -5,6 +5,7 @@ import com.otectus.immersivebrewing.blockentity.AlembicBlockEntity;
 import com.otectus.immersivebrewing.blockentity.ApothecaryMortarBlockEntity;
 import com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity;
 import com.otectus.immersivebrewing.item.CarrierContents;
+import com.otectus.immersivebrewing.item.BatchCarrierItem;
 import com.otectus.immersivebrewing.potion.BrewingMetadata;
 import com.otectus.immersivebrewing.registry.ModItems;
 import com.otectus.immersivebrewing.testing.KettleBot;
@@ -89,7 +90,9 @@ public final class CarrierGameTests {
             h.assertTrue(TestSupport.count(kettle, RACK, 6, Items.POTION) == 0, "the rack is empty");
             List<ItemStack> inside = CarrierContents.read(after);
             for (ItemStack e : expected) {
-                h.assertTrue(inside.stream().anyMatch(s -> ItemStack.matches(s, e)), "each bottle exactly as brewed");
+                int wanted = expected.stream().filter(s -> ItemStack.isSameItemSameTags(s, e)).mapToInt(ItemStack::getCount).sum();
+                int actual = inside.stream().filter(s -> ItemStack.isSameItemSameTags(s, e)).mapToInt(ItemStack::getCount).sum();
+                h.assertTrue(actual == wanted, "every exact brewed identity and its count survived legal stacking");
             }
             h.assertTrue(kettle.comparatorSignal() == 0, "the output comparator falls to zero");
         }).thenSucceed();
@@ -148,6 +151,60 @@ public final class CarrierGameTests {
             h.assertTrue(TestSupport.count(alembic, AlembicBlockEntity.OUTPUT, 6, ModItems.SPENT_ALCHEMICAL_SALT.get()) == 1,
                     "the salt is not a potion container and stays");
         }).thenSucceed();
+    }
+
+    @GameTest(template = "empty")
+    public static void selectedPotionEquipsWithoutInventoryLoss(GameTestHelper h) {
+        FakePlayer player = TestSupport.player(h, "Equipper");
+        ItemStack selected = gradedSwiftness("Selected");
+        ItemStack displaced = PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.WATER);
+        ItemStack held = carrier(selected.copy());
+        CarrierContents.setSelected(held, 0);
+        player.getInventory().selected = 0;
+        player.getInventory().setItem(0, held);
+        player.getInventory().setItem(1, displaced.copy());
+        for (int i = 2; i < 9; i++) player.getInventory().setItem(i, new ItemStack(Items.STONE, 64));
+
+        h.assertTrue(BatchCarrierItem.equipSelected(player, net.minecraft.world.InteractionHand.MAIN_HAND) == BatchCarrierItem.EquipResult.EQUIPPED,
+                "a full hotbar safely swaps with another potion stack");
+        h.assertTrue(ItemStack.isSameItemSameTags(player.getInventory().getItem(1), selected), "the exact selected potion moved to the hotbar");
+        h.assertTrue(player.getInventory().selected == 1 && ItemStack.isSameItemSameTags(player.getMainHandItem(), selected),
+                "equip also selects the exact potion in the active hotbar");
+        h.assertTrue(ItemStack.isSameItemSameTags(CarrierContents.read(player.getInventory().getItem(0)).get(0), displaced), "the displaced potion moved into the vacated carrier slot");
+        for (int i = 2; i < 9; i++) h.assertTrue(player.getInventory().getItem(i).getCount() == 64, "unrelated full slot " + i + " was untouched");
+
+        ItemStack offhand = carrier(gradedSwiftness("Offhand"));
+        player.setItemInHand(net.minecraft.world.InteractionHand.OFF_HAND, offhand);
+        player.getInventory().setItem(2, ItemStack.EMPTY);
+        ItemStack offhandExpected = CarrierContents.read(offhand).get(0).copy();
+        h.assertTrue(BatchCarrierItem.equipSelected(player, net.minecraft.world.InteractionHand.OFF_HAND) == BatchCarrierItem.EquipResult.EQUIPPED
+                && ItemStack.isSameItemSameTags(player.getMainHandItem(), offhandExpected), "offhand carriers select a real free hotbar slot");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void emptySelectionStopsAndFutureMetadataIsPreserved(GameTestHelper h) {
+        FakePlayer player = TestSupport.player(h, "Careful");
+        ItemStack held = carrier(ItemStack.EMPTY, PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.POISON), gradedSwiftness("Safe"));
+        CarrierContents.setSelected(held, 0);
+        player.setItemInHand(net.minecraft.world.InteractionHand.OFF_HAND, held);
+        h.assertTrue(BatchCarrierItem.equipSelected(player, net.minecraft.world.InteractionHand.OFF_HAND) == BatchCarrierItem.EquipResult.EMPTY_SELECTION,
+                "an exhausted selection stops by default");
+        CarrierContents.Meta meta = CarrierContents.meta(held);
+        CarrierContents.writeMeta(held, new CarrierContents.Meta(0, "Caves", meta.labelColor(), 2, true, CarrierContents.read(held)));
+        h.assertTrue(BatchCarrierItem.equipSelected(player, net.minecraft.world.InteractionHand.OFF_HAND) == BatchCarrierItem.EquipResult.EQUIPPED,
+                "opt-in advancement finds a safe stack");
+        h.assertTrue(PotionUtils.getPotion(player.getInventory().getItem(0)) == Potions.SWIFTNESS, "auto-advance skipped the harmful potion");
+        h.assertTrue(CarrierContents.meta(held).selected() == 2 && CarrierContents.isMissing(held, 2), "selection and missing loadout survive on the item");
+
+        ItemStack future = carrier(TestSupport.water());
+        net.minecraft.nbt.CompoundTag payload = new net.minecraft.nbt.CompoundTag();
+        payload.putInt("schema", CarrierContents.SCHEMA + 1);
+        payload.putString("future", "keep");
+        future.getOrCreateTag().put(CarrierContents.META_KEY, payload.copy());
+        h.assertTrue(!CarrierContents.setSelected(future, 4) && future.getTag().getCompound(CarrierContents.META_KEY).equals(payload),
+                "unknown newer preferences are preserved byte-for-byte");
+        h.succeed();
     }
 
     private CarrierGameTests() {}

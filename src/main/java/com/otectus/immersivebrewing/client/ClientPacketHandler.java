@@ -102,6 +102,7 @@ public final class ClientPacketHandler {
     }
 
     static void resetDefinitions() {
+        ServerCatalog.reset();
         syncGeneration = -1;
         syncNext = 0;
         syncBuffer = new ByteArrayOutputStream();
@@ -109,6 +110,7 @@ public final class ClientPacketHandler {
 
     public static void planList(PlanListS2C msg) {
         Screen current = Minecraft.getInstance().screen;
+        if(current instanceof KettlePlanScreen plans) { plans.accept(msg); return; }
         Screen parent = current instanceof KettlePlanScreen plans ? plans.parent() : current;
         Minecraft.getInstance().setScreen(new KettlePlanScreen(parent, msg));
     }
@@ -118,7 +120,8 @@ public final class ClientPacketHandler {
     }
 
     public static void practice(OpenPracticeS2C msg) {
-        ClientSession session = PracticeSetup.create(msg.kind(), msg.profile());
+        ClientSession session = msg.params() != null && msg.display() != null
+                ? ClientSession.practice(msg.kind(), msg.params(), msg.display()) : PracticeSetup.create(msg.kind(), msg.profile());
         if (session == null) {
             StationNotices.show(Component.translatable("notice.immersive_brewing.practice_unavailable"), true);
             return;

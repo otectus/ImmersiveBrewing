@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.1.0 — Unreleased development
+
+This section describes the current development tree; it is not a release announcement.
+
+- Reworked Kettle plan discovery into an incremental, server-thread search with search-before-paging, stable direct
+  plan replay and a server-synced compatibility report. The Notebook distinguishes supported effect scaling,
+  metadata-only recipes, exclusions, unsupported recipes, contextual searches and budget-limited alternatives. An
+  additive API-v1 catalog exposes the same incomplete/budget state and exact-key resolution without changing the
+  legacy 512-route query; operator explain commands show route adapters, versions and effect-policy decisions.
+- Added transaction-safe batch staging from the open Kettle, the player's ordinary inventory and one explicitly
+  selected Batch Carrier. Preview never mutates an inventory; commit requires the same inventory revision.
+- Added a six-slot Apothecary Rack with exact-stack storage, reservation ghosts, short labels, comparator output,
+  predictable capability behavior and one-action carrier packing/restocking.
+- Expanded the Batch Carrier with a selected slot, named loadout, label color/emblem, missing-template preview,
+  optional advance-on-empty behavior and a remappable action that moves the selected real stack to a safe hotbar slot.
+- Added server-validated quick finishing for eligible potion-to-splash and splash-to-lingering container changes.
+  It preserves the complete potion stack data, snapshots its duration and does not create a new score or milestone.
+- Expanded the Brewer's Notebook with raw-first onboarding, dynamic loaded crafting diagrams, four staged Kettle
+  lessons, server support explanations, explicit favorite replacement, pinned ingredient checklists and a bounded
+  32-batch journal with comparable-attempt and assistance-aware summaries. Favourite practice re-resolves the exact
+  route/profile on the server with a fresh seed before opening a client-only session; practice produces no items or
+  milestones.
+- Added in-game control/accessibility settings, no-chord input, textual heat momentum and next-action priority,
+  focused narration, server-approved assistance display, profile accents/particles and the documented station-state
+  legend. Accessibility options retain the full scoring range.
+- Added Alembic operation previews and clearer guidance around yield, quality caps, lineage attempts, returned
+  containers and reclamation.
+- Player guide data is now version 2. Known version-1 data gains journal/filter defaults; unknown newer data is left
+  untouched. Job ledgers are schema 2; schema-1 ledgers remain readable, while newer/unknown or missing-item ledgers
+  are held with their raw payload preserved instead of being rewritten.
+- The first-person drinking animation now uses the actual client-side Forge-composed use duration observed at use
+  start. Compatibility with other drink-speed mods still requires runtime matrix testing; this changelog makes no
+  cross-mod validation claim.
+
+Explicitly deferred from 1.1.0 are the roadmap's P2/P3 systems: direct drinking from a carrier, formula cards, reagent
+jars, unattended Kettle production, additional Alembic salvage economy, scripting bridges, physical/VR brewing,
+workshop cosmetic variants, native blending/coatings/herbalism/fermentation/solvents, village commissions,
+simultaneous cooperative brewing and other mod loaders.
+
 ## 1.0.2
 
 - Added Spanish, Brazilian Portuguese, Russian, and Simplified Chinese translations.

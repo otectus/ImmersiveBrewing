@@ -18,6 +18,16 @@ import com.otectus.immersivebrewing.network.packet.StartBrewC2S;
 import com.otectus.immersivebrewing.network.packet.StateSnapshotS2C;
 import com.otectus.immersivebrewing.network.packet.StationActionC2S;
 import com.otectus.immersivebrewing.network.packet.StationNoticeS2C;
+import com.otectus.immersivebrewing.network.packet.CatalogQueryC2S;
+import com.otectus.immersivebrewing.network.packet.SelectRecipeC2S;
+import com.otectus.immersivebrewing.network.packet.SelectPlanC2S;
+import com.otectus.immersivebrewing.network.packet.AlembicGroupC2S;
+import com.otectus.immersivebrewing.network.packet.CatalogSupportS2C;
+import com.otectus.immersivebrewing.network.packet.BatchActionC2S;
+import com.otectus.immersivebrewing.network.packet.BatchPreviewS2C;
+import com.otectus.immersivebrewing.network.packet.CarrierSettingsC2S;
+import com.otectus.immersivebrewing.network.packet.EquipCarrierSelectedC2S;
+import com.otectus.immersivebrewing.network.packet.RackLabelC2S;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -37,7 +47,7 @@ import java.util.function.BiConsumer;
  * carries an item, a score, an outcome or an effect list. The protocol is required on both sides.
  */
 public final class ModNetwork {
-    public static final String VERSION = "2";
+    public static final String VERSION = "3";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(ImmersiveBrewing.id("main"), () -> VERSION,
             VERSION::equals, VERSION::equals);
 
@@ -46,6 +56,16 @@ public final class ModNetwork {
 
     public static void register() {
         int id = 0;
+        CHANNEL.messageBuilder(SelectPlanC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(SelectPlanC2S::encode).decoder(SelectPlanC2S::decode).consumerMainThread(SelectPlanC2S::handle).add();
+        CHANNEL.messageBuilder(AlembicGroupC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(AlembicGroupC2S::encode).decoder(AlembicGroupC2S::decode).consumerMainThread(AlembicGroupC2S::handle).add();
+        CHANNEL.messageBuilder(SelectRecipeC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(SelectRecipeC2S::encode).decoder(SelectRecipeC2S::decode).consumerMainThread(SelectRecipeC2S::handle).add();
+        CHANNEL.messageBuilder(CatalogQueryC2S.class, id++, NetworkDirection.PLAY_TO_SERVER).encoder(CatalogQueryC2S::encode).decoder(CatalogQueryC2S::decode).consumerMainThread(CatalogQueryC2S::handle).add();
+        CHANNEL.messageBuilder(CatalogSupportS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT).encoder(CatalogSupportS2C::encode).decoder(CatalogSupportS2C::decode).consumerMainThread(CatalogSupportS2C::handle).add();
+        CHANNEL.messageBuilder(BatchActionC2S.class, id++, NetworkDirection.PLAY_TO_SERVER).encoder(BatchActionC2S::encode).decoder(BatchActionC2S::decode).consumerMainThread(BatchActionC2S::handle).add();
+        CHANNEL.messageBuilder(BatchPreviewS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT).encoder(BatchPreviewS2C::encode).decoder(BatchPreviewS2C::decode).consumerMainThread(BatchPreviewS2C::handle).add();
+        CHANNEL.messageBuilder(CarrierSettingsC2S.class, id++, NetworkDirection.PLAY_TO_SERVER).encoder(CarrierSettingsC2S::encode).decoder(CarrierSettingsC2S::decode).consumerMainThread(CarrierSettingsC2S::handle).add();
+        CHANNEL.messageBuilder(EquipCarrierSelectedC2S.class, id++, NetworkDirection.PLAY_TO_SERVER).encoder(EquipCarrierSelectedC2S::encode).decoder(EquipCarrierSelectedC2S::decode).consumerMainThread(EquipCarrierSelectedC2S::handle).add();
+        CHANNEL.messageBuilder(RackLabelC2S.class, id++, NetworkDirection.PLAY_TO_SERVER).encoder(RackLabelC2S::encode).decoder(RackLabelC2S::decode).consumerMainThread(RackLabelC2S::handle).add();
         CHANNEL.messageBuilder(InputFramesC2S.class, id++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(InputFramesC2S::encode).decoder(InputFramesC2S::decode).consumerMainThread(InputFramesC2S::handle).add();
         CHANNEL.messageBuilder(LeaveSessionC2S.class, id++, NetworkDirection.PLAY_TO_SERVER)
@@ -116,6 +136,12 @@ public final class ModNetwork {
             int to = Math.min(all.length, from + DefinitionsSyncS2C.CHUNK);
             sendTo(player, new DefinitionsSyncS2C(defs.generation(), i, chunks, Arrays.copyOfRange(all, from, to)));
         }
+        var index=com.otectus.immersivebrewing.recipe.PlanIndex.get(player.server.getRecipeManager());
+        var report=index.report();
+        int pages=Math.max(1,(report.size()+255)/256);
+        if(pages<=256) for(int i=0;i<pages;i++) sendTo(player,new CatalogSupportS2C(index.generation(),i,pages,
+                !com.otectus.immersivebrewing.event.CommonEvents.tippedArrowOverrideActive(),
+                report.subList(i*256,Math.min(report.size(),(i+1)*256))));
     }
 
     private ModNetwork() {}

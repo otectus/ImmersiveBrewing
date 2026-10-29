@@ -2,6 +2,7 @@ package com.otectus.immersivebrewing.client.screen;
 
 import com.otectus.immersivebrewing.batch.LedgerCodec;
 import com.otectus.immersivebrewing.client.ClientSession;
+import com.otectus.immersivebrewing.client.ClientGuide;
 import com.otectus.immersivebrewing.client.sound.BrewingSounds;
 import com.otectus.immersivebrewing.network.ModNetwork;
 import com.otectus.immersivebrewing.network.packet.SetLabelC2S;
@@ -20,6 +21,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * The result explanation (spec 10, 11.4): the actual score contributors and one concrete improvement tip, never "bad
@@ -112,6 +115,10 @@ public class ResultScreen extends Screen {
         ItemStack output = LedgerCodec.loadStack(result.getCompound("output"));
         if (session.practice) {
             y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.practice_result"), px + 8, y, content.width(), p.warn()) + 2;
+            if (result.getBoolean("guided")) {
+                y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.guided_result." + result.getString("guidedStage")),
+                        px + 8, y, content.width(), p.text()) + 2;
+            }
         }
         if (!output.isEmpty()) {
             g.renderItem(output, px + 8, y);
@@ -176,7 +183,22 @@ public class ResultScreen extends Screen {
         if (result.getBoolean("capped")) {
             y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.result.capped", result.getInt("candidate")), px + 8, y, content.width(), p.warn());
         }
+        List<ClientGuide.History> history = ClientGuide.history();
+        if (!history.isEmpty()) {
+            ClientGuide.History current = history.get(0);
+            ClientGuide.History previous = ClientGuide.previousComparable(0);
+            if (previous != null) {
+                String key = current.sameAssistance(previous) ? "screen.immersive_brewing.result.compare"
+                        : "screen.immersive_brewing.result.compare_assistance_changed";
+                y += Ui.wrapped(g, Component.translatable(key, signed(current.quality() - previous.quality()),
+                        signed(current.control() - previous.control())), px + 8, y + 2, content.width(), p.accent()) + 2;
+            }
+        }
         return y;
+    }
+
+    private static String signed(int value) {
+        return value > 0 ? "+" + value : Integer.toString(value);
     }
 
     private int preparation(GuiGraphics g, int y) {

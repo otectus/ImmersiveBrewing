@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "immersive_brewing:block/apothecary_rack"
+    },
+    "facing=east": {
+      "model": "immersive_brewing:block/apothecary_rack",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "immersive_brewing:block/apothecary_rack",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "immersive_brewing:block/apothecary_rack",
+      "y": 270
+    }
+  }
+}

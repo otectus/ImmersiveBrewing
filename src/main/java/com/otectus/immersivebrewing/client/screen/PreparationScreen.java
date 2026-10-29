@@ -29,6 +29,9 @@ public class PreparationScreen extends GameScreen {
     private boolean foldQueued;
     private boolean finishQueued;
     private int lastFolds;
+    private PreparationSimulation.Texture lastTexture;
+    private boolean narratedOverpressure;
+    private boolean narratedClump;
     private Button foldButton, finishButton;
     private int px, py, pw, ph, bowlX, bowlY, radius, colX, colW;
 
@@ -159,6 +162,19 @@ public class PreparationScreen extends GameScreen {
         boolean lifted = s.folds() != lastFolds;
         lastFolds = s.folds();
         BrewingSounds.mortar(s.lastWork(), s.texture().ordinal(), lifted);
+        PreparationSimulation.Texture texture = s.texture();
+        if (texture != lastTexture && minecraft != null) {
+            lastTexture = texture;
+            minecraft.getNarrator().sayNow(Component.translatable("texture.immersive_brewing." + texture.name().toLowerCase(java.util.Locale.ROOT)));
+        }
+        if (s.overpressure() && !narratedOverpressure && minecraft != null) {
+            narratedOverpressure = true;
+            minecraft.getNarrator().sayNow(Component.translatable("cue.immersive_brewing.overpressure"));
+        } else if (!s.overpressure()) narratedOverpressure = false;
+        if (s.clump() > 0.45 && !narratedClump && minecraft != null) {
+            narratedClump = true;
+            minecraft.getNarrator().sayNow(Component.translatable("cue.immersive_brewing.clumping", key(Keys.FOLD)));
+        } else if (s.clump() <= 0.35) narratedClump = false;
     }
 
     @Override

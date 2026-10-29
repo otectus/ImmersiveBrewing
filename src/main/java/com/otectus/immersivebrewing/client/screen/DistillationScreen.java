@@ -27,6 +27,7 @@ public class DistillationScreen extends GameScreen {
     private boolean collect;
     private int px, py, pw, ph;
     private Button heatDown, heatUp, coolDown, coolUp, receiver;
+    private DistillationSimulation.Condensate lastCondensate;
 
     public DistillationScreen(ClientSession session) {
         super(Component.translatable("screen.immersive_brewing.alembic"), session);
@@ -93,19 +94,25 @@ public class DistillationScreen extends GameScreen {
 
     private void setHeat(int level) {
         int v = Math.max(0, Math.min(DistillationInput.LEVELS - 1, level));
-        if (v != heat) BrewingSounds.valve();
+        if (v == heat) return;
+        BrewingSounds.valve();
         heat = v;
+        if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("narration.immersive_brewing.heat_level", heat + 1, DistillationInput.LEVELS));
     }
 
     private void setCool(int level) {
         int v = Math.max(0, Math.min(DistillationInput.LEVELS - 1, level));
-        if (v != coolant) BrewingSounds.valve();
+        if (v == coolant) return;
+        BrewingSounds.valve();
         coolant = v;
+        if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable("narration.immersive_brewing.coolant_level", coolant + 1, DistillationInput.LEVELS));
     }
 
     private void toggleReceiver() {
         collect = !collect;
         BrewingSounds.receiver();
+        if (minecraft != null) minecraft.getNarrator().sayNow(Component.translatable(collect
+                ? "screen.immersive_brewing.collecting" : "screen.immersive_brewing.to_waste"));
     }
 
     private int col(int i) {
@@ -119,7 +126,14 @@ public class DistillationScreen extends GameScreen {
     @Override
     public void tick() {
         super.tick();
-        if (!session.ended() && !session.paused()) BrewingSounds.alembic(sim().lastCondensed());
+        if (!session.ended() && !session.paused()) {
+            BrewingSounds.alembic(sim().lastCondensed());
+            DistillationSimulation.Condensate condensate = sim().condensate();
+            if (condensate != lastCondensate && minecraft != null) {
+                lastCondensate = condensate;
+                minecraft.getNarrator().sayNow(Component.translatable("condensate.immersive_brewing." + condensate.name().toLowerCase(java.util.Locale.ROOT)));
+            }
+        }
     }
 
     @Override

@@ -59,6 +59,7 @@ public class ImmersiveBrewing {
         event.enqueueWork(() -> {
             ModNetwork.register();
             ModAdvancements.register();
+            com.otectus.immersivebrewing.guide.GuideHooks.installRepeatHandler(com.otectus.immersivebrewing.recipe.CatalogSearch::repeat);
         });
     }
 

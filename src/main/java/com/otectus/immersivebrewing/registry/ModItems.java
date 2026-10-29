@@ -18,6 +18,8 @@ public final class ModItems {
 
     public static final RegistryObject<BlockItem> APOTHECARY_MORTAR = ITEMS.register("apothecary_mortar",
             () -> new BlockItem(ModBlocks.APOTHECARY_MORTAR.get(), new Item.Properties()));
+    public static final RegistryObject<BlockItem> APOTHECARY_RACK = ITEMS.register("apothecary_rack",
+            () -> new BlockItem(ModBlocks.APOTHECARY_RACK.get(), new Item.Properties()));
     public static final RegistryObject<BlockItem> BREWERS_KETTLE = ITEMS.register("brewers_kettle",
             () -> new BlockItem(ModBlocks.BREWERS_KETTLE.get(), new Item.Properties()));
     public static final RegistryObject<BlockItem> ALEMBIC = ITEMS.register("alembic",

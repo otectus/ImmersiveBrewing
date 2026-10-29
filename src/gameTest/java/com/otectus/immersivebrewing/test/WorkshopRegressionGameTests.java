@@ -200,12 +200,13 @@ public final class WorkshopRegressionGameTests {
         h.succeedWhen(() -> {
             h.assertTrue(still.ledger() == null, "still purifying");
             var outputs = AlembicGameTests.outputs(still, Items.POTION);
-            h.assertTrue(outputs.size() == 4, "six bottles yield four potions");
+            h.assertTrue(outputs.stream().mapToInt(ItemStack::getCount).sum() == 4, "six bottles yield four potions");
             var metadata = BrewingMetadata.read(outputs.get(0)).orElseThrow();
             h.assertTrue(metadata.lineage() != 0 && metadata.purifications() == 1, "one recorded purification with a lineage");
-            for (int i = 0; i < outputs.size(); i++) {
-                h.assertTrue(BrewingMetadata.read(outputs.get(i)).orElseThrow().equals(metadata), "all outputs share batch metadata");
-                kettle.inventory().setStackInSlot(i, outputs.get(i).copy());
+            int slot = 0;
+            for (ItemStack output : outputs) {
+                h.assertTrue(BrewingMetadata.read(output).orElseThrow().equals(metadata), "all outputs share batch metadata");
+                for (int bottle = 0; bottle < output.getCount(); bottle++) kettle.inventory().setStackInSlot(slot++, output.copyWithCount(1));
             }
             h.assertTrue(kettle.rack().problem() == null && kettle.rack().servings() == 4, "all four outputs can be brewed together");
         });

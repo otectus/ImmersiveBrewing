@@ -88,6 +88,9 @@ public final class ImmersiveBrewingCommand {
                 .then(Commands.literal("inspect").requires(s -> s.hasPermission(2))
                         .then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(ImmersiveBrewingCommand::inspect)))
                 .then(Commands.literal("quality").requires(s -> s.hasPermission(2)).executes(ImmersiveBrewingCommand::quality))
+                .then(Commands.literal("explain").requires(s -> s.hasPermission(2)).executes(ImmersiveBrewingCommand::explainPotion)
+                        .then(Commands.literal("plan").then(Commands.argument("key", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                                .executes(ImmersiveBrewingCommand::explainPlan))))
                 .then(Commands.literal("session").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("list").executes(ImmersiveBrewingCommand::sessionList))
                         .then(Commands.literal("seal").then(Commands.argument("player", EntityArgument.player()).executes(ImmersiveBrewingCommand::sessionSeal))))
@@ -234,6 +237,52 @@ public final class ImmersiveBrewingCommand {
                     + MobEffectUtil.formatDuration(c, 1F).getString() + ", effective " + MobEffectUtil.formatDuration(e, 1F).getString());
         }
         if (!PotionContentsService.effectsSupported(held) && meta.isPresent()) say(ctx, "  this item's effects are its own (quality recorded only)");
+        return 1;
+    }
+
+    private static int explainPotion(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ItemStack held = ctx.getSource().getPlayerOrException().getMainHandItem();
+        quality(ctx);
+        boolean supported = PotionContentsService.effectsSupported(held);
+        boolean bundle = com.otectus.immersivebrewing.potion.EffectPolicies.isBundle(PotionUtils.getPotion(held));
+        for (MobEffectInstance effect : PotionUtils.getPotion(held).getEffects()) {
+            var treatment = com.otectus.immersivebrewing.potion.EffectPolicies.treatment(effect.getEffect(), BrewingDefinitions.server());
+            say(ctx, ForgeRegistries.MOB_EFFECTS.getKey(effect.getEffect()) + ": policy " + treatment.policy() + ", selector " + treatment.layer()
+                    + ", " + (!supported ? "item's own delivery / metadata only" : bundle ? "mixed bundle: unchanged"
+                    : effect.isInfiniteDuration() ? "infinite duration: unchanged" : treatment.scales()
+                    ? "duration curve 0.80 + 0.004Q, clamped to " + treatment.minimum() + ".." + treatment.maximum() : "unchanged duration and amplifier"));
+        }
+        if (!PotionUtils.getCustomEffects(held).isEmpty()) say(ctx, "Foreign custom effects are preserved exactly, without quality scaling.");
+        return 1;
+    }
+
+    private static int explainPlan(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        String text = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "key");
+        var key = com.otectus.immersivebrewing.recipe.PlanKey.parse(text);
+        if (key == null) { say(ctx, Component.translatable("notice.immersive_brewing.plan_invalid")); return 0; }
+        PlanIndex index = PlanIndex.get(player.server.getRecipeManager());
+        ItemStack input = index.inputForKey(key, player.getMainHandItem());
+        List<ItemStack> tray = player.containerMenu instanceof com.otectus.immersivebrewing.menu.KettleMenu menu
+                && com.otectus.immersivebrewing.menu.StationMenu.openStation(player, menu.pos()) instanceof com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity kettle
+                ? kettle.trayItems() : List.of();
+        BrewPlan plan = index.resolve(key, input, tray);
+        if (plan == null) {
+            say(ctx, Component.translatable("notice.immersive_brewing.plan_invalid"));
+            for (var part : key.parts()) index.report().stream().filter(e -> e.recipe().equals(part.source()))
+                    .forEach(e -> say(ctx, e.recipe() + ": " + e.status() + " — " + e.reason()));
+            say(ctx, "Contextual steps require the currently open tray; missing or changed transformations are never guessed.");
+            return 0;
+        }
+        for (var step : plan.steps()) {
+            var adapter = com.otectus.immersivebrewing.recipe.adapter.AdapterRegistry.get(step.adapter(), BrewingDefinitions.server());
+            say(ctx, step.source() + ": adapter " + step.adapter() + " v" + step.adapterVersion() + "; "
+                    + ForgeRegistries.ITEMS.getKey(step.before().getItem()) + potion(step.before()) + " + " + ForgeRegistries.ITEMS.getKey(step.reagent())
+                    + " -> " + ForgeRegistries.ITEMS.getKey(step.after().getItem()) + potion(step.after())
+                    + "; quality " + (adapter == null ? "adapter unavailable" : adapter.contentsPolicy(step.after())));
+        }
+        say(ctx, "Quick finishing: " + com.otectus.immersivebrewing.recipe.QuickFinishing.eligible(plan)
+                + "; contextual: " + plan.contextual() + "; generation: " + index.generation());
         return 1;
     }
 

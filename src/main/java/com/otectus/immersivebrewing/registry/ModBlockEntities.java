@@ -3,6 +3,7 @@ package com.otectus.immersivebrewing.registry;
 import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.blockentity.AlembicBlockEntity;
 import com.otectus.immersivebrewing.blockentity.ApothecaryMortarBlockEntity;
+import com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity;
 import com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
@@ -16,6 +17,10 @@ public final class ModBlockEntities {
     @SuppressWarnings("DataFlowIssue")
     public static final RegistryObject<BlockEntityType<ApothecaryMortarBlockEntity>> APOTHECARY_MORTAR = BLOCK_ENTITIES.register("apothecary_mortar",
             () -> BlockEntityType.Builder.of(ApothecaryMortarBlockEntity::new, ModBlocks.APOTHECARY_MORTAR.get()).build(null));
+
+    @SuppressWarnings("DataFlowIssue")
+    public static final RegistryObject<BlockEntityType<ApothecaryRackBlockEntity>> APOTHECARY_RACK = BLOCK_ENTITIES.register("apothecary_rack",
+            () -> BlockEntityType.Builder.of(ApothecaryRackBlockEntity::new, ModBlocks.APOTHECARY_RACK.get()).build(null));
 
     @SuppressWarnings("DataFlowIssue")
     public static final RegistryObject<BlockEntityType<BrewersKettleBlockEntity>> BREWERS_KETTLE = BLOCK_ENTITIES.register("brewers_kettle",

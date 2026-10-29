@@ -122,6 +122,20 @@ class KettleSimulationTest {
     }
 
     @Test
+    void deliberateCoastingKeepsParticipationWithoutRepeatedTaps() {
+        KettleParams params = build(gentle(INFUSE[0], 3), 91);
+        KettleSimulation sim = new KettleSimulation(params);
+        while (!sim.finished()) {
+            PhaseSpec phase = params.phaseAt(sim.step());
+            // One meaningful adjustment per phase, then deliberately keep the chosen burner setting.
+            int draft = sim.step() == phase.start() ? (sim.draft() + 1) % 3 : sim.draft();
+            sim.step(new KettleInput(draft, 0, false));
+        }
+        for (boolean counted : sim.score().phaseCounted()) assertTrue(counted, "coasting does not erase engagement");
+        assertEquals(0, play(params, KettleBot.idle()).control(), "fully unattended play still receives no credit");
+    }
+
+    @Test
     void idleScoresZeroAndPoorScoresBelowCompetent() {
         for (KettleSetup.Reaction infuse : INFUSE) {
             KettleParams params = build(gentle(infuse, 3), 7);
@@ -206,6 +220,29 @@ class KettleSimulationTest {
                         for (AdditionSpec a : p.additions()) {
                             assertTrue(d.step() < a.cueStep() - 10 || d.warnStep() > a.closeStep(), "disturbance overlaps an addition");
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void sampledSchedulesNeverStackWarningsWithAdditionWindowsOrEachOther() {
+        for (KettleSetup.Reaction infuse : INFUSE) {
+            for (long seed = 0; seed < 400; seed++) {
+                KettleParams params = build(intricate(infuse, 6), seed);
+                for (Disturbance disturbance : params.disturbances()) {
+                    PhaseSpec phase = params.phaseAt(disturbance.step());
+                    assertTrue(disturbance.warnStep() >= phase.start() - StepClock.seconds(0.5), "warning starts too far before its phase: " + seed);
+                    assertTrue(disturbance.step() < phase.end(), "disturbance lands after its phase: " + seed);
+                    for (AdditionSpec addition : params.additions()) {
+                        boolean separate = disturbance.step() < addition.cueStep() || disturbance.warnStep() > addition.closeStep();
+                        assertTrue(separate, "warning overlaps addition cue/window: seed=" + seed + " " + disturbance + " " + addition);
+                    }
+                    for (Disturbance other : params.disturbances()) {
+                        if (other == disturbance) continue;
+                        assertTrue(Math.abs(other.step() - disturbance.step()) >= StepClock.seconds(5),
+                                "contradictory disturbance cluster: seed=" + seed + " " + disturbance + " " + other);
                     }
                 }
             }

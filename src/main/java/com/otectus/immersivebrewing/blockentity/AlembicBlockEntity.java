@@ -16,6 +16,7 @@ import com.otectus.immersivebrewing.minigame.distillation.DistillationScore;
 import com.otectus.immersivebrewing.network.packet.StationActionC2S;
 import com.otectus.immersivebrewing.potion.BrewingMetadata;
 import com.otectus.immersivebrewing.potion.PotionContentsService;
+import com.otectus.immersivebrewing.potion.EffectPolicies;
 import com.otectus.immersivebrewing.potion.QualityMath;
 import com.otectus.immersivebrewing.recipe.DistillationRecipe;
 import com.otectus.immersivebrewing.recipe.ReclamationRecipe;
@@ -45,6 +46,7 @@ import com.otectus.immersivebrewing.item.CarrierContents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.PotionItem;
+import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.MinecraftForge;
@@ -145,15 +147,23 @@ public class AlembicBlockEntity extends StationBlockEntity {
     /** What a purification would do with the loaded bottles, or why it can not. */
     public record PurifyPlan(@Nullable DistillationRecipe recipe, ItemStack sample, int groups, int qualityIn, @Nullable Component problem) {}
 
+    /** Read-only operation comparison used by the screen; every count comes from the same recipes start uses. */
+    public record OperationPreview(ItemStack sample, int inputCount, int purifyOutput, ItemStack returnedContainer, int returnedContainers, int purifyFuel,
+                                   int qualityIn, int qualityMinimum, int qualityMaximum, int eligibleEffects, int totalEffects,
+                                   int attemptsRemaining, ItemStack reclaimResult, int reclaimOutput, int reclaimContainers,
+                                   int reclaimFuel, @Nullable Component problem) {}
+
     public PurifyPlan purifyPlan() {
         if (!ServerConfig.get(ServerConfig.ALLOW_PURIFICATION)) return refuse("alembic.immersive_brewing.purify.disabled");
         List<ItemStack> in = inputs();
         if (in.isEmpty()) return refuse("alembic.immersive_brewing.purify.empty");
         ItemStack first = in.get(0);
-        if (BrewingDefinitions.server().exclusions().excludesItem(first)) return refuse("alembic.immersive_brewing.purify.unsupported");
+        BrewingDefinitions defs = definitions();
+        if (defs.exclusions().excludesItem(first)) return refuse("alembic.immersive_brewing.purify.unsupported");
         Optional<BrewingMetadata> meta = BrewingMetadata.read(first);
         for (ItemStack s : in) {
-            if (!PotionContentsService.sameCanonical(first, s) || !BrewingMetadata.read(s).equals(meta)) return refuse("alembic.immersive_brewing.purify.mixed");
+            Component mismatch = mismatch(first, meta, s);
+            if (mismatch != null) return new PurifyPlan(null, first, 0, meta.map(BrewingMetadata::quality).orElse(QualityMath.BASELINE), mismatch);
         }
         if (BrewingMetadata.hasUnreadableCompound(first) || !PotionContentsService.effectsSupported(first)) {
             return refuse("alembic.immersive_brewing.purify.foreign");
@@ -178,15 +188,127 @@ public class AlembicBlockEntity extends StationBlockEntity {
         return new PurifyPlan(recipe, first, groups, qualityIn, null);
     }
 
+    @Nullable
+    private static Component mismatch(ItemStack first, Optional<BrewingMetadata> firstMeta, ItemStack other) {
+        if (BrewingMetadata.hasUnreadableCompound(first) != BrewingMetadata.hasUnreadableCompound(other)) {
+            return Component.translatable("alembic.immersive_brewing.purify.mismatch.newer");
+        }
+        if (first.getItem() != other.getItem()) return Component.translatable("alembic.immersive_brewing.purify.mismatch.container");
+        if (!PotionContentsService.sameCanonical(first, other)) return Component.translatable("alembic.immersive_brewing.purify.mismatch.contents");
+        Optional<BrewingMetadata> otherMeta = BrewingMetadata.read(other);
+        if (firstMeta.isEmpty() != otherMeta.isEmpty()) return Component.translatable("alembic.immersive_brewing.purify.mismatch.metadata");
+        if (firstMeta.isEmpty()) return null;
+        BrewingMetadata a = firstMeta.get();
+        BrewingMetadata b = otherMeta.get();
+        if (a.quality() != b.quality()) return Component.translatable("alembic.immersive_brewing.purify.mismatch.quality");
+        if (a.purifications() != b.purifications()) return Component.translatable("alembic.immersive_brewing.purify.mismatch.history");
+        if (a.lineage() != b.lineage()) return Component.translatable("alembic.immersive_brewing.purify.mismatch.lineage");
+        if (!a.equals(b)) return Component.translatable("alembic.immersive_brewing.purify.mismatch.metadata");
+        return null;
+    }
+
+    private BrewingDefinitions definitions() {
+        return BrewingDefinitions.forSide(level != null && level.isClientSide);
+    }
+
     private static PurifyPlan refuse(String key) {
         return new PurifyPlan(null, ItemStack.EMPTY, 0, 0, Component.translatable(key));
+    }
+
+    public OperationPreview operationPreview() {
+        List<ItemStack> in = inputs();
+        PurifyPlan plan = purifyPlan();
+        ItemStack sample = !plan.sample().isEmpty() ? plan.sample().copyWithCount(1) : in.isEmpty() ? ItemStack.EMPTY : in.get(0).copyWithCount(1);
+        int count = in.size();
+        int qIn = BrewingMetadata.read(sample).map(BrewingMetadata::quality).orElse(QualityMath.BASELINE);
+        int output = 0;
+        ItemStack returnedContainer = ItemStack.EMPTY;
+        int containers = 0;
+        int fuel = 0;
+        int qMax = qIn;
+        int attempts = 0;
+        DistillationRecipe previewRecipe = plan.recipe() != null ? plan.recipe() : sample.isEmpty() ? null : distillationFor(sample);
+        if (previewRecipe != null) {
+            DistillationRecipe recipe = previewRecipe;
+            int groups = count / recipe.groupSize();
+            output = groups * recipe.yield();
+            returnedContainer = new ItemStack(recipe.container());
+            containers = groups * (recipe.groupSize() - recipe.yield());
+            fuel = groups * recipe.fuelCharges();
+            int cap = Math.min(recipe.qualityCap(), ServerConfig.get(ServerConfig.PURIFICATION_QUALITY_CAP));
+            qMax = QualityMath.purified(qIn, QualityMath.MAX, cap);
+            int used = BrewingMetadata.read(sample).map(BrewingMetadata::purifications).orElse(0);
+            attempts = Math.max(0, ServerConfig.get(ServerConfig.MAX_PURIFICATIONS_PER_LINEAGE) - used);
+        }
+        BrewingDefinitions defs = definitions();
+        int totalEffects = PotionUtils.getMobEffects(sample).size();
+        int eligibleEffects = 0;
+        if (!sample.isEmpty() && PotionContentsService.effectsSupported(sample) && !EffectPolicies.isBundle(PotionUtils.getPotion(sample))) {
+            for (var effect : PotionUtils.getPotion(sample).getEffects()) {
+                if (!effect.isInfiniteDuration() && effect.getDuration() > 0 && EffectPolicies.treatment(effect.getEffect(), defs).scales()) eligibleEffects++;
+            }
+        }
+
+        ItemStack reclaimResult = ItemStack.EMPTY;
+        int reclaimOutput = 0;
+        int reclaimContainers = 0;
+        int reclaimFuel = 0;
+        if (!sample.isEmpty()) {
+            ReclamationRecipe reclaim = reclamationFor(sample);
+            if (reclaim != null) {
+                int groups = count / reclaim.groupSize();
+                reclaimResult = reclaim.result().copyWithCount(1);
+                reclaimOutput = groups * reclaim.result().getCount();
+                reclaimContainers = groups * reclaim.groupSize();
+                reclaimFuel = groups * reclaim.fuelCharges();
+            }
+        }
+        return new OperationPreview(sample, count, output, returnedContainer, containers, fuel, qIn, qIn, qMax, eligibleEffects, totalEffects,
+                attempts, reclaimResult, reclaimOutput, reclaimContainers, reclaimFuel, plan.problem());
+    }
+
+    /**
+     * Keeps the largest exact-compatible complete purification group and returns every other bottle unchanged. This is
+     * all-or-nothing when the player's main inventory lacks enough empty slots.
+     */
+    public int selectCompatibleGroup(Player player) {
+        if (ledger != null) return 0;
+        List<Integer> occupied = new ArrayList<>();
+        for (int i = 0; i < INPUT_SIZE; i++) if (!inventory.getStackInSlot(INPUT + i).isEmpty()) occupied.add(INPUT + i);
+        if (occupied.isEmpty()) return 0;
+        List<Integer> best = List.of();
+        for (int anchor : occupied) {
+            ItemStack first = inventory.getStackInSlot(anchor);
+            Optional<BrewingMetadata> meta = BrewingMetadata.read(first);
+            DistillationRecipe recipe = distillationFor(first);
+            if (recipe == null) continue;
+            List<Integer> compatible = new ArrayList<>();
+            for (int slot : occupied) if (mismatch(first, meta, inventory.getStackInSlot(slot)) == null) compatible.add(slot);
+            int usable = compatible.size() - compatible.size() % recipe.groupSize();
+            if (usable > best.size()) best = List.copyOf(compatible.subList(0, usable));
+        }
+        if (best.isEmpty()) return 0;
+        List<Integer> move = new ArrayList<>(occupied);
+        move.removeAll(best);
+        int empty = 0;
+        for (int i = 0; i < 36; i++) if (player.getInventory().getItem(i).isEmpty()) empty++;
+        if (empty < move.size()) return -1;
+        int moved = 0;
+        for (int slot : move) {
+            ItemStack stack = inventory.getStackInSlot(slot).copy();
+            if (player.addItem(stack)) {
+                putDirect(slot, ItemStack.EMPTY);
+                moved++;
+            }
+        }
+        return moved;
     }
 
     @Nullable
     private DistillationRecipe distillationFor(ItemStack stack) {
         if (level == null) return null;
         RecipeManager recipes = level.getRecipeManager();
-        BrewingDefinitions defs = BrewingDefinitions.server();
+        BrewingDefinitions defs = definitions();
         return recipes.getAllRecipesFor(ModRecipeTypes.DISTILLATION.get()).stream()
                 .filter(r -> !defs.exclusions().excludesRecipe(r.getId()) && r.input().matches(stack))
                 .min(Comparator.comparing(r -> r.getId().toString())).orElse(null);
@@ -195,7 +317,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
     @Nullable
     private ReclamationRecipe reclamationFor(ItemStack stack) {
         if (level == null) return null;
-        BrewingDefinitions defs = BrewingDefinitions.server();
+        BrewingDefinitions defs = definitions();
         return level.getRecipeManager().getAllRecipesFor(ModRecipeTypes.RECLAMATION.get()).stream()
                 .filter(r -> !defs.exclusions().excludesRecipe(r.getId()) && r.input().matches(stack))
                 .min(Comparator.comparing(r -> r.getId().toString())).orElse(null);
@@ -273,20 +395,24 @@ public class AlembicBlockEntity extends StationBlockEntity {
         snapshot.putInt("cap", Math.min(recipe.qualityCap(), ServerConfig.get(ServerConfig.PURIFICATION_QUALITY_CAP)));
         snapshot.putString("container", String.valueOf(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(recipe.container())));
         snapshot.putInt("qualityIn", plan.qualityIn());
+        snapshot.putDouble("assistTime", assist[0]);
+        snapshot.putDouble("assistBand", assist[1]);
         ledger = new JobLedger(UUID.randomUUID(), Operation.PURIFY, JobState.RESERVED, taken, List.of(), fuel, snapshot,
                 plan.sample().copyWithCount(1), params, new long[0], seed, 0, player.getUUID(), player.getGameProfile().getName(),
                 List.of(), null, 0, BrewingDefinitions.server().generation(), 0);
         changed();
         SimHandle sim = SimHandles.create(SessionKind.DISTILLATION, params, null);
         player.closeContainer();
-        SessionManager.begin(player, this, sim, false, display(plan.sample(), plan.groups(), plan.qualityIn()));
+        SessionManager.begin(player, this, sim, false, display(plan.sample(), plan.groups(), plan.qualityIn(), assist[0], assist[1]));
     }
 
-    private CompoundTag display(ItemStack sample, int groups, int qualityIn) {
+    private CompoundTag display(ItemStack sample, int groups, int qualityIn, double assistTime, double assistBand) {
         CompoundTag tag = new CompoundTag();
         tag.put("input", LedgerCodec.saveStack(sample.copyWithCount(1)));
         tag.putInt("groups", groups);
         tag.putInt("qualityIn", qualityIn);
+        tag.putDouble("assistTime", assistTime);
+        tag.putDouble("assistBand", assistBand);
         return tag;
     }
 
@@ -308,8 +434,10 @@ public class AlembicBlockEntity extends StationBlockEntity {
             return;
         }
         player.closeContainer();
-        SessionManager.begin(player, this, sim, true, display(ledger.outputSnapshot(), ledger.snapshot().getInt("groups"),
-                ledger.snapshot().getInt("qualityIn")));
+        CompoundTag snap = ledger.snapshot();
+        SessionManager.begin(player, this, sim, true, display(ledger.outputSnapshot(), snap.getInt("groups"), snap.getInt("qualityIn"),
+                snap.contains("assistTime", net.minecraft.nbt.Tag.TAG_ANY_NUMERIC) ? snap.getDouble("assistTime") : 1.0,
+                snap.contains("assistBand", net.minecraft.nbt.Tag.TAG_ANY_NUMERIC) ? snap.getDouble("assistBand") : 1.0));
     }
 
     @Override

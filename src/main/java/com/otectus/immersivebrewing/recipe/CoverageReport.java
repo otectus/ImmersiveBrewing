@@ -59,6 +59,7 @@ public final class CoverageReport {
         Map<PlanIndex.Status, Integer> counts = new EnumMap<>(PlanIndex.Status.class);
         for (PlanIndex.Entry e : plans.report()) counts.merge(e.status(), 1, Integer::sum);
         out.add("Infusion recipes: " + counts);
+        out.addAll(plans.catalogDiagnostics());
         for (PlanIndex.Entry e : plans.report()) {
             if (e.status() == PlanIndex.Status.SUPPORTED && e.warnings().isEmpty()) continue;
             out.add("  " + e.status().name().toLowerCase(java.util.Locale.ROOT) + " " + e.recipe() + ": " + e.reason().replace('|', ' ')
@@ -88,6 +89,8 @@ public final class CoverageReport {
         out.add("Discovery: " + discovery.queries() + " queries" + (discovery.truncated() ? " (budget reached)" : "") + ", "
                 + discovery.found().size() + " transformations, " + discovery.uncovered() + " not covered by a plan, "
                 + discovery.excluded() + " excluded by data, " + discovery.loose() + " loose (not offered)");
+        out.add("Unresolved contextual steps: "+discovery.uncovered()+"; omitted discovery pairs: "+(discovery.truncated()?"unknown (budget reached)":"0 in enumerated search")
+                +"; arbitrary handlers may remain non-enumerable");
         for (DiscoveryIndex.Found f : discovery.found()) {
             if (f.covered() || f.excluded() || f.loose()) continue;
             out.add("  opaque/query-only: " + describe(f.input()) + " + " + ForgeRegistries.ITEMS.getKey(f.ingredient()) + " -> " + describe(f.output())

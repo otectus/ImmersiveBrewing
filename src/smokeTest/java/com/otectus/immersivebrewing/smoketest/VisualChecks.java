@@ -17,6 +17,40 @@ import java.util.Map;
 
 /** Client-only acceptance checks for overflow, real mouse controls and resize persistence. Never shipped. */
 final class VisualChecks {
+    /** Measure complete status strings with the loaded Minecraft font, including the longest phase and numeric mode. */
+    static void statusText(Screen screen, Map<String, Object> checks, String name) {
+        int available = (Integer) field(screen, "pw") - 40;
+        int widest = 0;
+        for (String key : List.of("count_in", "resuming")) {
+            widest = Math.max(widest, Ui.font().width(Component.translatable("screen.immersive_brewing." + key, 2)));
+        }
+        if (screen instanceof com.otectus.immersivebrewing.client.screen.KettleBrewScreen) {
+            for (String phase : List.of("bloom", "infuse", "settle")) for (String trend : List.of("rising", "falling", "steady")) {
+                Component text = Component.translatable("screen.immersive_brewing.kettle.phase_time",
+                        Component.translatable("phase.immersive_brewing." + phase), 999).append(" · C 100 · ")
+                        .append(Component.translatable("screen.immersive_brewing.heat_trend." + trend));
+                widest = Math.max(widest, Ui.font().width(text));
+            }
+        }
+        checks.put("status_text_width_" + name, widest + "/" + available);
+        checks.put("status_text_unabridged_" + name, widest <= available);
+    }
+
+    /** Deterministic thermal states in a paused, local practice session; screenshots still use the real renderer. */
+    static void heatTrend(com.otectus.immersivebrewing.client.ClientSession session, String trend) {
+        if (!session.practice || !session.paused()) throw new IllegalStateException("Expected paused local practice");
+        var sim = ((com.otectus.immersivebrewing.session.SimHandles.Brewing) session.sim()).sim();
+        try {
+            Field heat = sim.getClass().getDeclaredField("heat"), burner = sim.getClass().getDeclaredField("burner");
+            heat.setAccessible(true);
+            burner.setAccessible(true);
+            heat.setDouble(sim, .5);
+            burner.setDouble(sim, switch (trend) { case "rising" -> .7; case "falling" -> .3; default -> .5; });
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     static void widgets(Screen screen, Map<String, Object> checks, String name) {
         if (screen == null || !screen.getClass().getPackageName().endsWith("client.screen")) return;
         List<AbstractWidget> widgets = screen.children().stream().filter(AbstractWidget.class::isInstance)
@@ -39,6 +73,11 @@ final class VisualChecks {
             return screen.mouseClicked(b.getX() + b.getWidth() / 2.0, b.getY() + b.getHeight() / 2.0, 0);
         }
         return false;
+    }
+
+    static boolean notebookTab(Screen screen, String tab) {
+        if (!field(screen, "page").toString().equalsIgnoreCase(tab)) click(screen, "notebook.immersive_brewing.tab." + tab);
+        return field(screen, "page").toString().equalsIgnoreCase(tab);
     }
 
     /** Selects the listed plan with the most steps and returns its step count. */

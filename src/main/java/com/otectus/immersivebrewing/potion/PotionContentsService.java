@@ -69,6 +69,18 @@ public final class PotionContentsService {
         return stack.is(Items.POTION) || stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION) || stack.is(Items.TIPPED_ARROW);
     }
 
+    /** Whether the current policy can actually change a registered duration, rather than merely record a grade. */
+    public static boolean durationCanScale(ItemStack stack, BrewingDefinitions defs) {
+        if (!effectsSupported(stack) || EffectPolicies.isBundle(PotionUtils.getPotion(stack))) return false;
+        for (MobEffectInstance effect : PotionUtils.getPotion(stack).getEffects()) {
+            if (effect.isInfiniteDuration() || effect.getDuration() <= 0) continue;
+            var treatment = EffectPolicies.treatment(effect.getEffect(), defs);
+            if (treatment.scales() && (QualityMath.scaleDuration(effect.getDuration(), 0, treatment.minimum(), treatment.maximum()) != effect.getDuration()
+                    || QualityMath.scaleDuration(effect.getDuration(), 100, treatment.minimum(), treatment.maximum()) != effect.getDuration())) return true;
+        }
+        return false;
+    }
+
     /**
      * Effective effects of a supported stack (drinking and splash): scaled registered effects, then exact custom effects.
      * Untagged or unsupported stacks return exactly {@link PotionUtils#getMobEffects(ItemStack)}.

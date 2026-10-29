@@ -24,8 +24,14 @@ import java.util.function.Supplier;
  * containers and what is missing (spec 13: show every step and let the player choose among alternatives). Plans whose
  * reagents are loaded come first; the list is bounded.
  */
-public record PlanListS2C(BlockPos pos, ItemStack input, int servings, @Nullable Component problem, List<Entry> entries) {
+public record PlanListS2C(BlockPos pos, ItemStack input, int servings, @Nullable Component problem, List<Entry> entries,
+                          int generation, int request, int page, int total, boolean incomplete, int omitted, String query) {
     public static final int MAX_ENTRIES = 256;
+    /** A deliberate favorite/JEI/staging selection must not be replaced by a remembered search on opening. */
+    public static final int SELECTED_ROUTE = -1;
+    public PlanListS2C(BlockPos pos, ItemStack input, int servings, Component problem, List<Entry> entries) {
+        this(pos,input,servings,problem,entries,0,0,0,entries.size(),false,0,"");
+    }
 
     public record Step(Item reagent, KettlePhase phase, KettleSetup.Role role, ItemStack after) {}
 
@@ -34,9 +40,19 @@ public record PlanListS2C(BlockPos pos, ItemStack input, int servings, @Nullable
 
     public record Entry(PlanKey key, ItemStack output, List<Step> steps, List<Cost> costs, int fuelNeeded, int fuelAvailable,
                         List<ItemStack> remainders, boolean available, @Nullable Component missing, boolean contextual, int tier,
-                        int seconds, boolean qualityAffectsEffects, int servingLimit, int expectedExtraction) {}
+                        int seconds, boolean qualityAffectsEffects, int servingLimit, int expectedExtraction,
+                        int finishingSeconds, boolean finishReady) {
+        public Entry(PlanKey key, ItemStack output, List<Step> steps, List<Cost> costs, int fuelNeeded, int fuelAvailable,
+                     List<ItemStack> remainders, boolean available, Component missing, boolean contextual, int tier,
+                     int seconds, boolean qualityAffectsEffects, int servingLimit, int expectedExtraction) {
+            this(key, output, steps, costs, fuelNeeded, fuelAvailable, remainders, available, missing, contextual,
+                    tier, seconds, qualityAffectsEffects, servingLimit, expectedExtraction, 0, false);
+        }
+    }
 
     public void encode(FriendlyByteBuf buf) {
+        buf.writeVarInt(generation); buf.writeVarInt(request); buf.writeVarInt(page); buf.writeVarInt(total);
+        buf.writeBoolean(incomplete); buf.writeVarInt(omitted); buf.writeUtf(query,128);
         buf.writeBlockPos(pos);
         buf.writeItem(input);
         buf.writeByte(servings);
@@ -75,40 +91,48 @@ public record PlanListS2C(BlockPos pos, ItemStack input, int servings, @Nullable
             buf.writeBoolean(e.qualityAffectsEffects());
             buf.writeByte(e.servingLimit());
             buf.writeByte(e.expectedExtraction());
+            buf.writeByte(e.finishingSeconds());
+            buf.writeBoolean(e.finishReady());
         }
     }
 
     public static PlanListS2C decode(FriendlyByteBuf buf) {
+        int generation=buf.readVarInt(), request=buf.readVarInt(), page=buf.readVarInt(), total=buf.readVarInt();
+        boolean incomplete=buf.readBoolean(); int omitted=buf.readVarInt(); String query=buf.readUtf(128);
         BlockPos pos = buf.readBlockPos();
         ItemStack input = buf.readItem();
         int servings = buf.readByte();
         Component problem = buf.readBoolean() ? buf.readComponent() : null;
-        int n = Math.min(buf.readVarInt(), MAX_ENTRIES);
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_ENTRIES) throw new IllegalArgumentException("plan page length");
         List<Entry> entries = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             PlanKey key = PlanKey.read(buf);
             ItemStack output = buf.readItem();
-            int stepCount = Math.min(buf.readUnsignedByte(), 8);
+            int stepCount = buf.readUnsignedByte();
+            if (stepCount > 8) throw new IllegalArgumentException("plan stepCount bounds");
             List<Step> steps = new ArrayList<>(stepCount);
             for (int j = 0; j < stepCount; j++) {
                 steps.add(new Step(buf.readById(BuiltInRegistries.ITEM), buf.readEnum(KettlePhase.class), buf.readEnum(KettleSetup.Role.class), buf.readItem()));
             }
-            int costCount = Math.min(buf.readUnsignedByte(), 8);
+            int costCount = buf.readUnsignedByte();
+            if (costCount > 8) throw new IllegalArgumentException("plan costCount bounds");
             List<Cost> costs = new ArrayList<>(costCount);
             for (int j = 0; j < costCount; j++) {
                 costs.add(new Cost(buf.readById(BuiltInRegistries.ITEM), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean()));
             }
             int fuelNeeded = buf.readVarInt();
             int fuelAvailable = buf.readVarInt();
-            int remCount = Math.min(buf.readUnsignedByte(), 16);
+            int remCount = buf.readUnsignedByte();
+            if (remCount > 32) throw new IllegalArgumentException("plan remCount bounds");
             List<ItemStack> remainders = new ArrayList<>(remCount);
             for (int j = 0; j < remCount; j++) remainders.add(buf.readItem());
             boolean available = buf.readBoolean();
             Component missing = buf.readBoolean() ? buf.readComponent() : null;
             entries.add(new Entry(key, output, steps, costs, fuelNeeded, fuelAvailable, remainders, available, missing, buf.readBoolean(),
-                    buf.readByte(), buf.readVarInt(), buf.readBoolean(), buf.readByte(), buf.readByte()));
+                    buf.readByte(), buf.readVarInt(), buf.readBoolean(), buf.readByte(), buf.readByte(), buf.readUnsignedByte(), buf.readBoolean()));
         }
-        return new PlanListS2C(pos, input, servings, problem, entries);
+        return new PlanListS2C(pos, input, servings, problem, entries,generation,request,page,total,incomplete,omitted,query);
     }
 
     public void handle(Supplier<NetworkEvent.Context> ctx) {

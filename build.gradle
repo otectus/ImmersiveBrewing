@@ -6,7 +6,7 @@ plugins {
     id 'eclipse'
     id 'net.minecraftforge.gradle' version '6.0.54'
 }
-// Five narrow vanilla mixins carry brewing quality through drinking, splash, lingering and arrow paths and guard the
+// Narrow vanilla mixins carry brewing quality through potion paths, compose the drinking animation and guard the
 // brewing stand in replacement mode (docs/ARCHITECTURE.md, ADR-1 and ADR-4).
 apply plugin: 'org.spongepowered.mixin'
 
@@ -61,7 +61,8 @@ minecraft {
         }
         server { args '--nogui' }
         gameTestServer {
-            workingDirectory project.file('run-gametest')
+            workingDirectory project.file(project.findProperty('gameTestDirectory') ?: 'run-gametest')
+            if (project.hasProperty('apothecaryConfigFixture')) property 'immersive_brewing.apothecaryConfigFixture', 'true'
             // The coverage report GameTest writes its output here (docs/reports).
             property 'immersive_brewing.reportDir', file('docs/reports').absolutePath
             mods { immersive_brewing { source sourceSets.gameTest } }
@@ -104,13 +105,13 @@ dependencies {
     }
 
     // Iron paddle smithing recipe and paddle metadata (integration/smithing, reached only after a ModList check).
-    compileOnly fg.deobf("local:immersive-smithing:${immersive_smithing_version}")
-    if (!project.hasProperty('noSmithing')) {
+    if (project.hasProperty('withSmithing') && !project.hasProperty('noSmithing')) {
+        compileOnly fg.deobf("local:immersive-smithing:${immersive_smithing_version}")
         runtimeOnly fg.deobf("local:immersive-smithing:${immersive_smithing_version}")
     }
     // Binding-leather carrier strap (integration/tanning, reached only after a ModList check).
-    compileOnly fg.deobf("local:immersive-tanning:${immersive_tanning_version}")
-    if (!project.hasProperty('noTanning')) {
+    if (project.hasProperty('withTanning') && !project.hasProperty('noTanning')) {
+        compileOnly fg.deobf("local:immersive-tanning:${immersive_tanning_version}")
         runtimeOnly fg.deobf("local:immersive-tanning:${immersive_tanning_version}")
     }
     // Coexistence only (spec 17): nothing references these; they join the dev runtime for the compatibility matrix.
@@ -127,8 +128,8 @@ dependencies {
                       withPotionsMaster : "local:potionsmaster:${potionsmaster_version}",
                       withRpgPotions    : "local:rpg_potions:${rpg_potions_version}"]
     potionMods.each { flag, notation ->
-        compileOnly fg.deobf(notation)
         if (project.hasProperty(flag) || project.hasProperty('withPotionMods')) {
+            compileOnly fg.deobf(notation)
             runtimeOnly fg.deobf(notation)
         }
     }
