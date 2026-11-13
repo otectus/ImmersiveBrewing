@@ -1,5 +1,7 @@
 package com.otectus.immersivebrewing.client;
 
+import net.minecraft.world.item.ItemStack;
+
 import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.client.screen.DistillationScreen;
 import com.otectus.immersivebrewing.client.screen.KettleBrewScreen;
@@ -119,18 +121,25 @@ public final class ClientPacketHandler {
         ClientGuide.set(msg.guide());
     }
 
+    /** A practice setup from the server: run it locally at an idle station of its kind (handoff 10). */
     public static void practice(OpenPracticeS2C msg) {
-        ClientSession session = msg.params() != null && msg.display() != null
-                ? ClientSession.practice(msg.kind(), msg.params(), msg.display()) : PracticeSetup.create(msg.kind(), msg.profile());
-        if (session == null) {
-            StationNotices.show(Component.translatable("notice.immersive_brewing.practice_unavailable"), true);
-            return;
-        }
-        open(session);
+        com.otectus.immersivebrewing.client.workshop.PracticeBench.request(msg.kind(), msg.practice());
     }
 
+    /** Asks the server for the default practice setup of a station kind (Notebook buttons). */
     public static void practice(SessionKind kind) {
-        practice(new OpenPracticeS2C(kind, null));
+        com.otectus.immersivebrewing.network.ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.NotebookPrefsC2S(
+                com.otectus.immersivebrewing.network.packet.NotebookPrefsC2S.Action.PRACTICE_KIND, "", ItemStack.EMPTY, kind.ordinal()));
+    }
+
+    /** The guided lessons now replay the first-use demonstrations in a kettle practice. */
+    public static void guidedPractice() {
+        var config = com.otectus.immersivebrewing.config.ClientConfig.TUTORIAL_STAGE;
+        if (com.otectus.immersivebrewing.config.ClientConfig.SPEC.isLoaded()) {
+            config.set(0);
+            com.otectus.immersivebrewing.config.ClientConfig.SPEC.save();
+        }
+        practice(SessionKind.BREWING);
     }
 
     private ClientPacketHandler() {}

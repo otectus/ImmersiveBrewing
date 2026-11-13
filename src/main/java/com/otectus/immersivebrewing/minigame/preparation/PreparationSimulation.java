@@ -173,6 +173,11 @@ public final class PreparationSimulation {
         return clump;
     }
 
+    /** Held pressure state already represented by the saved hold counter. */
+    public boolean pressing() {
+        return holdSteps > 0;
+    }
+
     public int folds() {
         return folds;
     }

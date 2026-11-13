@@ -167,16 +167,39 @@ Run `check_mod.py` for a full consistency check (missing models, lang keys, text
 
 ## Current focus
 
-Release verification for 1.0.0 (plan milestone M7): matrix runs, `docs/TESTING.md`, jar inspection.
+1.2.0 hands-on workshop (`Immersive_Brewing_Hands_On_Overhaul_Handoff.md`): implementation and automated checks are
+in `docs/reports/1.2.0-hands-on-overhaul.md`; human playtests, two-client latency and native-language review remain.
+
+## Hands-on workshop map (1.2)
+
+- `workshop/`: pure domain. `KettleProcess` (stages, portions, families, finalization), `MortarProcess` (zones, fines,
+  clumping, work budget), `AlembicProcess` (cuts, coolant, routing), `FinishingProcess`, `ReactionFamily`,
+  `ToolTrack` (bounded strokes), `Leases`, `WorkshopParts`/`WorkshopGeometry` (part volumes per facing),
+  `WorkshopProfile(s)` (datapack `workshop_profiles` and fallbacks), `WorkshopPractice` (server practice setups).
+- `interaction/`: `WorkshopPresence` (working views, fake players included), `WorkshopIntents` (validation and budgets),
+  `RackWorkshop`.
+- Stations: `StationBlockEntity.workshopTick` is the single tick owner (grace seal, snapshots, visuals);
+  `act(...)` per station; `directInsert` for right-click loading; schema-3 ledgers (`JobLedger.process`).
+- Client: `client/workshop/` (`WorkshopScreen`, `ClientWorkshop` hand/camera, `WorkshopTargets`, `WorkshopKeys`,
+  `WorkshopTutorial`, `PracticeBench`); renderers draw from snapshots via `WorkshopRenderBits`.
+- Packets: `WorkshopIntentC2S`, `WorkshopFocusS2C`, `WorkshopSnapshotS2C`, `OpenPracticeS2C`; protocol 5.
+- Tests: `src/testShared/.../testing/` tenders (`KettleTender`, `MortarTender`, `AlembicTender`, `WorkshopHand`) and
+  `LegacyBatches` (1.1-format fixtures); smoke driver `src/smokeTest/.../WorkshopDriver`.
 
 ## Roadmap
 
-- [ ] Hands-on difficulty and timing trials with real players (the reference bots only prove the games are winnable).
+- [ ] Hands-on difficulty and timing trials with real players (the reference tenders only prove the work is doable).
 - [ ] Dedicated server with two real clients: contention, latency (0/100/200 ms), reduced TPS, forged packets.
-- [ ] Use brew-profile `presentation.accent` / `particle` (synced, not drawn yet).
+- [ ] A presentation hook for the reserved `presentation` field of workshop profiles.
 - [ ] Later content (spec 30): herb drying, poultices, coatings, fermentation, alchemist jewelry.
 
 ## Decisions
+
+- 1.2: new work is hands-on at the apparatus; the 1.1 minigame sessions only finish batches saved by 1.1
+  (`LEGACY_RESUME`). Brewing owns a local part-volume substitute for Diegesis (ADR-5).
+- 1.2: station lifecycle updates are owed and flushed from the station tick, never sent while building an update
+  packet: a re-entrant `sendBlockUpdated` inside the chunk broadcast stranded the section's change set and later block
+  changes in that section stopped reaching clients (`WorkshopRegressionGameTests.buildingAnUpdatePacketNeverMarksTheChunk`).
 
 - Quality never edits canonical potion contents; it lives in the `immersive_brewing` stack compound and is resolved
   where effects apply (five verified mixins, `docs/ARCHITECTURE.md` ADR-1).

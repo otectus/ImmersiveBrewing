@@ -52,6 +52,11 @@ public final class ClientSession {
     public final CompoundTag display;
     private final long[] params;
     private SimHandle sim;
+    private int acceptedAdditions;
+    private final int[] stageColors;
+    private final int inputColor;
+    private int colorStage = -1, colorFrom, colorTarget;
+    private long colorStarted;
     private int countIn;
     private final int countInTotal;
     private int ackStep;
@@ -90,9 +95,13 @@ public final class ClientSession {
         this.practice = practice;
         this.resumed = resumed;
         this.display = display;
+        stageColors = display.getIntArray("stageColors");
+        inputColor = net.minecraft.world.item.alchemy.PotionUtils.getColor(
+                com.otectus.immersivebrewing.batch.LedgerCodec.loadStack(display.getCompound("input")));
         this.ackStep = sim.step();
         this.ackState = sim.saveState();
         this.recordedFrom = sim.step();
+        acceptedAdditions = sim instanceof SimHandles.Brewing brewing ? brewing.sim().nextAddition() : 0;
     }
 
     public static ClientSession start(UUID id, SessionKind kind, BlockPos pos, long[] params, long[] state, int countIn, boolean resumed, CompoundTag display) {
@@ -121,6 +130,38 @@ public final class ClientSession {
 
     public SimHandle sim() {
         return sim;
+    }
+
+    public int acceptedAdditionCount() {
+        return practice && sim instanceof SimHandles.Brewing brewing ? brewing.sim().nextAddition() : acceptedAdditions;
+    }
+
+    public int currentDisplayColor() {
+        int stage = acceptedAdditionCount();
+        long now = net.minecraft.Util.getMillis();
+        if (stage != colorStage) {
+            colorFrom = colorStage < 0 ? displayColor(stage) : blendedColor(now);
+            colorTarget = displayColor(stage); colorStage = stage; colorStarted = now;
+        }
+        return com.otectus.immersivebrewing.client.presentation.PresentationPolicy.current().animate() ? blendedColor(now) : colorTarget;
+    }
+    private int blendedColor(long now) {
+        float t = Math.max(0, Math.min(1, (now - colorStarted) / 300F));
+        int rgb = 0;
+        for (int shift : new int[] {0, 8, 16}) {
+            int from = colorFrom >> shift & 255, to = colorTarget >> shift & 255;
+            rgb |= Math.round(from + (to - from) * t) << shift;
+        }
+        return rgb;
+    }
+    public int nextDisplayColor() { return displayColor(acceptedAdditionCount() + 1); }
+    private int displayColor(int index) {
+        if (stageColors.length > 0) return stageColors[Math.min(Math.max(0, index), stageColors.length - 1)];
+        return inputColor;
+    }
+
+    public void acceptedAddition(int index) {
+        if (!practice && !ended) acceptedAdditions = Math.max(acceptedAdditions, index + 1);
     }
 
     /** Counting in: before the run starts or resumes, or before play continues after the help closed. */
@@ -161,6 +202,7 @@ public final class ClientSession {
             tellServer(false);
         } else {
             resumeIn = RESUME_TICKS;
+            if (!practice) ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.ResumePresentationC2S(id));
         }
     }
 
@@ -248,6 +290,7 @@ public final class ClientSession {
         } catch (IllegalArgumentException e) {
             return;
         }
+        if (fresh instanceof SimHandles.Brewing brewing) acceptedAdditions = brewing.sim().nextAddition();
         int local = sim.step();
         for (int s = step; s < local; s++) {
             int index = s - recordedFrom;

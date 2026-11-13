@@ -1,6 +1,6 @@
 {
   "parent": "block/block",
-  "render_type": "minecraft:translucent",
+  "render_type": "minecraft:cutout",
   "textures": {
     "particle": "immersive_brewing:block/alembic_copper",
     "copper": "immersive_brewing:block/alembic_copper",
@@ -346,74 +346,6 @@
             7,
             12,
             9
-          ]
-        }
-      }
-    },
-    {
-      "from": [
-        10,
-        3,
-        9
-      ],
-      "to": [
-        15,
-        9,
-        14
-      ],
-      "faces": {
-        "north": {
-          "texture": "#glass",
-          "uv": [
-            10,
-            7,
-            15,
-            13
-          ]
-        },
-        "south": {
-          "texture": "#glass",
-          "uv": [
-            10,
-            7,
-            15,
-            13
-          ]
-        },
-        "east": {
-          "texture": "#glass",
-          "uv": [
-            9,
-            7,
-            14,
-            13
-          ]
-        },
-        "west": {
-          "texture": "#glass",
-          "uv": [
-            9,
-            7,
-            14,
-            13
-          ]
-        },
-        "up": {
-          "texture": "#glass",
-          "uv": [
-            10,
-            9,
-            15,
-            14
-          ]
-        },
-        "down": {
-          "texture": "#glass",
-          "uv": [
-            10,
-            9,
-            15,
-            14
           ]
         }
       }

@@ -27,7 +27,9 @@ public class ApothecaryRackMenu extends AbstractContainerMenu {
         this.pos = pos;
         this.rack = inventory.player.level().getBlockEntity(pos) instanceof ApothecaryRackBlockEntity be ? be : null;
         if (rack != null) {
-            for (int i = 0; i < ApothecaryRackBlockEntity.SLOTS; i++) addSlot(new SlotItemHandler(rack.inventory(), i, 35 + i * 18, 22));
+            // Server indices remain row-major: 0..2 top, 3..5 bottom.
+            for (int i = 0; i < ApothecaryRackBlockEntity.SLOTS; i++)
+                addSlot(new SlotItemHandler(rack.inventory(), i, 35 + (i % 3) * 18, 16 + (i / 3) * 20));
         }
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
             addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 85 + row * 18));

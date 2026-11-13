@@ -1,34 +1,74 @@
 {
-  "variants": {
-    "facing=north,lit=false": {
-      "model": "immersive_brewing:block/alembic"
+  "multipart": [
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic"
+      }
     },
-    "facing=north,lit=true": {
-      "model": "immersive_brewing:block/alembic"
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic_glass"
+      }
     },
-    "facing=east,lit=false": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 90
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic",
+        "y": 90
+      }
     },
-    "facing=east,lit=true": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 90
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic_glass",
+        "y": 90
+      }
     },
-    "facing=south,lit=false": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 180
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic",
+        "y": 180
+      }
     },
-    "facing=south,lit=true": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 180
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic_glass",
+        "y": 180
+      }
     },
-    "facing=west,lit=false": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 270
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic",
+        "y": 270
+      }
     },
-    "facing=west,lit=true": {
-      "model": "immersive_brewing:block/alembic",
-      "y": 270
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "immersive_brewing:block/alembic_glass",
+        "y": 270
+      }
     }
-  }
+  ]
 }

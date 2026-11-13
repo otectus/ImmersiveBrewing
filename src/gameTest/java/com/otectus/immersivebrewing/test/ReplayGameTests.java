@@ -23,20 +23,25 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import java.util.UUID;
 
 /**
- * Milestone 2 (spec 21.1): the server accepts inputs only. Duplicated, reordered, oversized, invalid, far-future, flooded
+ * Milestone 2 (spec 21.1), now for legacy-resume sessions only (batches saved by 1.1): the server accepts inputs only. Duplicated, reordered, oversized, invalid, far-future, flooded
  * and forged packets change nothing they should not, count as violations where they are the sender's fault, and a
  * flood seals the batch with its progress kept. A late one-shot action is carried into the next step (ADR-2).
  */
 @GameTestHolder(ImmersiveBrewing.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class ReplayGameTests {
+    /**
+     * A batch saved by 1.1 mid-reaction, resumed through its original interface: the only way a legacy session still
+     * starts (handoff 17). Its protocol keeps every guarantee it had.
+     */
     private static FakePlayer brewing(GameTestHelper h, String name) {
         BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
         TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
         FakePlayer player = TestSupport.player(h, name);
-        TestSupport.openKettle(player, kettle);
-        kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the session started");
+        BrewersKettleBlockEntity legacy = LegacyFixtures.sealedBrew(h, kettle, player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS), 0);
+        TestSupport.openKettle(player, legacy);
+        legacy.resume(player);
+        h.assertTrue(TestSupport.session(player).isPresent(), "the legacy session started");
         return player;
     }
 
@@ -99,7 +104,7 @@ public final class ReplayGameTests {
         SessionManager.receive(viewer, new InputFramesC2S(s.id(), 0, 4, new int[] {frame(2), frame(2), frame(2), frame(2)}));
         SessionManager.leave(viewer, s.id(), "session.immersive_brewing.end.closed");
         h.assertTrue(TestSupport.session(owner).isPresent() && s.bufferedFrames() == 0 && s.violations() == 0, "the owner's session is untouched");
-        h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.RESERVED, "and so is the job");
+        h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.SEALED && kettle.ledger().legacy(), "and so is the job");
         SessionManager.leave(owner, s.id(), "session.immersive_brewing.end.closed");
         h.succeed();
     }

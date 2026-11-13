@@ -4,14 +4,14 @@
       "model": "immersive_brewing:block/brewers_kettle"
     },
     "facing=north,lit=true": {
-      "model": "immersive_brewing:block/brewers_kettle"
+      "model": "immersive_brewing:block/brewers_kettle_lit"
     },
     "facing=east,lit=false": {
       "model": "immersive_brewing:block/brewers_kettle",
       "y": 90
     },
     "facing=east,lit=true": {
-      "model": "immersive_brewing:block/brewers_kettle",
+      "model": "immersive_brewing:block/brewers_kettle_lit",
       "y": 90
     },
     "facing=south,lit=false": {
@@ -19,7 +19,7 @@
       "y": 180
     },
     "facing=south,lit=true": {
-      "model": "immersive_brewing:block/brewers_kettle",
+      "model": "immersive_brewing:block/brewers_kettle_lit",
       "y": 180
     },
     "facing=west,lit=false": {
@@ -27,7 +27,7 @@
       "y": 270
     },
     "facing=west,lit=true": {
-      "model": "immersive_brewing:block/brewers_kettle",
+      "model": "immersive_brewing:block/brewers_kettle_lit",
       "y": 270
     }
   }

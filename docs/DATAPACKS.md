@@ -23,6 +23,7 @@ documentation, not a release announcement.
 | Brew profile | `data/<ns>/immersive_brewing/brew_profiles/<path>.json` |
 | Effect policy | `data/<ns>/immersive_brewing/effect_policies/<path>.json` |
 | Exclusions | `data/<ns>/immersive_brewing/exclusions/<path>.json` |
+| Workshop profile (hands-on work) | `data/<ns>/immersive_brewing/workshop_profiles/<path>.json` |
 
 A definition's id is `<ns>:<path>`. At most 2048 files of each definition kind are read; lists hold at most 256 entries.
 Every file has `schema_version` (default 1); a newer version than 1 is rejected. Definition files accept Forge load
@@ -39,8 +40,10 @@ and is conditioned on that mod. Its recipes and policies are excluded by id like
 * **First load** (server start): invalid definition files are skipped and reported; the valid rest activates.
 * **Reload** (`/reload`): the new definitions are validated as a whole. If any file is invalid, the whole previous
   dataset stays active and the log names every problem. Otherwise the new dataset activates atomically and clients
-  receive it. Either way, every running session is sealed first (nothing is lost; it resumes afterwards, revalidated
-  against the active data).
+  receive it. Either way, a batch from 1.1 that is open in its original interface is sealed first (nothing is lost; it
+  resumes afterwards, revalidated against the active data). Hands-on batches keep running: the workshop setup they were
+  set out with is saved in their process payload, and the recipe is checked again when they complete. Work that no
+  longer validates is held with a reason; it is never moved to another route or re-rolled.
 * Recipes follow Minecraft's own rules; an infusion recipe that parses but does not validate is listed as unsupported
   rather than offered. The server support report is sent to clients atomically in pages of at most 256 entries after
   login and reload; a partial transfer never replaces the client's previous complete report.
@@ -220,6 +223,112 @@ than `maxPurificationsPerLineage`. Ordinary potions start from quality 50.
 | `presentation.particle` | accepted | One of `steam`, `foam`, `bubble`, `glint`, `mote`; default `steam`. An unknown value warns and falls back to `steam`. Client density and reduced-motion settings bound emission. |
 
 Difficulty tier, phase lengths and disturbance timing come from the plan and the seeded schedule, not from the profile.
+The phase bands, circulation and disturbances describe the 1.1 Kettle simulation (still used to finish a batch saved by
+1.1). Hands-on batches take their reaction from a workshop profile, or translate the `infuse` phase when there is none
+(next section).
+
+## Workshop profiles
+
+How the hands-on work feels at each apparatus. Every value is optional tuning on top of the existing data: a pack that
+ships no workshop profiles gets a translation of its reagent and brew profiles, so existing datapacks keep working. The
+built-in profiles live in `data/immersive_brewing/immersive_brewing/workshop_profiles/{preparation,brewing,distillation}/`.
+`schema_version` is 1; a newer version is rejected. Unknown fields are reported as warnings and ignored.
+`presentation` (a resource location) is reserved for a future presentation hook: it is parsed and stored, and has no
+effect yet.
+
+### Preparation (`"kind": "preparation"`)
+
+```json
+{
+  "schema_version": 1,
+  "kind": "preparation",
+  "priority": 100,
+  "selector": { "items": ["minecraft:sugar"] },
+  "source_profile": "immersive_brewing:sugar",
+  "material": "crystalline",
+  "work": {
+    "operations": ["press", "grind", "fold"],
+    "required_work": 1.0,
+    "max_work_per_tick": 0.05,
+    "useful_effort": [0.25, 0.7],
+    "endpoint": [0.6, 0.78],
+    "overwork_starts": 0.86
+  }
+}
+```
+
+| Field | Status | Meaning |
+| --- | --- | --- |
+| `selector` | accepted | `items`, `tags` or `namespaces` the profile covers, matched as described under Selectors and precedence (`recipes` is not accepted). A profile needs a non-empty `selector` or a `source_profile`. |
+| `source_profile` | accepted | A reagent profile id. A workshop profile naming the reagent profile that matched the item wins over any selector match. |
+| `priority` | accepted | Integer, default 0; the highest wins among profiles of the same layer. |
+| `material` | accepted, required | `crystalline`, `fibrous`, `soft`, `brittle` or `liquid`: how the material looks and resists in the bowl. |
+| `work.operations` | accepted | 1 to 4 of `press`, `grind`, `fold`, `sweep`. Default `press`, `grind`, `fold`. A material that is only swept and folded refuses presses. |
+| `work.required_work` | accepted | 0.25 to 4.0, default 1.0: how much useful work one batch needs (higher is longer). |
+| `work.max_work_per_tick` | accepted | 0.005 to 0.2, default 0.05: the most work the server credits per tick, so frantic input is not faster. |
+| `work.useful_effort` | accepted | `[low, high]` within 0.05 to 1.0, at least 0.05 wide, default `[0.25, 0.7]`: pressure that does useful work. Harder strokes add fines and clumping. |
+| `work.endpoint` | accepted, required | `[low, high]` within 0.05 to 0.95, at least 0.04 wide: the processed fraction where the texture is right. |
+| `work.overwork_starts` | accepted | 0.06 to 0.99 and above the endpoint's high end; default the high end + 0.08 (at most 0.98). Work past it lowers extraction. |
+
+Resolution for an item: a profile whose `source_profile` names the item's winning reagent profile; else the best
+selector match (the most specific layer, then the highest priority; see Selectors and precedence); else a translation of the reagent profile's
+`preparation` block (same material, endpoint and overwork start; required work from its duration, useful effort from
+its pressure limit). An item with neither is not preparable and brews at the raw extraction baseline.
+
+### Brewing (`"kind": "brewing"`)
+
+```json
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:light_foam",
+  "reaction": "light_foam",
+  "temperature": { "ideal": [0.46, 0.6], "workable": [0.34, 0.74], "inertia": 1.0 },
+  "treatment": { "step_seconds": 9.0, "rest_seconds": 3.0 }
+}
+```
+
+| Field | Status | Meaning |
+| --- | --- | --- |
+| `target` | accepted, required | The brew profile id this reaction applies to. The highest `priority` wins. |
+| `reaction` | accepted | Reaction family, default `generic`: `generic`, `light_foam`, `dense_sediment`, `delicate_shimmer`, `magma_streaks`, `suspended_bubbles`, `dark_whorls`, `aligning_glints`, `floating_motes`. The family decides which mistakes trouble the batch (too much agitation, too much heat, settling) and what the surface shows. |
+| `temperature.ideal` | accepted | `[low, high]` within 0.2 to 0.95, at least 0.06 wide; default the family's band. Reacting inside it earns full heat control. |
+| `temperature.workable` | accepted | `[low, high]` within 0.15 to 0.98 containing `ideal`; default `ideal` widened by 0.12 below and 0.14 above. Below it the reaction slows toward a stop and doses tipped in score less; above it the brew boils hard and reacts more slowly. |
+| `temperature.inertia` | accepted | 0.5 to 2.0, default 1.0: how slowly the liquid follows the burner. |
+| `treatment.step_seconds` | accepted | 3 to 30, default 9: how long one dose's reaction takes once it is dissolved and the heat is workable. |
+| `treatment.rest_seconds` | accepted | 1 to 10, default 3: how long the calm surface must rest before bottling. |
+
+Without a brewing workshop profile, a brew profile translates as: the `infuse` signature as the family, its heat band as
+the ideal band (clamped to 0.2-0.92, at least 0.06 wide), the workable band as above, its inertia, 9 s steps and a 3 s
+rest (4 s for dense sediment). Approved assistance widens the ideal band (by at most the server cap).
+
+### Distillation (`"kind": "distillation"`)
+
+```json
+{
+  "schema_version": 1,
+  "kind": "distillation",
+  "target": "immersive_brewing:distillation/vanilla_potions",
+  "fractions": [0.2, 0.78],
+  "run_seconds": 27.0
+}
+```
+
+| Field | Status | Meaning |
+| --- | --- | --- |
+| `target` | accepted, required | The purification recipe id. The highest `priority` wins. |
+| `fractions` | accepted | `[heads end, tails start]` within 0.08 to 0.92, default `[0.20, 0.78]`. The heads must end by 0.40 and the clear heart must span at least 0.25 of the run. |
+| `run_seconds` | accepted | 10 to 60, default 27: the length of a run at a steady middle heat. |
+
+A recipe without a distillation profile uses the defaults.
+
+### Validation, reload and running batches
+
+Workshop profiles are validated with the rest of the definitions and activate atomically with them; an invalid file
+keeps the previous dataset on `/reload`, as for other definitions. When a batch is set out, the resolved setup and the
+profile it came from (or `translated:<id>` for a fallback) are saved in its process payload, so a later reload never
+changes a running batch. `/immersivebrewing profile <item>` and `/immersivebrewing explain plan <key>` show which workshop
+profile, or which translation, applies.
 
 ## Effect policies
 

@@ -68,11 +68,32 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     @Nullable
     private String controllerName;
     private StationVisual visual = StationVisual.IDLE;
+    private UUID incarnation = UUID.randomUUID();
+    private long visualRevision;
+    private long effectSequence;
+    private UUID colorJob = StationVisual.NONE;
+    private int[] stageColors = new int[] {0x385DC6};
     private boolean syncQueued;
+    /** A full update owed to tracking clients, flushed by the next server tick (see {@link #sendUpdate()}). */
+    private boolean updatePending;
     private int syncCooldown;
+
+    // ---- hands-on workshop (server transient) ----
+    /** Short tool and control leases (transient: they clear on load). */
+    protected final com.otectus.immersivebrewing.workshop.Leases leases = new com.otectus.immersivebrewing.workshop.Leases();
+    private int workshopGrace;
+    private boolean snapshotDirty;
+    private boolean snapshotUrgent;
+    private int snapshotCooldown;
+    private long snapshotRevision;
+    /** Ticks with no authorised participant in range before an attended batch seals (handoff 16: about two seconds). */
+    public static final int GRACE_TICKS = 40;
+    private static final int SNAPSHOT_TICKS = 3;
 
     // Client view
     protected StationView view = StationView.EMPTY;
+    protected net.minecraft.nbt.CompoundTag workshopView = new net.minecraft.nbt.CompoundTag();
+    private long workshopViewRevision = -1;
 
     private final Map<Direction, LazyOptional<IItemHandler>> sided = new EnumMap<>(Direction.class);
     private LazyOptional<IItemHandler> unsided;
@@ -158,14 +179,76 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         queueSync();
     }
 
-    public void setVisual(StationVisual visual) {
-        if(ledger!=null&&(ledger.operation()==Operation.BREW||ledger.operation()==Operation.FINISH)) {
-            var id=net.minecraft.resources.ResourceLocation.tryParse(ledger.snapshot().getString("profile"));
-            var profile=com.otectus.immersivebrewing.data.BrewingDefinitions.server().brewProfile(id==null?com.otectus.immersivebrewing.data.BrewingDefinitions.GENERIC_PROFILE:id);
-            visual=new StationVisual(visual.phase(),visual.signature(),visual.heat(),visual.circulation(),visual.trouble(),visual.progress(),visual.active(),profile.accentColor(),profile.particle());
+    public void setVisual(StationVisual value) {
+        publishVisual(value, value.activity() == StationVisual.Activity.IDLE && value.active()
+                ? StationVisual.Activity.WORKING : value.activity());
+    }
+
+    public void publishVisual(StationVisual value, StationVisual.Activity activity) {
+        if (level == null || level.isClientSide) return;
+        Operation operation = ledger == null ? (anyFinished() && lastResult != null ? lastResult.operation() : value.operation()) : ledger.operation();
+        if (ledger == null) activity = anyFinished() ? StationVisual.Activity.OUTPUT_READY : StationVisual.Activity.IDLE;
+        else if (ledger.state() == JobState.RECOVERY) activity = StationVisual.Activity.RECOVERY;
+        else if (ledger.state() == JobState.SEALED && activity != StationVisual.Activity.RESUME_COUNT_IN
+                && activity != StationVisual.Activity.HELP_PAUSED) activity = StationVisual.Activity.SEALED;
+        if (ledger != null && (operation == Operation.BREW || operation == Operation.FINISH)) {
+            if (!ledger.jobId().equals(colorJob)) {
+                stageColors = StationPresentations.stageColors(ledger);
+                colorJob = ledger.jobId();
+            }
+            var id = ResourceLocation.tryParse(ledger.snapshot().getString("profile"));
+            var profile = com.otectus.immersivebrewing.data.BrewingDefinitions.server().brewProfile(id == null
+                    ? com.otectus.immersivebrewing.data.BrewingDefinitions.GENERIC_PROFILE : id);
+            int index = Math.min(value.kettle().additionIndex(), stageColors.length - 1);
+            value = value.appearance(profile.accentColor(), profile.particle(), stageColors[index], stageColors[Math.min(index + 1, stageColors.length - 1)]);
         }
-        this.visual = visual;
-        if (syncCooldown <= 0) queueSync();
+        var session = SessionManager.byStation(net.minecraft.core.GlobalPos.of(level.dimension(), worldPosition)).orElse(null);
+        UUID job = ledger == null ? (anyFinished() ? visual.jobId() : StationVisual.NONE) : ledger.jobId();
+        StationVisual next = value.withContext(new StationVisual.Context(incarnation, job, ++visualRevision,
+                level.getGameTime(), value.simulationStep(), operation, activity,
+                session == null ? StationVisual.NONE : session.playerId(), ledger == null ? 0 : ownedServings()));
+        boolean transition = visual.activity() != next.activity() || !visual.jobId().equals(next.jobId());
+        visual = next;
+        com.otectus.immersivebrewing.network.ModNetwork.tracking(this,
+                new com.otectus.immersivebrewing.network.packet.StationVisualS2C(worldPosition, visual));
+        if (transition) { queueSync(); sendUpdate(); }
+    }
+
+    /** Lifecycle mutations publish immediately; continuous work keeps the existing ten-step cadence. */
+    private void refreshPresentation() {
+        if (level == null || level.isClientSide) return;
+        var session = SessionManager.byStation(net.minecraft.core.GlobalPos.of(level.dimension(), worldPosition)).orElse(null);
+        if (session != null) return;
+        StationVisual.Activity activity = ledger == null ? (anyFinished() ? StationVisual.Activity.OUTPUT_READY : StationVisual.Activity.IDLE)
+                : switch (ledger.state()) {
+                    case RESERVED -> StationVisual.Activity.COUNT_IN;
+                    case RUNNING -> ledger.operation().interactive() && !ledger.physical() ? StationVisual.Activity.SEALED : StationVisual.Activity.WORKING;
+                    case SEALED -> StationVisual.Activity.SEALED;
+                    case RECOVERY -> StationVisual.Activity.RECOVERY;
+                };
+        UUID job = ledger == null ? (anyFinished() ? visual.jobId() : StationVisual.NONE) : ledger.jobId();
+        if (activity == visual.activity() && job.equals(visual.jobId()) && incarnation.equals(visual.incarnation())) return;
+        publishVisual(ledger == null ? StationVisual.IDLE : StationPresentations.frozen(ledger), activity);
+    }
+
+    public void acceptVisual(StationVisual incoming) {
+        if (level == null || !level.isClientSide) return;
+        StationVisual old = view.visual();
+        if (!old.incarnation().equals(incoming.incarnation()) || incoming.revision() <= old.revision()) return;
+        view = view.withVisual(incoming);
+    }
+
+    public void effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind kind, UUID job, int step, int index, int outcome) {
+        if (level == null || level.isClientSide) return;
+        refreshPresentation();
+        com.otectus.immersivebrewing.network.ModNetwork.tracking(this,
+                new com.otectus.immersivebrewing.network.packet.StationEffectEvent(worldPosition, incarnation, job,
+                        ++effectSequence, level.getGameTime(), step, kind, index, outcome));
+    }
+
+    private int ownedServings() {
+        if (ledger == null) return 0;
+        return ledger.operation() == Operation.PREPARE ? ledger.inputs().stream().mapToInt(ItemStack::getCount).sum() : ledger.inputs().size();
     }
 
     public StationVisual visual() {
@@ -183,6 +266,12 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
 
     // ---- interaction ----
 
+    /**
+     * Ordinary use (handoff 4): one accepted action per click, in this order. (1) Valid held-item actions: recovery
+     * installation, permitted water filling, carrier exchange. (2) A direct action with the held item on the part it
+     * was used on (or the one part that takes it): loading a tray, a rack, a burner. (3) The station's working view.
+     * The maintenance menu stays reachable from the working view's inventory drawer; sneaking is never required.
+     */
     public InteractionResult use(Player player, InteractionHand hand, BlockHitResult hit) {
         if (level == null) return InteractionResult.PASS;
         ItemStack held = player.getItemInHand(hand);
@@ -192,11 +281,45 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
             if (!level.isClientSide) installRecovery(player, hand, held);
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
-        if (level.isClientSide) return InteractionResult.SUCCESS;
-        if (player instanceof ServerPlayer sp) {
-            NetworkHooks.openScreen(sp, this, buf -> buf.writeBlockPos(worldPosition));
+        if (!held.isEmpty()) {
+            InteractionResult direct = directInsert(player, hand, held, partUnder(player, hit));
+            if (direct != InteractionResult.PASS) return direct;
         }
+        if (level.isClientSide) return InteractionResult.SUCCESS;
+        if (player instanceof ServerPlayer sp) openWorkingView(sp);
         return InteractionResult.CONSUME;
+    }
+
+    /** Opens the working view (server): registers the presence and tells the client to open its focus surface. */
+    public void openWorkingView(ServerPlayer player) {
+        com.otectus.immersivebrewing.interaction.WorkshopPresence.enter(player, worldPosition, workshopKind());
+        markWorkshopDirty(true);
+    }
+
+    /** Opens the station's maintenance menu (the working view's inventory drawer, and the migration fallback). */
+    public void openDrawer(ServerPlayer player) {
+        NetworkHooks.openScreen(player, this, buf -> buf.writeBlockPos(worldPosition));
+    }
+
+    /** The part the player's look ray meets first (in model pixels), or null. */
+    @Nullable
+    protected com.otectus.immersivebrewing.workshop.WorkshopPart partUnder(Player player, BlockHitResult hit) {
+        Direction facing = getBlockState().getValue(StationBlock.FACING);
+        net.minecraft.world.phys.Vec3 eye = player.getEyePosition();
+        net.minecraft.world.phys.Vec3 dir = hit.getLocation().subtract(eye);
+        if (dir.lengthSqr() < 1e-6) dir = player.getLookAngle();
+        return com.otectus.immersivebrewing.workshop.WorkshopGeometry.pick(com.otectus.immersivebrewing.workshop.WorkshopParts.of(workshopKind()),
+                worldPosition, facing, eye, dir, 8.0, p -> true).map(com.otectus.immersivebrewing.workshop.WorkshopGeometry.Hit::part).orElse(null);
+    }
+
+    /**
+     * Puts the held stack into the part it was used on, or the one part that takes it. PASS when no part of this station
+     * takes the item at all (the use then opens the working view); CONSUME with a reason when a part would take it but
+     * not now (nothing is eaten).
+     */
+    protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held,
+                                             @Nullable com.otectus.immersivebrewing.workshop.WorkshopPart part) {
+        return InteractionResult.PASS;
     }
 
     /** Installs a Recovery Batch at this empty station: consumes the item and adopts its ledger atomically (spec 20.4). */
@@ -227,6 +350,7 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         // An interrupted session resumes from its stored state; a passive job simply carries on.
         if (restored.operation().interactive() && restored.state() == JobState.RUNNING) restored.setState(JobState.SEALED);
         afterRecoveryInstalled();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.RECOVERY_INSTALL, restored.jobId(), 0, 0, 0);
         changed();
         notice(player, Component.translatable("notice.immersive_brewing.recovery.installed"), false);
     }
@@ -251,6 +375,9 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     public void onBroken() {
         if (level == null || level.isClientSide) return;
         SessionManager.stationRemoved(this);
+        flushProcess();
+        leases.clear();
+        if (level.getServer() != null) com.otectus.immersivebrewing.interaction.WorkshopPresence.stationRemoved(level.dimension(), worldPosition, level.getServer());
         if (ledger != null) {
             ItemStack recovery = RecoveryBatchItem.create(new ItemStack(ModItems.RECOVERY_BATCH.get()), stationId(), ledger, recoverySummary());
             Containers.dropItemStack(level, worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5, recovery);
@@ -271,11 +398,17 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     // ---- ticking ----
 
     public void serverTick() {
+        workshopTick();
+        refreshPresentation();
         if (syncCooldown > 0) syncCooldown--;
         if (syncQueued && syncCooldown <= 0) {
             syncQueued = false;
             syncCooldown = VISUAL_SYNC_TICKS;
             sendUpdate();
+        }
+        if (updatePending) {
+            updatePending = false;
+            if (level != null && !level.isClientSide) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
         boolean lit = litNow();
         BlockState state = getBlockState();
@@ -284,8 +417,248 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         }
     }
 
+    // ---- hands-on workshop: the block entity owns the process tick (handoff 12) ----
+
+    public abstract com.otectus.immersivebrewing.workshop.WorkshopKind workshopKind();
+
+    /** Advances the physical process exactly once per server tick, seals an unattended batch, expires leases, syncs. */
+    private void workshopTick() {
+        if (level == null || level.isClientSide) return;
+        boolean measured = ledger != null && ledger.physical() || snapshotDirty || !leases.all().isEmpty();
+        long started = measured ? System.nanoTime() : 0;
+        workshopStep();
+        if (measured) com.otectus.immersivebrewing.workshop.WorkshopMetrics.station(System.nanoTime() - started);
+    }
+
+    private void workshopStep() {
+        long now = level.getGameTime();
+        if (!leases.expire(now).isEmpty()) {
+            onLeasesLapsed();
+            markWorkshopDirty(true);
+        }
+        if (ledger != null && ledger.physical() && ledger.state() == JobState.RUNNING) {
+            if (participantInRange()) workshopGrace = 0;
+            else if (++workshopGrace >= GRACE_TICKS) {
+                sealPhysical(null, "workshop.immersive_brewing.seal.unattended");
+            }
+            if (ledger != null && ledger.state() == JobState.RUNNING) {
+                physicalStep(now);
+                // The established ambient pipeline (bounded particles, capped sound voices) follows the physical state.
+                if (ledger != null && ledger.state() == JobState.RUNNING && now % 10 == 0) {
+                    StationVisual v = physicalVisual();
+                    if (v != null) publishVisual(v, StationVisual.Activity.WORKING);
+                }
+            }
+        } else {
+            workshopGrace = 0;
+        }
+        if (snapshotCooldown > 0) snapshotCooldown--;
+        if (snapshotDirty && (snapshotUrgent || snapshotCooldown <= 0)) {
+            snapshotDirty = false;
+            snapshotUrgent = false;
+            snapshotCooldown = SNAPSHOT_TICKS;
+            com.otectus.immersivebrewing.network.ModNetwork.tracking(this,
+                    new com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C(worldPosition, ++snapshotRevision, buildWorkshopSnapshot()));
+            com.otectus.immersivebrewing.workshop.WorkshopMetrics.snapshot();
+        }
+    }
+
+    /** Whether an authorised participant (the brewer or a helper who did productive work) is online and near. */
+    protected boolean participantInRange() {
+        if (level == null || level.getServer() == null) return false;
+        double range = ServerConfig.get(ServerConfig.PARTICIPANT_RANGE);
+        for (UUID id : workshopParticipants()) {
+            ServerPlayer p = com.otectus.immersivebrewing.interaction.WorkshopPresence.player(level.getServer(), id);
+            if (p == null || !p.isAlive() || p.level() != level) continue;
+            if (p.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= range * range) return true;
+        }
+        return false;
+    }
+
+    /** The productive participants of the current physical job (empty when there is none). */
+    protected java.util.List<UUID> workshopParticipants() {
+        return java.util.List.of();
+    }
+
+    /** The compact ambient visual of the running physical process (sounds and particles), or null. */
+    @Nullable
+    protected StationVisual physicalVisual() {
+        return null;
+    }
+
+    /** One server step of the physical process (only while the job is RUNNING). */
+    protected void physicalStep(long now) {}
+
+    /** A lease lapsed on its own (its holder went quiet): reset the tool it covered. */
+    protected void onLeasesLapsed() {}
+
+    /** Releases every lease a player holds here (leaving, logout, death, damage). */
+    public void releaseLeases(UUID player) {
+        if (leases.releaseAll(player)) {
+            onLeasesLapsed();
+            markWorkshopDirty(true);
+        }
+    }
+
+    /**
+     * Seals a running physical job now (handoff 16): leases released, controls neutral, exact state kept, no further
+     * cost or penalty. Safe to call at any time; a sealed job resumes only through an explicit unseal.
+     */
+    public void sealPhysical(@Nullable ServerPlayer by, String reason) {
+        if (ledger == null || !ledger.physical() || ledger.state() != JobState.RUNNING) return;
+        leases.clear();
+        onPhysicalSealed();
+        flushProcess();
+        ledger.setState(JobState.SEALED);
+        workshopGrace = 0;
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.SEAL, ledger.jobId(), 0, 0, 0);
+        markWorkshopDirty(true);
+        if (level != null && level.getServer() != null) {
+            for (UUID id : workshopParticipants()) {
+                ServerPlayer p = com.otectus.immersivebrewing.interaction.WorkshopPresence.player(level.getServer(), id);
+                if (p != null) notice(p, Component.translatable("notice.immersive_brewing.workshop.sealed", Component.translatable(reason)), false);
+            }
+        }
+    }
+
+    /** Station hook: neutralise the live process's controls before the seal is stored. */
+    protected void onPhysicalSealed() {}
+
+    /** Reopens a sealed physical job for {@code player}: their old input is neutral and the process carries on. */
+    public com.otectus.immersivebrewing.interaction.WorkshopResult unsealPhysical(ServerPlayer player) {
+        revalidateRecovery();
+        if (ledger == null || !ledger.physical()) return com.otectus.immersivebrewing.interaction.WorkshopResult.IGNORED;
+        if (ledger.state() == JobState.RECOVERY) {
+            return com.otectus.immersivebrewing.interaction.WorkshopResult.refuse("notice.immersive_brewing.held",
+                    Component.translatable(ledger.recoveryReason() == null ? "recovery.immersive_brewing.unknown" : ledger.recoveryReason()));
+        }
+        if (ledger.state() != JobState.SEALED) return com.otectus.immersivebrewing.interaction.WorkshopResult.IGNORED;
+        String problem = physicalResumeProblem();
+        if (problem != null) return com.otectus.immersivebrewing.interaction.WorkshopResult.refuse(problem);
+        ledger.setState(JobState.RUNNING);
+        ledger.countResume();
+        participate(player);
+        if (!player.getUUID().equals(ledger.brewerId())) ledger.addAssistant(player.getGameProfile().getName());
+        com.otectus.immersivebrewing.advancement.ModAdvancements.milestone(player, com.otectus.immersivebrewing.advancement.Milestone.RESUME);
+        workshopGrace = 0;
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.RESUME, ledger.jobId(), 0, 0, 0);
+        markWorkshopDirty(true);
+        return com.otectus.immersivebrewing.interaction.WorkshopResult.ACCEPTED;
+    }
+
+    /** Why a sealed physical job can not reopen now (a translation key), or null. */
+    @Nullable
+    protected String physicalResumeProblem() {
+        return null;
+    }
+
+    /** Records a productive participant of the current job. */
+    protected void participate(ServerPlayer player) {}
+
+    /** Encodes the live physical process into the ledger (before saving, packaging or sealing). */
+    protected void flushProcess() {}
+
+    /**
+     * Applies one validated intent (handoff 15). The common parts are here: the drawer, the book, leaving, and the
+     * legacy resume; everything that touches the process is the station's {@link #act}.
+     */
+    public com.otectus.immersivebrewing.interaction.WorkshopResult workshopAct(ServerPlayer player,
+                                                                                com.otectus.immersivebrewing.interaction.WorkshopIntent intent) {
+        if (level == null) return com.otectus.immersivebrewing.interaction.WorkshopResult.IGNORED;
+        if (ledger != null && intent.job() != null && !intent.job().equals(com.otectus.immersivebrewing.interaction.WorkshopIntent.ANY_JOB)
+                && !intent.job().equals(ledger.jobId())) {
+            return com.otectus.immersivebrewing.interaction.WorkshopResult.IGNORED; // aimed at a batch that is gone
+        }
+        switch (intent.action()) {
+            case DRAWER -> {
+                openDrawer(player);
+                return com.otectus.immersivebrewing.interaction.WorkshopResult.ACCEPTED;
+            }
+            case LEGACY_RESUME -> {
+                if (ledger == null || !ledger.legacy() || ledger.state() != JobState.SEALED) {
+                    return com.otectus.immersivebrewing.interaction.WorkshopResult.refuse("notice.immersive_brewing.nothing_to_resume");
+                }
+                resumeLegacy(player);
+                return com.otectus.immersivebrewing.interaction.WorkshopResult.ACCEPTED;
+            }
+            default -> {
+                return act(player, intent, level.getGameTime());
+            }
+        }
+    }
+
+    /** Station-specific workshop actions. */
+    protected com.otectus.immersivebrewing.interaction.WorkshopResult act(ServerPlayer player,
+                                                                           com.otectus.immersivebrewing.interaction.WorkshopIntent intent, long now) {
+        return com.otectus.immersivebrewing.interaction.WorkshopResult.IGNORED;
+    }
+
+    /** Finishes a batch started before the hands-on overhaul through its original interface (migration only). */
+    protected void resumeLegacy(ServerPlayer player) {}
+
+    /** Asks for a snapshot to the tracking players: now when {@code urgent} (a discrete change), else within a few ticks. */
+    public void markWorkshopDirty(boolean urgent) {
+        snapshotDirty = true;
+        snapshotUrgent |= urgent;
+    }
+
+    /** The compact presentation snapshot every tracking client receives. */
+    public net.minecraft.nbt.CompoundTag buildWorkshopSnapshot() {
+        net.minecraft.nbt.CompoundTag t = new net.minecraft.nbt.CompoundTag();
+        t.putByte("kind", (byte) workshopKind().ordinal());
+        if (ledger != null) {
+            t.putByte("state", (byte) ledger.state().ordinal());
+            t.putByte("op", (byte) ledger.operation().ordinal());
+            t.putBoolean("physical", ledger.physical());
+            t.putBoolean("legacy", ledger.legacy());
+            t.putUUID("job", ledger.jobId());
+            if (ledger.brewerName() != null) t.putString("brewer", ledger.brewerName());
+        }
+        net.minecraft.nbt.ListTag held = new net.minecraft.nbt.ListTag();
+        long now = level == null ? 0 : level.getGameTime();
+        for (var e : leases.all().entrySet()) {
+            if (e.getValue().expires() < now) continue;
+            net.minecraft.nbt.CompoundTag h = new net.minecraft.nbt.CompoundTag();
+            h.putByte("part", (byte) (int) e.getKey());
+            h.putString("name", e.getValue().name());
+            h.putUUID("id", e.getValue().holder());
+            writeToolPose(e.getKey(), h);
+            held.add(h);
+        }
+        t.put("held", held);
+        writeWorkshopSnapshot(t);
+        return t;
+    }
+
+    /** Station hook: the live pose of a leased tool (normalised x/z, contact). */
+    protected void writeToolPose(int part, net.minecraft.nbt.CompoundTag tag) {}
+
+    /** Station hook: process state and the visible subset of owned items. */
+    protected void writeWorkshopSnapshot(net.minecraft.nbt.CompoundTag tag) {}
+
+    public net.minecraft.nbt.CompoundTag workshopView() {
+        return workshopView;
+    }
+
+    /** Client: accepts a newer snapshot (stale revisions from a reordered or late packet are ignored). */
+    public void acceptWorkshopSnapshot(long revision, net.minecraft.nbt.CompoundTag snapshot) {
+        if (level == null || !level.isClientSide) return;
+        if (revision <= workshopViewRevision) return;
+        workshopViewRevision = revision;
+        workshopView = snapshot;
+    }
+
     /** Client-side ambient effects, installed by client setup (common code never loads client classes). */
     public static volatile java.util.function.Consumer<StationBlockEntity> clientEffects = station -> {};
+    public static volatile java.util.function.Consumer<StationBlockEntity> clientRemoved = station -> {};
+
+    @Override
+    public void setRemoved() {
+        if (level != null && level.isClientSide) clientRemoved.accept(this);
+        super.setRemoved();
+    }
 
     public void clientTick() {
         clientEffects.accept(this);
@@ -374,8 +747,14 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         syncQueued = true;
     }
 
+    /**
+     * Owes tracking clients a full update, sent from this station's next tick. Never marks the chunk changed directly:
+     * presentation is refreshed while vanilla builds an update packet (inside its chunk broadcast) and while a chunk
+     * loads, and a block change recorded re-entrantly there leaves the section's change set stranded, so no later
+     * change in that section would ever reach a client.
+     */
     private void sendUpdate() {
-        if (level != null && !level.isClientSide) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        if (level != null && !level.isClientSide) updatePending = true;
     }
 
     /** Puts a stack into a slot bypassing the public rules (commits and returns only). */
@@ -442,6 +821,7 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     public int comparatorSignal() {
         if (statusComparator) {
             if (ledger != null) {
+                if (ledger.physical() && ledger.state() == JobState.RUNNING) return physicalComparator();
                 return switch (ledger.state()) {
                     case RESERVED, RUNNING -> 8;
                     case SEALED -> 11;
@@ -461,6 +841,14 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         return total == 0 || full == 0 ? 0 : Math.max(1, Math.round(15F * full / total));
     }
 
+    /**
+     * Status level of a running hands-on job: 8 working, 9 waiting for attention (a dose, a rest, a charge), 14 ready to
+     * bottle or collect. Sealed is 11 and held 13, as before; an empty public rack is never read as an empty batch.
+     */
+    protected int physicalComparator() {
+        return 8;
+    }
+
     /** Slots that count toward the output-fill comparator. */
     protected abstract boolean isOutputSlot(int slot);
 
@@ -474,6 +862,9 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     @Override
     public void load(CompoundTag tag) {
         super.load(tag);
+        if (tag.hasUUID("Incarnation")) incarnation = tag.getUUID("Incarnation");
+        visualRevision = Math.max(visualRevision, tag.getLong("VisualRevision"));
+        effectSequence = Math.max(effectSequence, tag.getLong("EffectSequence"));
         if (tag.contains("Inventory", Tag.TAG_COMPOUND)) inventory.deserializeNBT(tag.getCompound("Inventory"));
         if (tag.contains("FuelCharges", Tag.TAG_ANY_NUMERIC)) fuelCharges = Math.max(0, tag.getInt("FuelCharges"));
         if (tag.contains("Ledger", Tag.TAG_COMPOUND)) {
@@ -487,13 +878,26 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
             byte[] bytes = tag.getByteArray("Finished");
             for (int i = 0; i < finished.length; i++) finished[i] = i < bytes.length && bytes[i] != 0;
         }
-        if (tag.contains("View", Tag.TAG_COMPOUND)) view = StationView.load(tag.getCompound("View"));
+        if (tag.contains("Workshop", Tag.TAG_COMPOUND) && level != null && level.isClientSide) {
+            acceptWorkshopSnapshot(tag.getLong("WorkshopRevision"), tag.getCompound("Workshop"));
+        }
+        if (tag.contains("View", Tag.TAG_COMPOUND)) {
+            StationView incoming = StationView.load(tag.getCompound("View"));
+            // Full inventory updates may race a compact visual packet; retain the newest pose.
+            if (incoming.visual().incarnation().equals(view.visual().incarnation())
+                    && incoming.visual().revision() < view.visual().revision()) incoming = incoming.withVisual(view.visual());
+            view = incoming;
+        }
     }
 
     @Override
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
+        tag.putUUID("Incarnation", incarnation);
+        tag.putLong("VisualRevision", visualRevision);
+        tag.putLong("EffectSequence", effectSequence);
         SessionManager.flush(this);
+        flushProcess();
         tag.put("Inventory", inventory.serializeNBT());
         tag.putInt("FuelCharges", fuelCharges);
         if (ledger != null) tag.put("Ledger", LedgerCodec.save(ledger));
@@ -512,6 +916,7 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
             cancelReservation();
         }
         if (level != null && !level.isClientSide && ledger != null) revalidateRecovery();
+        refreshPresentation();
     }
 
     /** Returns every reserved stack to its slot and closes the ledger. */
@@ -529,6 +934,10 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         for (int i = 0; i < finished.length; i++) bytes[i] = (byte) (finished[i] ? 1 : 0);
         tag.putByteArray("Finished", bytes);
         tag.putBoolean("StatusComparator", statusComparator);
+        if (level != null && !level.isClientSide) {
+            tag.put("Workshop", buildWorkshopSnapshot());
+            tag.putLong("WorkshopRevision", ++snapshotRevision);
+        }
         return tag;
     }
 
@@ -538,10 +947,11 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     }
 
     protected StationView buildView() {
+        refreshPresentation();
         JobLedger l = ledger;
         return new StationView(l == null ? null : l.state(), l == null ? null : l.operation(), l == null ? ItemStack.EMPTY : viewOutput(),
-                l == null ? 0 : l.inputs().size(), l == null ? null : l.recoveryReason(), l == null ? null : l.brewerName(),
-                controllerName, visual, status(), lastResult);
+                l == null ? 0 : ownedServings(), l == null ? null : l.recoveryReason(), l == null ? null : l.brewerName(),
+                controllerName, visual, status(), lastResult, l == null || l.inputs().isEmpty() ? ItemStack.EMPTY : l.inputs().get(0).copyWithCount(1));
     }
 
     /** The output a job will produce, for the view (canonical snapshot, never the ledger itself). */

@@ -12,7 +12,9 @@ import java.util.function.Supplier;
 public record NotebookPrefsC2S(Action action, String key, ItemStack display, int value) {
     public enum Action {
         ADD_FAVORITE, REPLACE_FAVORITE, REMOVE_FAVORITE, SET_SERVINGS, TUTORIAL_STEP,
-        CLEAR_HISTORY, SET_SEARCH, SET_FILTER, SET_TAB, SET_ONBOARDING, PIN_RECIPE, DISMISS_PIN, REPEAT_SETUP, PRACTICE_PLAN
+        CLEAR_HISTORY, SET_SEARCH, SET_FILTER, SET_TAB, SET_ONBOARDING, PIN_RECIPE, DISMISS_PIN, REPEAT_SETUP, PRACTICE_PLAN,
+        /** Practice a station kind with its default setup (value: the kind's ordinal). */
+        PRACTICE_KIND
     }
 
     public void encode(FriendlyByteBuf buf) {

@@ -58,6 +58,8 @@ public final class Keys {
 
     public static final KeyMapping EQUIP_CARRIER = new KeyMapping("key.immersive_brewing.equip_carrier", net.minecraftforge.client.settings.KeyConflictContext.IN_GAME,
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, CATEGORY);
+    public static final KeyMapping NOTICE_HISTORY = new KeyMapping("key.immersive_brewing.notice_history", net.minecraftforge.client.settings.KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, CATEGORY);
 
     public static void tick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
         var mc = Minecraft.getInstance();
@@ -67,6 +69,7 @@ public final class Keys {
                     ? net.minecraft.world.InteractionHand.MAIN_HAND : net.minecraft.world.InteractionHand.OFF_HAND;
             com.otectus.immersivebrewing.network.ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.EquipCarrierSelectedC2S(hand));
         }
+        while (NOTICE_HISTORY.consumeClick()) mc.setScreen(new com.otectus.immersivebrewing.client.screen.NoticeHistoryScreen(null));
     }
 
     public static final List<KeyMapping> ALL = List.of(DRAFT_UP, DRAFT_DOWN, STIR_CCW, STIR_CW, VIGOROUS, ADD, PESTLE_UP,
@@ -79,6 +82,7 @@ public final class Keys {
     public static void register(RegisterKeyMappingsEvent event) {
         ALL.forEach(event::register);
         event.register(EQUIP_CARRIER);
+        event.register(NOTICE_HISTORY);
     }
 
     /** True when the raw key event is this binding (rebinding-aware). */

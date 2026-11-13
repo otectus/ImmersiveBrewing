@@ -103,7 +103,16 @@ public class BatchCarrierScreen extends AbstractContainerScreen<BatchCarrierMenu
             }
             ItemStack actual = slot.getItem();
             boolean missing = !ghost.isEmpty() && (actual.isEmpty() || !ItemStack.isSameItemSameTags(ghost, actual) || actual.getCount() < ghost.getCount());
-            if (missing) g.drawString(font, "!", x + 11, y - 3, 0xFFFF5555, true);
+            if (missing) {
+                g.drawString(font, "!", x + 11, y - 3, Ui.palette().bad(), true);
+                if (menu.selected() == i) {
+                    String key = actual.isEmpty() ? "screen.immersive_brewing.carrier.missing"
+                            : !ItemStack.isSameItemSameTags(ghost, actual) ? "screen.immersive_brewing.carrier.different"
+                            : "screen.immersive_brewing.carrier.count_short";
+                    // Full mismatch text stays in the selected-slot tooltip/narration;
+                    // never draw it over the player inventory.
+                }
+            }
             if (menu.selected() == i) {
                 g.fill(x - 2, y - 2, x + 18, y, 0xFFFFFFFF);
                 g.fill(x - 2, y, x, y + 18, 0xFFFFFFFF);
@@ -111,7 +120,12 @@ public class BatchCarrierScreen extends AbstractContainerScreen<BatchCarrierMenu
                 g.fill(x + 16, y, x + 18, y + 16, 0xFFFFFFFF);
             }
         }
-        g.fill(leftPos + 88, topPos + 91, leftPos + 126, topPos + 94, 0xFF000000 | menu.labelColor());
+        // Saved carrier tag preview: only this mod's carrier UI is painted.
+        int tag = 0xFF000000 | menu.labelColor();
+        g.fill(leftPos + 132, topPos + 90, leftPos + 164, topPos + 104, tag);
+        g.fill(leftPos + 134, topPos + 92, leftPos + 162, topPos + 102, 0xFFE8DFC8);
+        String emblem = Integer.toString(menu.emblem() + 1);
+        Ui.centered(g, Component.literal(emblem), leftPos + 148, topPos + 93, tag);
         if (menu.advanceOnEmpty()) g.drawString(font, "⟳", leftPos + 72, topPos + 75, Ui.palette().good(), false);
     }
 

@@ -165,7 +165,7 @@ public final class ReplacementModeGameTests {
         FakePlayer player = TestSupport.player(h, "Replacer");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
             h.assertTrue(PotionUtils.getPotion(kettle.inventory().getStackInSlot(BrewersKettleBlockEntity.RACK)) == Potions.SWIFTNESS, "brewed at the Kettle");
@@ -182,21 +182,20 @@ public final class ReplacementModeGameTests {
         FakePlayer player = TestSupport.player(h, "Late");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        h.assertTrue(kettle.ledger() == null && TestSupport.session(player).isEmpty(), "no new job while disabled");
+        h.assertTrue(kettle.ledger() == null && !TestSupport.working(player), "no new job while disabled");
         h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.RACK, 6, Items.POTION) == 3, "nothing reserved");
 
         // A batch sealed before the switch still resumes.
         ServerConfig.BREWING_MODE.set(BrewingMode.COEXIST);
         kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
         ServerConfig.BREWING_MODE.set(BrewingMode.DISABLED);
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.runAfterDelay(90, () -> {
-            SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), "session.immersive_brewing.end.closed");
+            TestSupport.seal(player);
             h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.SEALED, "sealed");
-            TestSupport.openKettle(player, kettle);
-            kettle.resume(player);
-            h.assertTrue(TestSupport.session(player).isPresent(), "a sealed batch resumes even while disabled");
-            SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), "session.immersive_brewing.end.closed");
+            TestSupport.unseal(player, kettle);
+            h.assertTrue(TestSupport.working(player), "a sealed batch resumes even while disabled");
+            TestSupport.seal(player);
             h.succeed();
         });
     }

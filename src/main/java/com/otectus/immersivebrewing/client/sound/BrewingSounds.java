@@ -36,6 +36,7 @@ public final class BrewingSounds {
 
     /** Kettle loops for the current predicted state. */
     public static void kettle(double heat, double circulation, double foam, boolean countingIn) {
+        if (!localPractice()) return;
         float a = apparatus();
         simmer = ensure(simmer, ModSounds.KETTLE_SIMMER.get());
         boil = ensure(boil, ModSounds.KETTLE_BOIL.get());
@@ -59,6 +60,7 @@ public final class BrewingSounds {
 
     /** Mortar: a crunch, grind or mash per stroke of real work, scaled by how much was processed. */
     public static void mortar(double work, int texture, boolean lifted) {
+        if (!localPractice()) return;
         float a = apparatus();
         if (lifted) {
             play(ModSounds.PESTLE_LIFT.get(), a * 0.6F, 1.0F);
@@ -72,16 +74,19 @@ public final class BrewingSounds {
 
     /** Alembic: drips follow the condensation rate. */
     public static void alembic(double condensed) {
+        if (!localPractice()) return;
         if (condensed <= 0 || dripCooldown-- > 0) return;
         dripCooldown = (int) Math.max(3, 20 - condensed * 4000);
         play(ModSounds.CONDENSATE_DROP.get(), apparatus() * 0.5F, 0.9F + (float) Math.random() * 0.2F);
     }
 
     public static void valve() {
+        if (!localPractice()) return;
         play(ModSounds.VALVE_TURN.get(), apparatus() * 0.6F, 1.0F);
     }
 
     public static void receiver() {
+        if (!localPractice()) return;
         play(ModSounds.RECEIVER_SWITCH.get(), apparatus() * 0.7F, 1.0F);
     }
 
@@ -141,6 +146,11 @@ public final class BrewingSounds {
             pitch += (targetPitch - pitch) * 0.2F;
             if (volume < 0.0001F) volume = 0.0001F;
         }
+    }
+
+    private static boolean localPractice() {
+        var session = com.otectus.immersivebrewing.client.ClientSession.active();
+        return session != null && session.practice;
     }
 
     private BrewingSounds() {}

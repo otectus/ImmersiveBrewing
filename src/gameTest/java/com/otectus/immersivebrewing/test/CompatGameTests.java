@@ -201,8 +201,8 @@ public final class CompatGameTests {
         TestSupport.openKettle(player, kettle);
         BrewPlan plan = TestSupport.plan(h, kettle, output);
         kettle.startBrew(player, plan.key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the brew started: " + describe(input) + " -> " + describe(output));
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        h.assertTrue(TestSupport.working(player), "the brew started: " + describe(input) + " -> " + describe(output));
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         return kettle;
     }
 
@@ -370,7 +370,7 @@ public final class CompatGameTests {
         TestSupport.openMortar(player, mortar);
         mortar.start(player, StationActionC2S.withAssist(1, 1, 1));
         h.assertTrue(mortar.ledger() != null, "the preparation started");
-        TestSupport.driveMortar(h, player, MortarBot.competent());
+        TestSupport.driveMortar(h, player, com.otectus.immersivebrewing.testing.MortarTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(mortar.ledger() == null, "still preparing");
             ItemStack kit = ItemStack.EMPTY;
@@ -435,7 +435,10 @@ public final class CompatGameTests {
             BrewingMetadata meta = BrewingMetadata.read(potions.get(0)).orElseThrow();
             h.assertTrue(PotionContentsService.sameCanonical(potions.get(0), bottle(Items.POTION, samples.get(mod))), "the same " + samples.get(mod));
             h.assertTrue(meta.purified() && meta.quality() > 40, "purified to a higher quality: " + meta.quality());
-            h.assertTrue(AlembicGameTests.distillation(player) >= 0, "the result reached the player");
+            h.assertTrue(alembic.lastResult() != null && alembic.lastResult().quality() == meta.quality()
+                    && TestSupport.messages(player).stream().anyMatch(m -> m instanceof com.otectus.immersivebrewing.network.packet.StationNoticeS2C n
+                    && n.message().getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t
+                    && "workshop.immersive_brewing.alembic.done".equals(t.getKey())), "the result reached the player");
         });
     }
 

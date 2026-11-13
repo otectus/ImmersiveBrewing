@@ -1,0 +1,78 @@
+{
+  "parent": "block/block",
+  "render_type": "minecraft:translucent",
+  "textures": {
+    "particle": "immersive_brewing:block/alembic_glass",
+    "glass": "immersive_brewing:block/alembic_glass"
+  },
+  "elements": [
+    {
+      "from": [
+        10,
+        3,
+        9
+      ],
+      "to": [
+        15,
+        9,
+        14
+      ],
+      "faces": {
+        "north": {
+          "texture": "#glass",
+          "uv": [
+            10,
+            7,
+            15,
+            13
+          ]
+        },
+        "south": {
+          "texture": "#glass",
+          "uv": [
+            10,
+            7,
+            15,
+            13
+          ]
+        },
+        "east": {
+          "texture": "#glass",
+          "uv": [
+            9,
+            7,
+            14,
+            13
+          ]
+        },
+        "west": {
+          "texture": "#glass",
+          "uv": [
+            9,
+            7,
+            14,
+            13
+          ]
+        },
+        "up": {
+          "texture": "#glass",
+          "uv": [
+            10,
+            9,
+            15,
+            14
+          ]
+        },
+        "down": {
+          "texture": "#glass",
+          "uv": [
+            10,
+            9,
+            15,
+            14
+          ]
+        }
+      }
+    }
+  ]
+}

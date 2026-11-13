@@ -6,7 +6,7 @@
     "iron": "immersive_brewing:block/kettle_iron",
     "copper": "immersive_brewing:block/kettle_copper",
     "burner": "immersive_brewing:block/kettle_burner",
-    "vent": "immersive_brewing:block/kettle_vent",
+    "vent": "immersive_brewing:block/kettle_vent_cold",
     "wood": "immersive_brewing:block/kettle_rack"
   },
   "elements": [

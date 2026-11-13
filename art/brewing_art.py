@@ -117,6 +117,19 @@ def kettle_vent():
     return img
 
 
+def kettle_vent_cold():
+    """The unlit shutter is deliberately dark: block light, not painted fire, says it is burning."""
+    img = kettle_burner()
+    rect(img, 3, 5, 13, 13, IRON[0])
+    for y in range(6, 12):
+        for x in range(4, 12):
+            put(img, x, y, IRON[1 if (x + y) % 3 else 2])
+    for x in range(4, 12, 2):
+        for y in range(6, 12):
+            put(img, x, y, IRON[3])
+    return img
+
+
 def planks(seed):
     img = blank()
     for y in range(16):
@@ -189,6 +202,43 @@ def alembic_glass():
     for i in range(2, 7):
         put(img, i, i - 1, GLASS[2])
     put(img, 3, 1, GLASS[2])
+    return img
+
+
+def preparation_material(mode, stage):
+    """Twenty compact, authored target swatches: five families by the simulation Texture states."""
+    img = blank()
+    palettes = [SALT, WOOD, CLOTH, PAPER, GLASS]
+    p = palettes[mode]
+    if mode == 0:  # crystalline chips
+        for i in range(8 - min(stage, 3)):
+            x, y = 2 + (i * 5 + stage) % 11, 2 + (i * 7) % 10
+            rect(img, x, y, min(16, x + 2), min(16, y + 2), p[1 + i % (len(p)-1)])
+    elif mode == 1:  # fibrous crossing strokes
+        for i in range(5):
+            for j in range(5 + (i + stage) % 3): put(img, 2 + (i * 2 + j) % 12, 3 + (i * 3 + j // 2) % 10, p[1 + i % (len(p)-1)])
+    elif mode == 2:  # soft merging mash
+        rect(img, 3, 5, 13, 12, p[min(len(p)-1, 1 + stage // 2)])
+        for i in range(4): put(img, 4 + i * 2, 6 + (i + stage) % 4, p[-1])
+    elif mode == 3:  # brittle flakes
+        for i in range(9 - min(stage, 4)):
+            x, y = 2 + (i * 3) % 12, 2 + (i * 5) % 11
+            put(img, x, y, p[-1]); put(img, min(15, x + 1), y, p[1])
+    else:  # liquid: two tones progressively folded together
+        rect(img, 2, 5, 14, 12, p[0])
+        rect(img, 2, 5, 8 + min(stage, 3), 12, p[min(len(p)-1, 1 + stage // 2)])
+    return img
+
+
+def gui_symbol(kind):
+    img = blank(); c = COPPER[3]
+    if kind == 'bottle': rect(img, 6, 3, 10, 13, c); rect(img, 7, 1, 9, 4, PAPER[1])
+    elif kind == 'reagent':
+        for i in range(6): put(img, 3+i*2, 8-(i%3), CLOTH[2])
+    elif kind == 'fuel': rect(img, 3, 8, 13, 13, BRICK[2]); rect(img, 6, 3, 10, 9, FIRE[2])
+    elif kind == 'paddle':
+        for i in range(10): put(img, 3+i, 13-i, WOOD[3])
+    else: rect(img, 3, 4, 13, 12, PAPER[1]); rect(img, 5, 6, 11, 7, WAX[1])
     return img
 
 
@@ -367,6 +417,7 @@ def logo():
 
 BLOCKS = {
     'kettle_iron': kettle_iron, 'kettle_copper': kettle_copper, 'kettle_burner': kettle_burner, 'kettle_vent': kettle_vent,
+    'kettle_vent_cold': kettle_vent_cold,
     'kettle_rack': kettle_rack, 'mortar_stone': mortar_stone, 'mortar_wood': mortar_wood, 'mortar_pestle': mortar_pestle,
     'alembic_copper': alembic_copper, 'alembic_brick': alembic_brick, 'alembic_glass': alembic_glass,
 }
@@ -384,5 +435,14 @@ def textures():
         out[f'assets/immersive_brewing/textures/block/{name}.png'] = fn()
     for name, fn in ITEMS.items():
         out[f'assets/immersive_brewing/textures/item/{name}.png'] = fn()
+    for mode in range(5):
+        for stage in range(4):
+            out[f'assets/immersive_brewing/textures/gui/preparation/{mode}_{stage}.png'] = preparation_material(mode, stage)
+    for kind in ('bottle', 'reagent', 'fuel', 'paddle', 'returns'):
+        out[f'assets/immersive_brewing/textures/gui/slot_roles/{kind}.png'] = gui_symbol(kind)
+    for index in range(11):
+        img = blank(); color = [(214,232,240), (232,244,242), (220,233,224), (242,233,209), (168,121,84), (255,242,168), (213,107,53), (185,231,233), (109,85,110), (229,224,173), (230,216,180)][index]
+        for i in range(3 + index % 5): put(img, 3 + (i * 3) % 10, 4 + (i * 5) % 8, color)
+        out[f'assets/immersive_brewing/textures/gui/signatures/{index}.png'] = img
     out['logo.png'] = logo()
     return out

@@ -6,6 +6,8 @@ import com.otectus.immersivebrewing.client.Keys;
 import com.otectus.immersivebrewing.client.sound.BrewingSounds;
 import com.otectus.immersivebrewing.client.tutorial.GuidedPractice;
 import com.otectus.immersivebrewing.config.ClientConfig;
+import com.otectus.immersivebrewing.client.presentation.PresentationPolicy;
+import com.otectus.immersivebrewing.client.presentation.KettleSignatureVisuals;
 import com.otectus.immersivebrewing.data.BrewProfile;
 import com.otectus.immersivebrewing.data.BrewingDefinitions;
 import com.otectus.immersivebrewing.minigame.brewing.AdditionSpec;
@@ -24,7 +26,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
@@ -56,6 +57,7 @@ public class KettleBrewScreen extends GameScreen {
 
     // layout
     private int px, py, pw, ph, vx, vy, vw, vh, colL, colR, colW, trayX, trayY, trayW, addW;
+    private Ui.StationLayout layout;
 
     public KettleBrewScreen(ClientSession session) {
         super(Component.translatable("screen.immersive_brewing.kettle"), session);
@@ -79,10 +81,8 @@ public class KettleBrewScreen extends GameScreen {
     @Override
     protected void init() {
         super.init();
-        pw = Math.min(width - 16, 400);
-        ph = Math.min(height - 28, 260);
-        px = (width - pw) / 2;
-        py = 22 + Math.max(0, (height - 28 - ph) / 2);
+        layout = Ui.StationLayout.play(width, height);
+        pw = layout.panelW(); ph = layout.panelH(); px = layout.panelX(); py = layout.panelY();
         vw = Math.max(90, Math.min(180, pw - 210));
         vh = Math.max(66, Math.min(112, ph - 144));
         vx = px + (pw - vw) / 2;
@@ -167,7 +167,7 @@ public class KettleBrewScreen extends GameScreen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (super.mouseClicked(mx, my, button)) return true;
-        if (button != 0) return false;
+        if (controlsBlocked() || button != 0) return false;
         if (Ui.inside(mx, my, vx, vy, vw, vh) && ClientConfig.get(ClientConfig.MOUSE_STIRRING)) {
             lastAngle = Math.atan2(my - (vy + vh / 2.0), mx - (vx + vw / 2.0));
             return true;
@@ -177,7 +177,7 @@ public class KettleBrewScreen extends GameScreen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
-        if (button == 0 && !Double.isNaN(lastAngle) && ClientConfig.get(ClientConfig.MOUSE_STIRRING)) {
+        if (!controlsBlocked() && button == 0 && !Double.isNaN(lastAngle) && ClientConfig.get(ClientConfig.MOUSE_STIRRING)) {
             double angle = Math.atan2(my - (vy + vh / 2.0), mx - (vx + vw / 2.0));
             double delta = Mth.wrapDegrees(Math.toDegrees(angle - lastAngle));
             lastAngle = angle;
@@ -255,7 +255,7 @@ public class KettleBrewScreen extends GameScreen {
     protected void renderGame(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // Optional small shake (screenShake, off by default; never under reduced motion) while the brew boils over or
         // just after a burner flare. Hit regions do not move; the offset is at most a pixel or two.
-        boolean shake = !session.paused() && shaking(sim());
+        boolean shake = !session.paused() && PresentationPolicy.current().animate() && shaking(sim());
         if (shake) {
             float t = (sim().step() + partialTick) * 0.9F;
             g.pose().pushPose();
@@ -347,13 +347,14 @@ public class KettleBrewScreen extends GameScreen {
     }
 
     private void renderVessel(GuiGraphics g, KettleSimulation s, ItemStack output, float partialTick) {
-        boolean reduced = ClientConfig.get(ClientConfig.REDUCED_MOTION);
-        double intensity = reduced ? 0.3 : ClientConfig.get(ClientConfig.ANIMATION_INTENSITY);
+        double intensity = PresentationPolicy.current().decorativeMotion();
         // iron vessel with copper rim
         g.fill(vx - 4, vy - 2, vx + vw + 4, vy + vh + 2, 0xFF2E2F33);
         g.fill(vx - 5, vy - 4, vx + vw + 5, vy - 1, 0xFFB86B3A);
         int liquidTop = vy + 10;
-        int base = colourFor(output, s);
+        // Stable stage colours arrive with the accepted server route.  The GUI
+        // never reconstructs a recipe client-side merely to make it prettier.
+        int base = session.currentDisplayColor();
         g.fill(vx, liquidTop, vx + vw, vy + vh, base);
         BrewProfile profile = profile();
         renderProfileMotes(g, s, profile, liquidTop, partialTick);
@@ -380,6 +381,7 @@ public class KettleBrewScreen extends GameScreen {
             }
         }
         // bubbles from heat
+        boolean reduced = PresentationPolicy.current().reducedMotion();
         long time = s.step();
         double heat = s.heat();
         int bubbleCount = heat < 0.35 ? 0 : (int) Math.round((heat - 0.3) * 30);
@@ -396,6 +398,13 @@ public class KettleBrewScreen extends GameScreen {
         // signature glyphs
         Signature sig = s.phase().signature();
         double trouble = s.trouble();
+        // Authored shared motif sheet gives every enum a still-readable identity;
+        // procedural marks below only add state amount, never invent chemistry.
+        int motif = sig.ordinal();
+        int motifColor = trouble > .45 ? KettleSignatureVisuals.of(sig).troubleColor() : KettleSignatureVisuals.of(sig).healthyColor();
+        ResourceLocation motifSprite = new ResourceLocation("immersive_brewing", "textures/gui/signatures/" + motif + ".png");
+        g.blit(motifSprite, vx + vw - 18, liquidTop + 2, 0, 0, 16, 16, 16, 16);
+        g.fill(vx + vw - 19, liquidTop + 1, vx + vw - 18, liquidTop + 18, 0xFF000000 | motifColor);
         switch (sig) {
             case ALIGNING_GLINTS -> {
                 for (int i = 0; i < 12; i++) {
@@ -458,13 +467,6 @@ public class KettleBrewScreen extends GameScreen {
         }
     }
 
-    private static int colourFor(ItemStack output, KettleSimulation s) {
-        int water = 0x385DC6;
-        int target = output.isEmpty() ? water : PotionUtils.getColor(output);
-        double t = s.phase().phase().ordinal() == 0 ? 0.15 : s.phase().phase().ordinal() == 1 ? 0.6 : 1.0;
-        return Ui.lerpColor(0xFF000000 | water, 0xFF000000 | target, t);
-    }
-
     private void renderTray(GuiGraphics g, KettleSimulation s) {
         Ui.Palette p = Ui.palette();
         Ui.inset(g, trayX, trayY, trayW, 40);
@@ -472,6 +474,17 @@ public class KettleBrewScreen extends GameScreen {
         int next = s.nextAddition();
         addButton.active = !session.countingIn() && next < params.additions().size();
         addButton.visible = !controlsBlocked() && next < params.additions().size();
+        if (next > 0 && next >= params.additions().size()) {
+            KettleSimulation.Outcome outcome = s.outcome(next - 1);
+            if (outcome == KettleSimulation.Outcome.AUTOMATIC) {
+                fitted(g, Component.translatable("screen.immersive_brewing.tray.automatic"), trayX + 6, trayY + 16, trayW - 12, Ui.onDark(p.warn()));
+                return;
+            }
+            if (outcome != KettleSimulation.Outcome.PENDING) {
+                fitted(g, Component.translatable("screen.immersive_brewing.tray.added", Component.translatable("outcome.immersive_brewing." + outcome.name().toLowerCase(java.util.Locale.ROOT))),
+                        trayX + 6, trayY + 16, trayW - 12, Ui.onDark(p.good()));
+            }
+        }
         if (next >= params.additions().size()) {
             fitted(g, Component.translatable("screen.immersive_brewing.tray.done"), trayX + 6, trayY + 16, trayW - 12, p.insetMuted());
             return;
@@ -533,7 +546,8 @@ public class KettleBrewScreen extends GameScreen {
     private int renderCues(GuiGraphics g, KettleSimulation s, PhaseSpec phase, int top) {
         boolean written = ClientConfig.get(ClientConfig.WRITTEN_CUES);
         boolean numbers = ClientConfig.get(ClientConfig.NUMERIC_DISPLAY);
-        if (!written && !numbers) return top;
+        // Written-cues hides supplementary coaching only.  A live addition or
+        // correction remains visible as an action label below.
         Ui.Palette p = Ui.palette();
         List<Component> cues = new ArrayList<>();
         List<Integer> colors = new ArrayList<>();
@@ -595,10 +609,19 @@ public class KettleBrewScreen extends GameScreen {
             y += lines * 10 + 2;
         }
         // The most important cue has its own bounded area under the vessel.
-        if (written && GuidedPractice.stage(session) == null) {
+        if (GuidedPractice.stage(session) == null) {
             Component important = priority != null ? priority : cues.get(cues.size() - 1);
             int importantColor = priority != null ? priorityColor : colors.get(colors.size() - 1);
             cueText(g, important, px + 8, trayY - 26, pw - 16, 2, importantColor);
+            // Priority is never replaced by a later generic status.  The active
+            // timed action owns line one; an announced disturbance is line two.
+            if (priority != null && warning != null) {
+                cueText(g, Component.translatable("cue.immersive_brewing.warning." + warning.kind().serialized()),
+                        px + 8, trayY - 16, pw - 16, 1, p.bad());
+            }
+            if (priority != null && nextAddition > 0 && s.outcome(nextAddition - 1) == KettleSimulation.Outcome.AUTOMATIC) {
+                cueText(g, Component.translatable("screen.immersive_brewing.tray.automatic"), px + 8, trayY - 16, pw - 16, 1, p.warn());
+            }
         }
         return y + 2;
     }

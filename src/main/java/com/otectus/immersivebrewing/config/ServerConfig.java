@@ -44,6 +44,9 @@ public final class ServerConfig {
     public static final ForgeConfigSpec.IntValue COUNT_IN_TICKS;
     public static final ForgeConfigSpec.IntValue INPUT_BUFFER_TICKS;
     public static final ForgeConfigSpec.IntValue MAX_INPUT_BUFFER_TICKS;
+    public static final ForgeConfigSpec.DoubleValue PARTICIPANT_RANGE;
+    public static final ForgeConfigSpec.IntValue COOLANT_CAPACITY_MB;
+    public static final ForgeConfigSpec.IntValue COOLANT_PER_GROUP_MB;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -92,6 +95,10 @@ public final class ServerConfig {
         MAX_PURIFICATIONS_PER_LINEAGE = b.comment("How many times one batch lineage may be purified. Carried through every later transformation.")
                 .defineInRange("maxPurificationsPerLineage", 1, 0, 3);
         ALLOW_RECLAMATION = b.comment("Allow reclaiming unwanted potions into Spent Alchemical Salt.").define("allowReclamation", true);
+        COOLANT_CAPACITY_MB = b.comment("Water the Alembic's coolant jacket holds, in millibuckets (0 disables the jacket and its cost).")
+                .defineInRange("coolantCapacityMb", 1000, 0, 16000);
+        COOLANT_PER_GROUP_MB = b.comment("Coolant one purification group of three potions reserves at start and uses, in millibuckets. 0 for packs that want no coolant cost.")
+                .defineInRange("coolantPerGroupMb", 250, 0, 4000);
         b.pop();
 
         b.comment("Accessibility assistance the server will approve when a player requests it").push("assistance");
@@ -124,6 +131,9 @@ public final class ServerConfig {
                 .defineInRange("inputBufferTicks", 3, 1, 10);
         MAX_INPUT_BUFFER_TICKS = b.comment("Upper bound when the buffer grows with a player's measured latency.")
                 .defineInRange("maxInputBufferTicks", 8, 1, 20);
+        PARTICIPANT_RANGE = b.comment("Hands-on workshop: how near (blocks) the brewer or a helper must stay for an attended batch to keep",
+                        "working. With nobody in range a batch seals itself after about two seconds and waits, losing nothing.")
+                .defineInRange("participantRange", 8.0, 3.0, 32.0);
         DEBUG_LOGGING = b.comment("Detailed adapter, plan and session tracing in the log.").define("debugLogging", false);
         b.pop();
 
@@ -168,6 +178,13 @@ public final class ServerConfig {
 
     public static int servingsPerVanillaReagent() {
         return Math.max(1, Math.min(3, get(SERVINGS_PER_VANILLA_REAGENT)));
+    }
+
+    /** The coolant a purification of {@code groups} needs; never more than the jacket can hold. */
+    public static int coolantFor(int groups) {
+        int capacity = get(COOLANT_CAPACITY_MB);
+        if (capacity <= 0) return 0;
+        return Math.min(capacity, Math.max(0, get(COOLANT_PER_GROUP_MB)) * Math.max(0, groups));
     }
 
     public static int maxBatchServings() {

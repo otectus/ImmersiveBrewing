@@ -86,13 +86,15 @@ public class ApothecaryRackBlock extends BaseEntityBlock {
             }
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
+        // The rack is a calm finishing area (handoff 10): its working view shows each bottle as a target; labels and
+        // filters stay in the drawer menu, reachable from that view.
         if (!level.isClientSide && player instanceof ServerPlayer sp) {
-            NetworkHooks.openScreen(sp, rack, buf -> buf.writeBlockPos(pos));
+            com.otectus.immersivebrewing.interaction.WorkshopPresence.enter(sp, pos, com.otectus.immersivebrewing.workshop.WorkshopKind.RACK);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
-    private static int targetSlot(BlockState state, BlockPos pos, BlockHitResult hit) {
+    public static int targetSlot(BlockState state, BlockPos pos, BlockHitResult hit) {
         double x = hit.getLocation().x - pos.getX();
         double z = hit.getLocation().z - pos.getZ();
         double across = switch (state.getValue(FACING)) {

@@ -72,8 +72,8 @@ def mortar_crush():
     return crunch(1, 0.28, 0.35, 9)
 
 
-def mortar_grind():
-    rng = np.random.default_rng(2)
+def mortar_grind(seed=2):
+    rng = np.random.default_rng(seed)
     n = int(RATE * 0.32)
     grit = rng.normal(0, 1, n) * (0.6 + 0.4 * np.sin(np.arange(n) / RATE * 2 * np.pi * 23))
     return norm(highpass(lowpass(grit, 0.5), 0.02) * env(n, 0.03, 0.12), 0.55)
@@ -133,9 +133,31 @@ def kettle_add():
     return norm(plop + splash, 0.7)
 
 
-def alembic_drop():
+def kettle_pour():
+    """A serving tipped into the kettle: a short falling stream with a few gurgles, landing in liquid."""
+    rng = np.random.default_rng(11)
+    n = int(RATE * 0.7)
+    tt = np.arange(n) / RATE
+    stream = lowpass(rng.normal(0, 1, n), 0.12) * env(n, 0.03, 0.25) * (0.7 + 0.3 * np.sin(2 * np.pi * 9 * tt))
+    out = 0.6 * stream
+    for i in range(6):
+        place(out, 0.35 * bubble(rng.uniform(300, 520), 0.06, 45), int(n * (0.15 + 0.12 * i)) + rng.integers(0, 300), loop=False)
+    return norm(out, 0.55)
+
+
+def bottle_fill():
+    """A bottle filling from the spout: the stream's pitch rises as the glass fills, then a soft settle."""
+    rng = np.random.default_rng(12)
+    n = int(RATE * 0.55)
+    tt = np.arange(n) / RATE
+    rising = np.sin(2 * np.pi * np.cumsum(420 + 900 * tt / 0.55) / RATE) * 0.25 * env(n, 0.02, 0.12)
+    trickle = highpass(lowpass(rng.normal(0, 1, n), 0.25), 0.05) * 0.5 * env(n, 0.02, 0.15)
+    return norm(rising + trickle, 0.5)
+
+
+def alembic_drop(pitch=1.0):
     tt = t(0.16)
-    drip = np.sin(2 * np.pi * np.cumsum(900 + 1400 * tt / 0.16) / RATE) * np.exp(-tt * 40)
+    drip = np.sin(2 * np.pi * np.cumsum(pitch * (900 + 1400 * tt / 0.16)) / RATE) * np.exp(-tt * 40)
     return norm(drip, 0.5)
 
 
@@ -158,11 +180,11 @@ def alembic_receiver():
     return norm(glass(2300, 0.22), 0.45)
 
 
-def bottle_clink():
+def bottle_clink(pitch=1.0):
     n = int(RATE * 0.36)
     out = np.zeros(n)
-    place(out, glass(2600, 0.2), 0, loop=False)
-    place(out, 0.8 * glass(3100, 0.2), int(RATE * 0.12), loop=False)
+    place(out, glass(2600 * pitch, 0.2), 0, loop=False)
+    place(out, 0.8 * glass(3100 * pitch, 0.2), int(RATE * 0.12), loop=False)
     return norm(out, 0.5)
 
 
@@ -197,8 +219,21 @@ SOUNDS = {
     'kettle/simmer': kettle_simmer, 'kettle/boil': kettle_boil, 'kettle/foam': kettle_foam, 'kettle/swirl': kettle_swirl,
     'kettle/add': kettle_add, 'alembic/drop': alembic_drop, 'alembic/valve': alembic_valve, 'alembic/receiver': alembic_receiver,
     'bottle/clink': bottle_clink, 'brew/complete': brew_complete, 'cue/ready': cue_ready, 'cue/warning': cue_warning,
+    'kettle/pour': kettle_pour, 'bottle/fill': bottle_fill,
+}
+
+
+VARIANTS = {
+    'mortar/crush': [lambda: crunch(21, 0.28, 0.33, 9), lambda: crunch(22, 0.28, 0.37, 8)],
+    'mortar/grind': [lambda: mortar_grind(23), lambda: mortar_grind(24)],
+    'alembic/drop': [lambda: alembic_drop(.97), lambda: alembic_drop(1.04)],
+    'bottle/clink': [lambda: bottle_clink(.97), lambda: bottle_clink(1.03)],
 }
 
 
 def sounds():
-    return {name: fn() for name, fn in SOUNDS.items()}
+    result = {name: fn() for name, fn in SOUNDS.items()}
+    for name, variants in VARIANTS.items():
+        for i, fn in enumerate(variants, 2):
+            result[f'{name}_{i}'] = fn()
+    return result

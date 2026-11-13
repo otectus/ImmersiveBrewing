@@ -47,7 +47,8 @@ import java.util.function.BiConsumer;
  * carries an item, a score, an outcome or an effect list. The protocol is required on both sides.
  */
 public final class ModNetwork {
-    public static final String VERSION = "3";
+    /** Protocol 5: the hands-on workshop (intent envelope, focus, snapshots). Older clients are refused at login. */
+    public static final String VERSION = "5";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(ImmersiveBrewing.id("main"), () -> VERSION,
             VERSION::equals, VERSION::equals);
 
@@ -56,6 +57,30 @@ public final class ModNetwork {
 
     public static void register() {
         int id = 0;
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.WorkshopIntentC2S.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(com.otectus.immersivebrewing.network.packet.WorkshopIntentC2S::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.WorkshopIntentC2S::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.WorkshopIntentC2S::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.WorkshopFocusS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(com.otectus.immersivebrewing.network.packet.WorkshopFocusS2C::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.WorkshopFocusS2C::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.WorkshopFocusS2C::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.ResumePresentationC2S.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(com.otectus.immersivebrewing.network.packet.ResumePresentationC2S::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.ResumePresentationC2S::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.ResumePresentationC2S::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.StationVisualS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(com.otectus.immersivebrewing.network.packet.StationVisualS2C::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.StationVisualS2C::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.StationVisualS2C::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.StationEffectEvent.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(com.otectus.immersivebrewing.network.packet.StationEffectEvent::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.StationEffectEvent::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.StationEffectEvent::handle).add();
         CHANNEL.messageBuilder(SelectPlanC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(SelectPlanC2S::encode).decoder(SelectPlanC2S::decode).consumerMainThread(SelectPlanC2S::handle).add();
         CHANNEL.messageBuilder(AlembicGroupC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(AlembicGroupC2S::encode).decoder(AlembicGroupC2S::decode).consumerMainThread(AlembicGroupC2S::handle).add();
         CHANNEL.messageBuilder(SelectRecipeC2S.class,id++,NetworkDirection.PLAY_TO_SERVER).encoder(SelectRecipeC2S::encode).decoder(SelectRecipeC2S::decode).consumerMainThread(SelectRecipeC2S::handle).add();
@@ -109,6 +134,12 @@ public final class ModNetwork {
         }
         if (player.connection == null) return;
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), message);
+    }
+
+    public static void tracking(com.otectus.immersivebrewing.blockentity.StationBlockEntity station, Object message) {
+        if (station.getLevel() instanceof net.minecraft.server.level.ServerLevel level) {
+            CHANNEL.send(PacketDistributor.TRACKING_CHUNK.with(() -> level.getChunkAt(station.getBlockPos())), message);
+        }
     }
 
     public static void sendToServer(Object message) {

@@ -1,6 +1,7 @@
 package com.otectus.immersivebrewing.client.screen;
 
 import com.otectus.immersivebrewing.config.ClientConfig;
+import com.otectus.immersivebrewing.client.presentation.PresentationPolicy;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -20,6 +21,24 @@ import java.util.List;
  * safe). Everything is drawn in GUI pixels, so input hit-tests and rendering use one transform.
  */
 public final class Ui {
+    /**
+     * One source of truth for the shared play-screen regions.  Rendering, hit
+     * testing, focus rectangles and scissors should use these coordinates rather
+     * than independently re-deriving a compact layout.
+     */
+    public record StationLayout(int panelX, int panelY, int panelW, int panelH,
+                                int headerY, int stripY, int apparatusY, int apparatusH,
+                                int cueY, int actionY, boolean compact) {
+        public static StationLayout play(int viewportW, int viewportH) {
+            boolean compact = viewportW < 480 || viewportH < 300;
+            int w = compact ? Math.min(308, Math.max(248, viewportW - 12)) : Math.min(440, viewportW - 16);
+            int h = compact ? Math.min(208, Math.max(188, viewportH - 32)) : Math.min(280, viewportH - 28);
+            int x = (viewportW - w) / 2;
+            int y = compact ? 26 : 22 + Math.max(0, (viewportH - 28 - h) / 2);
+            return new StationLayout(x, y, w, h, y + 6, y + 36, y + 52,
+                    Math.max(64, h - 112), y + h - 56, y + h - 30, compact);
+        }
+    }
     /** Colours for the light panel; {@code insetText}/{@code insetMuted} are for text on the dark inset wells. */
     public record Palette(int panel, int panelLight, int panelDark, int inset, int text, int muted, int good, int warn, int bad,
                           int band, int marker, int accent, int insetText, int insetMuted) {}
@@ -111,7 +130,7 @@ public final class Ui {
         g.fill(bx0, y + 1, bx0 + 1, y + h - 1, p.good());
         g.fill(Math.max(bx0 + 1, bx1) - 1, y + 1, Math.max(bx0 + 1, bx1), y + h - 1, p.good());
         int mx = x + 1 + (int) Math.round(norm(value, signed) * (w - 3));
-        boolean large = ClientConfig.get(ClientConfig.LARGE_MARKERS);
+        boolean large = PresentationPolicy.current().largeMarkers();
         int size = large ? 4 : 3;
         for (int i = 0; i < size; i++) g.fill(mx - (size - 1 - i), y - size + i, mx + (size - i), y - size + i + 1, markerColor);
         g.fill(mx, y, mx + 1, y + h, markerColor);
@@ -128,7 +147,7 @@ public final class Ui {
         g.fill(x + 1, by0, x + w - 1, by0 + 1, p.good());
         g.fill(x + 1, Math.max(by0 + 1, by1) - 1, x + w - 1, Math.max(by0 + 1, by1), p.good());
         int my = y + h - 1 - (int) Math.round(Math.max(0, Math.min(1, value)) * (h - 2));
-        int size = ClientConfig.get(ClientConfig.LARGE_MARKERS) ? 4 : 3;
+        int size = PresentationPolicy.current().largeMarkers() ? 4 : 3;
         for (int i = 0; i < size; i++) g.fill(x + w + i, my - (size - 1 - i), x + w + i + 1, my + (size - i), markerColor);
         g.fill(x, my, x + w, my + 1, markerColor);
     }

@@ -16,9 +16,24 @@ import org.jetbrains.annotations.Nullable;
  */
 public record StationView(@Nullable JobState state, @Nullable Operation operation, ItemStack output, int servings,
                           @Nullable String recovery, @Nullable String brewer, @Nullable String controller, StationVisual visual,
-                          Component status, @Nullable StationResult lastResult) {
+                          Component status, @Nullable StationResult lastResult, ItemStack material) {
     public static final StationView EMPTY = new StationView(null, null, ItemStack.EMPTY, 0, null, null, null, StationVisual.IDLE,
-            Component.empty(), null);
+            Component.empty(), null, ItemStack.EMPTY);
+
+    public StationView withVisual(StationVisual value) {
+        // Compact lifecycle updates are authoritative too. Keeping the old ledger summary here left
+        // observers stuck at RESERVED/RUNNING until an unrelated inventory packet arrived.
+        JobState displayed = switch (value.activity()) {
+            case WORKING -> JobState.RUNNING;
+            case COUNT_IN -> JobState.RESERVED;
+            case SEALED -> JobState.SEALED;
+            case RECOVERY -> JobState.RECOVERY;
+            case IDLE, OUTPUT_READY -> null;
+            case HELP_PAUSED, RESUME_COUNT_IN -> state;
+        };
+        return new StationView(displayed, value.operation(), output, value.servings(), recovery, brewer, controller,
+                value, status, lastResult, material);
+    }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -30,6 +45,7 @@ public record StationView(@Nullable JobState state, @Nullable Operation operatio
         if (brewer != null) tag.putString("brewer", brewer);
         if (controller != null) tag.putString("controller", controller);
         tag.put("visual", visual.save());
+        if (!material.isEmpty()) tag.put("material", LedgerCodec.saveStack(material));
         tag.putString("status", Component.Serializer.toJson(status));
         if (lastResult != null) tag.put("last", lastResult.save());
         return tag;
@@ -55,6 +71,7 @@ public record StationView(@Nullable JobState state, @Nullable Operation operatio
                 tag.contains("brewer", Tag.TAG_STRING) ? tag.getString("brewer") : null,
                 tag.contains("controller", Tag.TAG_STRING) ? tag.getString("controller") : null,
                 StationVisual.load(tag.getCompound("visual")), status == null ? Component.empty() : status,
-                tag.contains("last", Tag.TAG_COMPOUND) ? StationResult.load(tag.getCompound("last")) : null);
+                tag.contains("last", Tag.TAG_COMPOUND) ? StationResult.load(tag.getCompound("last")) : null,
+                tag.contains("material", Tag.TAG_COMPOUND) ? LedgerCodec.loadStack(tag.getCompound("material")) : ItemStack.EMPTY);
     }
 }

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:delicate_shimmer",
+  "reaction": "delicate_shimmer",
+  "temperature": {
+    "ideal": [
+      0.38,
+      0.52
+    ],
+    "workable": [
+      0.26,
+      0.66
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 9.0,
+    "rest_seconds": 3.0
+  }
+}

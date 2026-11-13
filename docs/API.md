@@ -116,13 +116,15 @@ All are posted on `MinecraftForge.EVENT_BUS`, server thread.
 | Event | When | Cancel / modify |
 | --- | --- | --- |
 | `BrewPlanEvent` | `preview() == true`: once per plan listed at a Kettle. `false`: a plan is about to be reserved. No inventory has changed. | Cancelable. A preview cancel hides the plan; a start cancel refuses to reserve anything. |
-| `BrewResultEvent.Pre` | A Kettle brew finished and every serving was replayed through its adapters; before any output exists. | Cancelable: the job is held for recovery (`vetoed`) with every material intact; nothing already charged is lost. `narrowQuality(q)` can lower the quality, never raise it. |
-| `BrewResultEvent.Post` | Once, after the outputs are in the rack. `output()` carries the final metadata. | Not cancelable. |
-| `ReagentPreparedEvent` | Once, after a Mortar placed its prepared kits. | Not cancelable. |
+| `BrewResultEvent.Pre` | A Kettle brew finished its chemistry and every serving was replayed through its adapters; before any output exists. | Cancelable: the job is held for recovery (`vetoed`) with every material intact; nothing already charged is lost. `narrowQuality(q)` can lower the quality, never raise it. |
+| `BrewResultEvent.Post` | Once, when the outputs are final. For a hands-on batch that is chemical completion, before the bottles are filled at the spout (filling never fires it again); for a batch from 1.1, after the outputs are in the rack. `output()` carries the final metadata. | Not cancelable. |
+| `ReagentPreparedEvent` | Once, after a Mortar placed its prepared kits on its shelf. | Not cancelable. |
 | `BatchRefinedEvent` | Once, after an Alembic purification (`purified() == true`, with quality before and after) or reclamation (`false`) placed its output. | Not cancelable. |
 
 Inventory changes always belong to the station's transaction; listeners must not move station items. Use the Post
-events for progression and rewards; they fire exactly once per committed result.
+events for progression and rewards; they fire exactly once per committed result, however many players helped and
+however often the batch was sealed and reopened. In a hands-on batch `player()` is the player whose action completed
+the work when they are online, otherwise the brewer if online, and may be null.
 
 ## Stability
 

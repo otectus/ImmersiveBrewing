@@ -52,8 +52,12 @@ public final class CatalogSearch {
         ModNetwork.sendTo(player,new PlanListS2C(kettle.getBlockPos(),input.copyWithCount(1),servings,null,List.of(entry),index.generation(),PlanListS2C.SELECTED_ROUTE,0,1,false,0,""));
     }
     public static void repeat(ServerPlayer player,String text,ItemStack input,int servings) {
-        if(!(player.containerMenu instanceof com.otectus.immersivebrewing.menu.KettleMenu menu)
-                || !(StationMenu.openStation(player,menu.pos()) instanceof BrewersKettleBlockEntity kettle)) {
+        BrewersKettleBlockEntity kettle=null;
+        if(player.containerMenu instanceof com.otectus.immersivebrewing.menu.KettleMenu menu
+                && StationMenu.openStation(player,menu.pos()) instanceof BrewersKettleBlockEntity k) kettle=k;
+        var presence=com.otectus.immersivebrewing.interaction.WorkshopPresence.of(player.getUUID());
+        if(kettle==null&&presence!=null&&StationMenu.openStation(player,presence.pos()) instanceof BrewersKettleBlockEntity k) kettle=k;
+        if(kettle==null) {
             ModNetwork.notice(player,net.minecraft.network.chat.Component.translatable("staging.immersive_brewing.open_station"),true);return;
         }
         PlanKey key=PlanKey.parse(text);if(key!=null)select(player,kettle,key,input,servings);

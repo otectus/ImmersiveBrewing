@@ -93,7 +93,7 @@ public final class LabelGameTests {
         FakePlayer player = TestSupport.player(h, "Namer");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.startSequence().thenWaitUntil(() -> h.assertTrue(kettle.ledger() == null, "still brewing")).thenExecute(() -> {
             int quality = BrewingMetadata.read(kettle.inventory().getStackInSlot(RACK)).orElseThrow().quality();
             TestSupport.openKettle(player, kettle);

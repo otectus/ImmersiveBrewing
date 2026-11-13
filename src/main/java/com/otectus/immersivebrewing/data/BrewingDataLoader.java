@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Loads {@code data/<ns>/immersive_brewing/{reagent_profiles,brew_profiles,effect_policies,exclusions}} into one
+ * Loads {@code data/<ns>/immersive_brewing/{reagent_profiles,brew_profiles,effect_policies,exclusions,workshop_profiles}} into one
  * candidate dataset, validates it as a whole and activates it atomically (spec 16.6):
  * <ul>
  * <li>on the first load, invalid files are skipped (reported) and the valid built-in core stays usable;</li>
@@ -45,7 +45,8 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
 
     /** Parsed files of one reload, before validation. */
     public record Candidate(List<ReagentProfile> reagents, Map<ResourceLocation, BrewProfile> brews,
-                            List<EffectPolicyDefinition> policies, Exclusions exclusions, List<String> errors, List<String> warnings) {}
+                            List<EffectPolicyDefinition> policies, Exclusions exclusions,
+                            List<com.otectus.immersivebrewing.workshop.WorkshopProfile> workshop, List<String> errors, List<String> warnings) {}
 
     /** @param conditions the reload's condition context, for definition files that carry {@code conditions} */
     public BrewingDataLoader(ICondition.IContext conditions) {
@@ -68,7 +69,10 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
         read(manager, "brew_profiles", errors, warnings, conditions, (id, json, w) -> brews.put(id, BrewProfile.parse(id, json, w)));
         read(manager, "effect_policies", errors, warnings, conditions, (id, json, w) -> policies.add(EffectPolicyDefinition.parse(id, json, w)));
         read(manager, "exclusions", errors, warnings, conditions, (id, json, w) -> exclusions[0] = exclusions[0].merge(Exclusions.parse(json, w)));
-        return new Candidate(reagents, brews, policies, exclusions[0], errors, warnings);
+        List<com.otectus.immersivebrewing.workshop.WorkshopProfile> workshop = new ArrayList<>();
+        read(manager, "workshop_profiles", errors, warnings, conditions,
+                (id, json, w) -> workshop.add(com.otectus.immersivebrewing.workshop.WorkshopProfile.parse(id, json, w)));
+        return new Candidate(reagents, brews, policies, exclusions[0], workshop, errors, warnings);
     }
 
     private interface Parser {
@@ -137,6 +141,27 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
             }
             policies.add(p);
         }
+        // Workshop profiles refine existing data: their selectors, source profiles and targets must name something real.
+        List<com.otectus.immersivebrewing.workshop.WorkshopProfile> workshop = new ArrayList<>();
+        java.util.Set<ResourceLocation> reagentIds = new java.util.HashSet<>();
+        for (ReagentProfile r : reagents) reagentIds.add(r.id());
+        for (var w : candidate.workshop()) {
+            String file = "data/" + w.id().getNamespace() + "/immersive_brewing/workshop_profiles/" + w.id().getPath() + ".json";
+            boolean bad = false;
+            for (var item : w.selector().ids()) if (!net.minecraftforge.registries.ForgeRegistries.ITEMS.containsKey(item)) {
+                errors.add(file + ": selector.items: unknown registry id " + item);
+                bad = true;
+            }
+            if (w.sourceProfile() != null && !reagentIds.contains(w.sourceProfile())) {
+                errors.add(file + ": source_profile: unknown reagent profile " + w.sourceProfile());
+                bad = true;
+            }
+            if (w.kind() == com.otectus.immersivebrewing.workshop.WorkshopProfile.Kind.BREWING && !candidate.brews().containsKey(w.target())) {
+                errors.add(file + ": target: unknown brew profile " + w.target());
+                bad = true;
+            }
+            if (!bad) workshop.add(w);
+        }
         BrewingDefinitions previous = BrewingDefinitions.server();
         // Linear conflict diagnostics; do not turn reload into a pairwise scan of a large pack.
         record SelectorKey(Selector selector, int priority) {}
@@ -155,6 +180,7 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
         }
         int generation = GENERATIONS.incrementAndGet();
         BrewingDefinitions.activateServer(new BrewingDefinitions(generation, reagents, candidate.brews(), policies, candidate.exclusions()));
+        com.otectus.immersivebrewing.workshop.WorkshopProfiles.activate(generation, workshop);
         EffectPolicies.invalidate();
         lastReport = new Report(generation, List.copyOf(errors), List.copyOf(warnings), false);
         if (!errors.isEmpty()) {
@@ -162,13 +188,14 @@ public final class BrewingDataLoader extends SimplePreparableReloadListener<Brew
             errors.forEach(e -> ImmersiveBrewing.LOGGER.error("  {}", e));
         }
         warnings.forEach(w -> ImmersiveBrewing.LOGGER.warn("Immersive Brewing: {}", w));
-        ImmersiveBrewing.LOGGER.info("Immersive Brewing: brewing data generation {} active ({} reagent profiles, {} brew profiles, {} effect policies)",
-                generation, reagents.size(), candidate.brews().size(), policies.size());
+        ImmersiveBrewing.LOGGER.info("Immersive Brewing: brewing data generation {} active ({} reagent profiles, {} brew profiles, {} effect policies, {} workshop profiles)",
+                generation, reagents.size(), candidate.brews().size(), policies.size(), workshop.size());
     }
 
     /** Forgets the server dataset when a server stops, so the next world loads from scratch. */
     public static void reset() {
         BrewingDefinitions.activateServer(BrewingDefinitions.EMPTY);
+        com.otectus.immersivebrewing.workshop.WorkshopProfiles.reset();
         EffectPolicies.invalidate();
     }
 }

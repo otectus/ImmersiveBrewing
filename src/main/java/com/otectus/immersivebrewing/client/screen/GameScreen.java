@@ -1,6 +1,7 @@
 package com.otectus.immersivebrewing.client.screen;
 
 import com.otectus.immersivebrewing.client.ClientSession;
+import com.otectus.immersivebrewing.client.StationNotices;
 import com.otectus.immersivebrewing.client.Keys;
 import com.otectus.immersivebrewing.config.ClientConfig;
 import net.minecraft.client.KeyMapping;
@@ -35,6 +36,8 @@ public abstract class GameScreen extends Screen {
     private final Set<KeyMapping> held = new HashSet<>();
     protected boolean help;
     private boolean settings;
+    private boolean noticeHistory;
+    private final Ui.ScrollArea noticeScroll = new Ui.ScrollArea();
     /** The help page on show; kept when the help closes early, so reopening it continues there. */
     private int page;
     /** The help key is down: key repeat must not flicker the overlay. */
@@ -42,6 +45,7 @@ public abstract class GameScreen extends Screen {
     private boolean ready;
     private final List<Button> gameButtons = new ArrayList<>();
     private final List<Button> settingsButtons = new ArrayList<>();
+    private int settingsOffset;
     private Button helpBack, helpNext;
     private Component hoveredText;
     private int mouseX, mouseY;
@@ -128,7 +132,7 @@ public abstract class GameScreen extends Screen {
 
     /** True while an overlay owns input; game-specific renderers must not make controls visible again. */
     protected boolean controlsBlocked() {
-        return help || settings;
+        return help || settings || noticeHistory;
     }
 
     private int buttonsWidth() {
@@ -146,7 +150,7 @@ public abstract class GameScreen extends Screen {
             TutorialState.markSeen(game());
             if (page >= helpLines().length - 1) page = 0;
         }
-        session.setPaused(show);
+        session.setPaused(show || noticeHistory);
         updateHelpButtons();
     }
 
@@ -160,7 +164,7 @@ public abstract class GameScreen extends Screen {
             }
             releaseAll();
         }
-        session.setPaused(show);
+        session.setPaused(show || noticeHistory);
         updateSettingsButtons();
     }
 
@@ -168,7 +172,7 @@ public abstract class GameScreen extends Screen {
         settingsButtons.clear();
         int boxW = Math.min(width - 40, 310);
         int x = (width - boxW) / 2 + 8;
-        int y = Math.max(28, (height - 190) / 2) + 24;
+        int y = Math.max(28, (height - 190) / 2) + 30;
         settingsButton(x, y, boxW - 16, () -> toggle(ClientConfig.TOGGLE_STIR), "toggle_stir");
         settingsButton(x, y + 22, boxW - 16, () -> toggle(ClientConfig.TOGGLE_PRESSURE), "toggle_pressure");
         settingsButton(x, y + 44, boxW - 16, () -> toggle(ClientConfig.REDUCED_INPUT), "reduced_input");
@@ -176,6 +180,14 @@ public abstract class GameScreen extends Screen {
         settingsButton(x, y + 88, boxW - 16, () -> toggle(ClientConfig.WRITTEN_CUES), "written_cues");
         settingsButton(x, y + 110, boxW - 16, () -> cyclePalette(), "palette");
         settingsButton(x, y + 132, boxW - 16, () -> toggle(ClientConfig.REQUEST_ASSIST), "assistance");
+        settingsButton(x, y + 176, boxW - 16, () -> toggle(ClientConfig.LARGE_MARKERS), "large_markers");
+        settingsButton(x, y + 198, boxW - 16, () -> cycleIntensity(), "animation");
+        settingsButton(x, y + 220, boxW - 16, () -> cycleParticles(), "particles");
+        settingsButton(x, y + 264, boxW - 16, () -> toggle(ClientConfig.PINNED_HUD_COMPACT), "hud_compact");
+        settingsButton(x, y + 286, boxW - 16, () -> toggle(ClientConfig.PINNED_HUD_HIDE_SCREEN), "hud_hide");
+        settingsButton(x, y + 330, boxW - 16, () -> cycleVolume(ClientConfig.APPARATUS_VOLUME), "apparatus_volume");
+        settingsButton(x, y + 352, boxW - 16, () -> cycleVolume(ClientConfig.CUE_VOLUME), "cue_volume");
+        settingsButton(x, y + 396, boxW - 16, () -> toggle(ClientConfig.INSPECTION_HINTS), "inspection_hints");
         updateSettingsButtons();
     }
 
@@ -198,9 +210,24 @@ public abstract class GameScreen extends Screen {
         ClientConfig.PALETTE.set(values[(current.ordinal() + 1) % values.length]);
     }
 
+    private static void cycleIntensity() {
+        double v = ClientConfig.get(ClientConfig.ANIMATION_INTENSITY);
+        ClientConfig.ANIMATION_INTENSITY.set(v <= 0 ? 0.5 : v < 1 ? 1.0 : 0.0);
+    }
+
+    private static void cycleParticles() {
+        double v = ClientConfig.get(ClientConfig.PARTICLE_DENSITY);
+        ClientConfig.PARTICLE_DENSITY.set(v <= 0 ? 0.5 : v < 1 ? 1.0 : 0.0);
+    }
+
+    private static void cycleVolume(net.minecraftforge.common.ForgeConfigSpec.DoubleValue value) {
+        double v = ClientConfig.get(value);
+        value.set(v <= 0 ? 0.5 : v < 1 ? 1.0 : 0.0);
+    }
+
     private void updateSettingsButtons() {
         for (Button button : settingsButtons) button.visible = settings;
-        if (settingsButtons.size() < 7) return;
+        if (settingsButtons.size() < 15) return;
         settingMessage(0, "toggle_stir", ClientConfig.get(ClientConfig.TOGGLE_STIR));
         settingMessage(1, "toggle_pressure", ClientConfig.get(ClientConfig.TOGGLE_PRESSURE));
         settingMessage(2, "reduced_input", ClientConfig.get(ClientConfig.REDUCED_INPUT));
@@ -209,6 +236,22 @@ public abstract class GameScreen extends Screen {
         settingsButtons.get(5).setMessage(Component.translatable("screen.immersive_brewing.settings.palette",
                 Component.translatable("screen.immersive_brewing.settings.palette." + ClientConfig.get(ClientConfig.PALETTE).name().toLowerCase(java.util.Locale.ROOT))));
         settingMessage(6, "assistance", ClientConfig.get(ClientConfig.REQUEST_ASSIST));
+        settingMessage(7, "large_markers", ClientConfig.get(ClientConfig.LARGE_MARKERS));
+        settingsButtons.get(8).setMessage(Component.translatable("screen.immersive_brewing.settings.animation", ClientConfig.get(ClientConfig.ANIMATION_INTENSITY)));
+        settingsButtons.get(9).setMessage(Component.translatable("screen.immersive_brewing.settings.particles", ClientConfig.get(ClientConfig.PARTICLE_DENSITY)));
+        settingMessage(10, "hud_compact", ClientConfig.get(ClientConfig.PINNED_HUD_COMPACT));
+        settingMessage(11, "hud_hide", ClientConfig.get(ClientConfig.PINNED_HUD_HIDE_SCREEN));
+        settingsButtons.get(12).setMessage(Component.translatable("screen.immersive_brewing.settings.apparatus_volume", ClientConfig.get(ClientConfig.APPARATUS_VOLUME)));
+        settingsButtons.get(13).setMessage(Component.translatable("screen.immersive_brewing.settings.cue_volume", ClientConfig.get(ClientConfig.CUE_VOLUME)));
+        settingMessage(14, "inspection_hints", ClientConfig.get(ClientConfig.INSPECTION_HINTS));
+        int panelY = Math.max(28, (height - 190) / 2);
+        int y = panelY + 30 - settingsOffset;
+        for (int i = 0; i < settingsButtons.size(); i++) {
+            Button button = settingsButtons.get(i);
+            int by = y + i * 22 + (i >= 7 ? 22 : 0) + (i >= 10 ? 22 : 0);
+            button.setY(by);
+            button.visible = settings && by >= panelY + 24 && by + button.getHeight() <= panelY + 172;
+        }
     }
 
     private void settingMessage(int index, String key, boolean enabled) {
@@ -260,7 +303,14 @@ public abstract class GameScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (Keys.is(Keys.NOTICE_HISTORY, keyCode, scanCode)) {
+            noticeHistory = !noticeHistory;
+            if (noticeHistory) releaseAll();
+            session.setPaused(noticeHistory || help || settings);
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (noticeHistory) { noticeHistory = false; session.setPaused(help || settings); return true; }
             if (settings) {
                 setSettings(false);
                 return true;
@@ -269,12 +319,17 @@ public abstract class GameScreen extends Screen {
             return true;
         }
         if (Keys.is(Keys.HELP, keyCode, scanCode)) {
+            if (noticeHistory) return true;
             if (settings) setSettings(false);
             if (ready && !helpKeyDown) setHelp(!help);
             helpKeyDown = true;
             return true;
         }
         if (!ready) return true;
+        if (noticeHistory) {
+            if (noticeScroll.key(keyCode)) return true;
+            return true;
+        }
         if (help || settings) {
             // The game is paused under the help: the arrow keys turn its pages and nothing reaches the game.
             if (help && keyCode == GLFW.GLFW_KEY_RIGHT) turnPage(1);
@@ -306,8 +361,9 @@ public abstract class GameScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
+        if (noticeHistory) return noticeScroll.click(mx, my, button) || true;
         if (super.mouseClicked(mx, my, button)) return true;
-        if (!help && !settings) return false;
+        if (!help && !settings && !noticeHistory) return false;
         return true;
     }
 
@@ -333,7 +389,7 @@ public abstract class GameScreen extends Screen {
         g.fill(0, 0, width, height, 0x88000000);
         renderGame(g, mouseX, mouseY, partialTick);
         // The game stands still under the help: dim it so the text stands out, but keep it in view to refer to.
-        if (help || settings) g.fill(0, 0, width, height, 0x99000000);
+        if (help || settings || noticeHistory) g.fill(0, 0, width, height, 0x99000000);
         if (session.practice) {
             fitted(g, Component.translatable("notebook.immersive_brewing.tab.practice"), buttonsWidth() + 12, 8, width - buttonsWidth() - 16, 0xFFFFD27F);
             textTip(Component.translatable("screen.immersive_brewing.practice_badge"), buttonsWidth() + 12, 4, width - buttonsWidth() - 16, 16);
@@ -346,6 +402,7 @@ public abstract class GameScreen extends Screen {
         }
         if (help) renderHelp(g, mouseX, mouseY);
         if (settings) renderSettings(g);
+        if (noticeHistory) renderNoticeHistory(g);
         super.render(g, mouseX, mouseY, partialTick);
         if (!help && !settings && hoveredText != null) g.renderTooltip(font, font.split(hoveredText, 240), mouseX, mouseY);
     }
@@ -377,7 +434,7 @@ public abstract class GameScreen extends Screen {
     }
 
     private void updateHelpButtons() {
-        for (Button button : gameButtons) button.visible = !help && !settings;
+        for (Button button : gameButtons) button.visible = !help && !settings && !noticeHistory;
         if (helpBack == null) return;
         HelpBox box = helpBox(helpLines());
         helpBack.visible = helpNext.visible = help;
@@ -418,7 +475,36 @@ public abstract class GameScreen extends Screen {
         int y = Math.max(28, (height - h) / 2);
         Ui.panel(g, x, y, w, h);
         g.drawString(font, Component.translatable("screen.immersive_brewing.settings.title"), x + 8, y + 7, Ui.palette().text(), false);
+        // Group titles remain in the scrollable Access list; the modal pauses
+        // input so a wheel gesture here can never steer an apparatus.
+        int base = y + 30 - settingsOffset;
+        g.enableScissor(x + 4, y + 24, x + w - 4, y + h - 18);
+        g.drawString(font, Component.translatable("screen.immersive_brewing.settings.controls"), x + 8, base - 12, Ui.palette().accent(), false);
+        g.drawString(font, Component.translatable("screen.immersive_brewing.settings.presentation"), x + 8, base + 142, Ui.palette().accent(), false);
+        g.drawString(font, Component.translatable("screen.immersive_brewing.settings.sound"), x + 8, base + 250, Ui.palette().accent(), false);
+        g.disableScissor();
         Ui.wrapped(g, Component.translatable("screen.immersive_brewing.settings.paused"), x + 8, y + h - 14, w - 16, Ui.palette().muted());
+    }
+
+    private void renderNoticeHistory(GuiGraphics g) {
+        int w = Math.min(width - 24, 320), h = Math.min(height - 24, 220), x = (width - w) / 2, y = (height - h) / 2;
+        Ui.panel(g, x, y, w, h); Ui.fit(g, Component.translatable("screen.immersive_brewing.notice_history"), x + 8, y + 8, w - 16, Ui.palette().text());
+        noticeScroll.bounds(x + 8, y + 24, w - 16, h - 32); noticeScroll.begin(g); int cy = noticeScroll.top();
+        var history = StationNotices.history();
+        if (history.isEmpty()) cy += Ui.wrapped(g, Component.translatable("notice.immersive_brewing.history_empty"), x + 8, cy, noticeScroll.width(), Ui.palette().muted());
+        for (Component notice : history) cy += Ui.wrapped(g, notice, x + 8, cy, noticeScroll.width(), Ui.palette().text()) + 4;
+        noticeScroll.end(g, cy);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double delta) {
+        if (noticeHistory) return noticeScroll.wheel(mx, my, delta);
+        if (settings) {
+            settingsOffset = Math.max(0, Math.min(264, settingsOffset - (int) Math.signum(delta) * 22));
+            updateSettingsButtons();
+            return true;
+        }
+        return super.mouseScrolled(mx, my, delta);
     }
 
     /** "[key]" label for a binding as currently bound. */

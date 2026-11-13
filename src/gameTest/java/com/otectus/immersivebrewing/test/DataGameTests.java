@@ -70,8 +70,8 @@ public final class DataGameTests {
         FakePlayer player = TestSupport.player(h, "Packer");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, plan.key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the datapack plan brews at the Kettle");
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        h.assertTrue(TestSupport.working(player), "the datapack plan brews at the Kettle");
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
             for (int i = 0; i < 3; i++) {
@@ -95,7 +95,7 @@ public final class DataGameTests {
         TestSupport.openMortar(player, mortar);
         mortar.start(player, StationActionC2S.withAssist(1, 1, 1));
         h.assertTrue(mortar.ledger() != null, "the Mortar prepares a reagent only the pack profiles");
-        TestSupport.driveMortar(h, player, MortarBot.competent());
+        TestSupport.driveMortar(h, player, com.otectus.immersivebrewing.testing.MortarTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(mortar.ledger() == null, "still preparing");
             ItemStack kit = ItemStack.EMPTY;
@@ -123,6 +123,41 @@ public final class DataGameTests {
         h.assertTrue(!report.keptPrevious() && report.generation() > 0, "on first load it is skipped and the rest activates");
         h.assertTrue(BrewingDefinitions.server().reagentProfiles().stream().noneMatch(p -> p.id().getPath().equals("inverted_endpoint")),
                 "the invalid profile is not active");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void workshopProfilesValidateRefineAndFallBack(GameTestHelper h) {
+        BrewingDataLoader.Report report = BrewingDataLoader.lastReport();
+        h.assertTrue(report.errors().stream().anyMatch(e -> e.contains("bad_overwork") && e.contains("overwork_starts")),
+                "an unreachable overwork start is named in the report: " + report.errors());
+        h.assertTrue(report.errors().stream().anyMatch(e -> e.contains("unknown_target") && e.contains("unknown brew profile")),
+                "a workshop profile for a brew profile that does not exist is named: " + report.errors());
+        var all = com.otectus.immersivebrewing.workshop.WorkshopProfiles.all();
+        h.assertTrue(all.stream().noneMatch(p -> p.id().getPath().equals("bad_overwork") || p.id().getPath().equals("unknown_target")),
+                "invalid workshop profiles are not active");
+        BrewingDefinitions defs = BrewingDefinitions.server();
+        // A shipped profile refines sugar; a pack profile refines the pack's own reagent profile by source_profile.
+        var sugar = com.otectus.immersivebrewing.workshop.WorkshopProfiles.preparation(Items.SUGAR,
+                defs.reagentProfile(Items.SUGAR, null, null).value());
+        h.assertTrue(sugar != null && !sugar.fallback() && sugar.source().equals("immersive_brewing:preparation/sugar")
+                && sugar.value().material() == com.otectus.immersivebrewing.minigame.preparation.PreparationMode.CRYSTALLINE,
+                "sugar uses the shipped crystalline profile: " + (sugar == null ? null : sugar.source()));
+        var hide = com.otectus.immersivebrewing.workshop.WorkshopProfiles.preparation(Items.RABBIT_HIDE,
+                defs.reagentProfile(Items.RABBIT_HIDE, null, null).value());
+        h.assertTrue(hide != null && hide.source().equals("ib_test:hide_working") && hide.value().requiredWork() == 1.5,
+                "the pack's profile refines its reagent: " + (hide == null ? null : hide.source()));
+        // No profile at all: the translator builds a conservative process from the reagent profile, and says so.
+        var translated = com.otectus.immersivebrewing.workshop.WorkshopProfiles.translate(defs.reagentProfile(Items.SUGAR, null, null).value().preparation());
+        h.assertTrue(translated.material() == com.otectus.immersivebrewing.minigame.preparation.PreparationMode.CRYSTALLINE
+                && translated.endpointLow() == 0.6 && translated.overworkStarts() > translated.endpointHigh(), "the fallback keeps the family and endpoint");
+        // An item with no reagent profile is never ground, whatever a recipe names it for.
+        h.assertTrue(com.otectus.immersivebrewing.workshop.WorkshopProfiles.preparation(Items.ANVIL, null) == null, "unknown items are not preparable");
+        // Brewing: a shipped profile per reaction; a brew profile without one is translated, never refused.
+        var foam = com.otectus.immersivebrewing.workshop.WorkshopProfiles.brewing(ImmersiveBrewing.id("light_foam"), defs);
+        h.assertTrue(!foam.fallback() && foam.value().family() == com.otectus.immersivebrewing.workshop.ReactionFamily.LIGHT_FOAM, "light foam is profiled");
+        var still = com.otectus.immersivebrewing.workshop.WorkshopProfiles.brewing(STILL_WATER, defs);
+        h.assertTrue(still.fallback() && still.source().startsWith("translated:"), "a pack's brew profile without a workshop profile is translated");
         h.succeed();
     }
 

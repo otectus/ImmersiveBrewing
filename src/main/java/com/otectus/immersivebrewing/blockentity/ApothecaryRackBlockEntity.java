@@ -52,6 +52,13 @@ public class ApothecaryRackBlockEntity extends BlockEntity implements MenuProvid
     private LazyOptional<ItemStackHandler> itemHandler = LazyOptional.of(() -> inventory);
     @Nullable private CompoundTag futurePayload;
     private boolean dropped;
+    private long displayRevision;
+    public long displayRevision() { return displayRevision; }
+    public static java.util.function.Consumer<ApothecaryRackBlockEntity> clientRemoved = rack -> {};
+    @Override public void setRemoved() {
+        if (level != null && level.isClientSide) clientRemoved.accept(this);
+        super.setRemoved();
+    }
 
     public ApothecaryRackBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.APOTHECARY_RACK.get(), pos, state);
@@ -193,6 +200,7 @@ public class ApothecaryRackBlockEntity extends BlockEntity implements MenuProvid
     }
 
     private void contentChanged() {
+        displayRevision++;
         setChanged();
         if (level != null && !level.isClientSide) {
             level.updateNeighbourForOutputSignal(worldPosition, getBlockState().getBlock());
@@ -203,6 +211,7 @@ public class ApothecaryRackBlockEntity extends BlockEntity implements MenuProvid
     @Override
     public void load(CompoundTag tag) {
         super.load(tag);
+        displayRevision++;
         int schema = tag.contains("schema", Tag.TAG_ANY_NUMERIC) ? tag.getInt("schema") : 1;
         if (schema > SCHEMA) {
             futurePayload = tag.copy();

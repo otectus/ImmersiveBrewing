@@ -114,7 +114,12 @@ public final class ImmersiveBrewingCommand {
 
     private static int practice(CommandContext<CommandSourceStack> ctx, SessionKind kind, ResourceLocation profile) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
-        ModNetwork.sendTo(player, new OpenPracticeS2C(kind, profile));
+        OpenPracticeS2C practice = com.otectus.immersivebrewing.workshop.WorkshopPractice.defaultFor(player.server, kind, profile);
+        if (practice == null) {
+            ctx.getSource().sendFailure(Component.translatable("notice.immersive_brewing.practice_unavailable"));
+            return 0;
+        }
+        ModNetwork.sendTo(player, practice);
         return 1;
     }
 
@@ -187,6 +192,16 @@ public final class ImmersiveBrewingCommand {
                 + p.preparation().endpointLow() + "-" + p.preparation().endpointHigh() + ", " + p.preparation().durationTicks() + " ticks"));
         say(ctx, "  reaction: " + (p.reaction().profile() == null ? "plan's profile" : p.reaction().profile()) + ", cooling "
                 + p.reaction().additionCooling() + ", sensitivity " + p.reaction().sensitivity());
+        var hands = com.otectus.immersivebrewing.workshop.WorkshopProfiles.preparation(item, p);
+        if (hands == null) {
+            say(ctx, "  workshop: not prepared by hand (brews at raw extraction 50)");
+        } else {
+            var w = hands.value();
+            say(ctx, "  workshop: " + hands.source() + (hands.fallback() ? " (fallback translated from the reagent profile)" : "") + "; "
+                    + w.material().serialized() + ", operations " + w.operations() + ", required work " + w.requiredWork()
+                    + ", effort " + w.usefulLow() + "-" + w.usefulHigh() + ", endpoint " + w.endpointLow() + "-" + w.endpointHigh()
+                    + ", overwork from " + w.overworkStarts());
+        }
         return 1;
     }
 
@@ -208,6 +223,17 @@ public final class ImmersiveBrewingCommand {
         for (ItemStack s : l.inputs()) say(ctx, "    " + s.getCount() + "x " + ForgeRegistries.ITEMS.getKey(s.getItem()) + potion(s));
         for (SlotStack s : l.reserved()) say(ctx, "    slot " + s.slot() + ": " + s.stack().getCount() + "x " + ForgeRegistries.ITEMS.getKey(s.stack().getItem()));
         say(ctx, "  resumed " + l.resumes() + " time(s), data generation " + l.dataGeneration() + (l.unknownSchema() != null ? ", held raw" : ""));
+        if (l.physical()) {
+            say(ctx, "  hands-on process (schema " + com.otectus.immersivebrewing.batch.LedgerCodec.SCHEMA + "), profile "
+                    + l.snapshot().getString("workshopProfile") + (l.snapshot().getBoolean("workshopFallback") ? " (fallback)" : ""));
+            net.minecraft.nbt.CompoundTag view = station.buildWorkshopSnapshot();
+            for (String kind : new String[] {"kettle", "mortar", "alembic", "finishing"}) {
+                if (view.contains(kind)) say(ctx, "  " + kind + ": " + view.getCompound(kind));
+            }
+            say(ctx, "  held: " + view.getList("held", net.minecraft.nbt.Tag.TAG_COMPOUND) + ", assistants " + l.assistants());
+        } else if (l.legacy()) {
+            say(ctx, "  a batch from an earlier version: it finishes through its original interface (Finish existing batch)");
+        }
         return 1;
     }
 
@@ -283,6 +309,12 @@ public final class ImmersiveBrewingCommand {
         }
         say(ctx, "Quick finishing: " + com.otectus.immersivebrewing.recipe.QuickFinishing.eligible(plan)
                 + "; contextual: " + plan.contextual() + "; generation: " + index.generation());
+        var physical = com.otectus.immersivebrewing.workshop.WorkshopProfiles.brewing(plan.brewProfile(), BrewingDefinitions.server());
+        var b = physical.value();
+        say(ctx, "Hands-on process: " + b.family().serialized() + " via " + physical.source() + (physical.fallback() ? " (fallback)" : "")
+                + "; ideal " + b.idealLow() + "-" + b.idealHigh() + ", workable " + b.workLow() + "-" + b.workHigh()
+                + ", " + b.stepSeconds() + " s per reaction, " + b.restSeconds() + " s rest; about "
+                + com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.estimateSeconds(plan, BrewingDefinitions.server()) + " s of work");
         return 1;
     }
 

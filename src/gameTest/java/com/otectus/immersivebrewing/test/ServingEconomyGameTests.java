@@ -62,7 +62,7 @@ public final class ServingEconomyGameTests {
         h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.NETHER_WART) == 4 - units && TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 4 - units,
                 "exactly " + units + " of each reagent reserved");
         h.assertTrue(kettle.fuelCharges() == 20 - 2 * units && kettle.ledger().fuelCharges() == 2 * units, "fuel reserved: " + kettle.fuelCharges());
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
             for (int i = 0; i < 6; i++) {
@@ -118,7 +118,7 @@ public final class ServingEconomyGameTests {
         h.assertTrue(TestSupport.count(kettle, TRAY, 6, ModItems.PREPARED_REAGENT_KIT.get()) == 0, "both kits reserved first");
         h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 3, "so no raw sugar was needed");
         h.assertTrue(kettle.ledger().extraction() == 90, "the batch's extraction is the kits': " + kettle.ledger().extraction());
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
             h.assertTrue(TestSupport.count(kettle, RACK, 6, Items.POTION) == 6, "six Swiftness");
@@ -139,8 +139,8 @@ public final class ServingEconomyGameTests {
         h.assertTrue(TestSupport.count(kettle, TRAY, 6, ModItems.PREPARED_REAGENT_KIT.get()) == 0 && TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 2,
                 "one kit and one raw sugar reserved");
         h.assertTrue(kettle.ledger().extraction() == 70, "E is the mean over the sugar units: (90 + 50) / 2 = " + kettle.ledger().extraction());
-        SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), "session.immersive_brewing.end.closed");
-        h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 3, "cancelled: raw sugar back");
+        h.assertTrue(TestSupport.withdraw(player).accepted(), "the untouched batch is withdrawn");
+        h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 3, "withdrawn: raw sugar back");
         boolean kitBack = false;
         for (int i = 0; i < 6; i++) {
             ItemStack s = kettle.inventory().getStackInSlot(TRAY + i);
@@ -160,7 +160,7 @@ public final class ServingEconomyGameTests {
         TestSupport.openMortar(player, mortar);
         mortar.start(player, StationActionC2S.withAssist(4, 1, 1));
         h.assertTrue(mortar.ledger() != null && mortar.ledger().inputs().get(0).getCount() == 4, "four sugar reserved for four kits");
-        TestSupport.driveMortar(h, player, MortarBot.competent());
+        TestSupport.driveMortar(h, player, com.otectus.immersivebrewing.testing.MortarTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(mortar.ledger() == null, "still preparing");
             h.assertTrue(kits(mortar, Items.SUGAR) == 4, "four sugar kits from one preparation: " + kits(mortar, Items.SUGAR));

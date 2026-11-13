@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.2.0 — Unreleased development
+
+This section describes the current development tree; it is not a release announcement.
+
+- Replaced the Mortar, Kettle and Alembic minigame screens with hands-on work at the apparatus. An ordinary right-click
+  opens a transparent working view over the world; the cursor or `Tab` picks the station's parts. Right-clicking while
+  holding an item puts it where it belongs. Every action is a server-validated intent against the station's own part
+  volumes, reach and line of sight, with a stated reason when it is refused.
+- Mortar: one to four units in the bowl, pressed and ground with the pestle, folded with the scraper and scraped into
+  the dose cup. Each material has its own texture, endpoint and useful pressure; overworking makes fines.
+- Kettle: bottles are tipped in, the burner is set by hand, each dose is lifted from its cup and tipped in when the
+  liquid is warm, the paddle is worked while anything is undissolved, the surface rests and each bottle is filled at the
+  spout. Nine reaction families ask for different balances of heat and agitation and show what they need.
+- Alembic: a water coolant jacket (filled by bucket, bottle or pipe), a clamp, burner and coolant valves and a diverter
+  that sends cloudy heads and hazy tails to waste and the clear heart to the receiver. Untouched charges can be
+  withdrawn with their coolant.
+- Container finishing became a short physical step at the finishing fitting; the Rack's positions and carrier cradle
+  take, place, pack and unpack in place.
+- Attended batches: a running batch advances while its brewer or a productive helper stays in range and seals itself
+  after two seconds without one. The Kettle's lid or `L` seal it by hand; the lid, clamp or bowl reopen it exactly
+  where it stopped.
+  Players can share one batch by working different parts; the brewer keeps the credit.
+- Added datapack `workshop_profiles` (preparation, brewing, distillation) with validation, priorities and a translation
+  of existing reagent and brew profiles when none is given.
+- Accessibility: every action has a single-key path (no chords), rebindable workshop keys, toggle work, hold-to-grab,
+  tool sensitivity, dead zone and smoothing, a left-handed presentation, a no-camera mode, numeric readings, narration
+  of the picked part, written cues for what the apparatus shows and first-use demonstrations. Practice runs the same tools on
+  the client at an idle station and changes nothing.
+- Saves: new batches use ledger schema 3 with a versioned process payload; a running batch loads sealed. Batches saved
+  by 1.1 finish through their original interface from the route book stand. Recipes, item and block IDs, potion data and
+  the quality formula are unchanged. Network protocol version 5.
+- New server options `participantRange`, `coolantCapacityMb` and `coolantPerGroupMb`; new client options for the
+  working view. Existing control options keep their keys with their hands-on meaning (`docs/CONFIGURATION.md`).
+- Details, validation results and limits: `docs/reports/1.2.0-hands-on-overhaul.md`.
+
+## 1.1.1 — Unreleased development
+
+- Overhauled station presentation: compact layouts, shared accessibility policy, authored material/signature cues, truthful distillation routing, loading/staging guidance, and recovery-aware results.
+- Added client presentation/HUD controls, notice history narration, and expanded tooltip details. See `docs/reports/1.1.1-visual-overhaul.md` for validation limits.
+
 ## 1.1.0 — Unreleased development
 
 This section describes the current development tree; it is not a release announcement.

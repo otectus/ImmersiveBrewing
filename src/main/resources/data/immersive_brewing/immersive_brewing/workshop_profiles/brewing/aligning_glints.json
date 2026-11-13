@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:aligning_glints",
+  "reaction": "aligning_glints",
+  "temperature": {
+    "ideal": [
+      0.44,
+      0.58
+    ],
+    "workable": [
+      0.32,
+      0.72
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 9.0,
+    "rest_seconds": 4.0
+  }
+}

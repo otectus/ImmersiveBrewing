@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:dark_whorls",
+  "reaction": "dark_whorls",
+  "temperature": {
+    "ideal": [
+      0.42,
+      0.56
+    ],
+    "workable": [
+      0.3,
+      0.7
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 8.0,
+    "rest_seconds": 3.0
+  }
+}

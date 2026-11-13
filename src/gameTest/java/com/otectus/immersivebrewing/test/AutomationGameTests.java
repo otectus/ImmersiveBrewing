@@ -98,8 +98,9 @@ public final class AutomationGameTests {
         h.assertTrue(water.fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE) == 0, "no water during the job");
         h.assertTrue(kettle.statusComparator() || kettle.comparatorSignal() == 0, "output comparator is empty while brewing");
         kettle.toggleComparatorMode();
-        h.assertTrue(kettle.comparatorSignal() == 8, "status comparator: 8 while reserved or running");
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        h.assertTrue(kettle.comparatorSignal() == 8 || kettle.comparatorSignal() == 9,
+                "status comparator: 8 working or 9 waiting for attention: " + kettle.comparatorSignal());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.startSequence().thenWaitUntil(() -> h.assertTrue(kettle.ledger() == null, "still brewing")).thenExecute(() -> {
             h.assertTrue(kettle.comparatorSignal() == 15, "status comparator: 15 with finished output");
             ItemStack simulated = down.extractItem(RACK, 1, true);

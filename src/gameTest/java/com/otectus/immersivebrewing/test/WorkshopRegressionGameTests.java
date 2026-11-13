@@ -38,14 +38,16 @@ public final class WorkshopRegressionGameTests {
 
     @GameTest(template = "empty", timeoutTicks = 500)
     public static void kettleResumeAdvancesAfterCountIn(GameTestHelper h) {
+        // The legacy engine still finishes batches saved by 1.1: its resume keeps the step and does not burst.
         var kettle = TestSupport.kettle(h);
         TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
         var player = TestSupport.player(h, "KettleClock");
-        TestSupport.openKettle(player, kettle);
-        kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1, 1);
+        var legacy = LegacyFixtures.sealedBrew(h, kettle, player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS), 60);
+        TestSupport.openKettle(player, legacy);
+        legacy.resume(player);
         h.runAfterDelay(140, () -> checkResumeClock(h, player, () -> {
-            TestSupport.openKettle(player, kettle);
-            kettle.resume(player);
+            TestSupport.openKettle(player, legacy);
+            legacy.resume(player);
         }, 2));
     }
 
@@ -54,11 +56,12 @@ public final class WorkshopRegressionGameTests {
         var mortar = TestSupport.mortar(h, TestSupport.STATION);
         mortar.inventory().setStackInSlot(0, new ItemStack(Items.SUGAR));
         var player = TestSupport.player(h, "MortarClock");
-        TestSupport.openMortar(player, mortar);
-        mortar.start(player, 1);
+        var legacy = LegacyFixtures.sealedPreparation(h, mortar, player, 1, 40);
+        TestSupport.openMortar(player, legacy);
+        legacy.resume(player);
         h.runAfterDelay(140, () -> checkResumeClock(h, player, () -> {
-            TestSupport.openMortar(player, mortar);
-            mortar.resume(player);
+            TestSupport.openMortar(player, legacy);
+            legacy.resume(player);
         }, 2));
     }
 
@@ -67,11 +70,12 @@ public final class WorkshopRegressionGameTests {
         var still = AlembicGameTests.load(h, 1, AlembicGameTests.copies(
                 PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.STRENGTH), 3));
         var player = TestSupport.player(h, "AlembicClock");
-        TestSupport.openAlembic(player, still);
-        still.startPurification(player, 0);
+        var legacy = LegacyFixtures.sealedPurification(h, still, player, 40);
+        TestSupport.openAlembic(player, legacy);
+        legacy.resume(player);
         h.runAfterDelay(140, () -> checkResumeClock(h, player, () -> {
-            TestSupport.openAlembic(player, still);
-            still.resume(player);
+            TestSupport.openAlembic(player, legacy);
+            legacy.resume(player);
         }, 2));
     }
 
@@ -105,16 +109,15 @@ public final class WorkshopRegressionGameTests {
         }
     }
 
-    @GameTest(template = "empty", timeoutTicks = 1200)
+    @GameTest(template = "empty", timeoutTicks = 1600)
     public static void fullMortarKeepsRecoveryItemUntilOutputSpaceExists(GameTestHelper h) {
         var mortar = TestSupport.mortar(h, TestSupport.STATION);
         mortar.inventory().setStackInSlot(0, new ItemStack(Items.SUGAR, 2));
         var player = TestSupport.player(h, "RecoverPrep");
         TestSupport.openMortar(player, mortar);
         mortar.start(player, 2);
-        TestSupport.driveMortar(h, player, MortarBot.competent());
         ApothecaryMortarBlockEntity[] installed = {null};
-        h.runAfterDelay(100, () -> {
+        h.runAfterDelay(20, () -> {
             h.getLevel().destroyBlock(mortar.getBlockPos(), true);
             var drops = TestSupport.drops(h, TestSupport.STATION);
             var batches = TestSupport.droppedStacks(drops, ModItems.RECOVERY_BATCH.get());
@@ -129,21 +132,23 @@ public final class WorkshopRegressionGameTests {
             h.assertTrue(TestSupport.use(player, fresh, refused).isEmpty(), "space allows the recovery item to transfer once");
             h.assertTrue(fresh.ledger().inputs().get(0).getCount() == 2, "both reagents transferred intact");
             installed[0] = fresh;
-            // A saved/recovered sealed job must also recheck capacity when the player actually resumes it.
+            // The shelf fills again: the preparation carries on, and packaging waits for room rather than losing anything.
             fillShelf(fresh);
-            TestSupport.openMortar(player, fresh);
-            fresh.resume(player);
-            h.assertTrue(TestSupport.session(player).isEmpty() && fresh.ledger().state() == JobState.SEALED,
-                    "resume refuses a full shelf without starting or losing the sealed job");
+            TestSupport.unseal(player, fresh);
+            h.assertTrue(fresh.ledger().state() == JobState.RUNNING, "the recovered preparation reopens");
+            var hand = TestSupport.hand(player, fresh);
+            var refusedPackaging = hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.M_CUP, com.otectus.immersivebrewing.workshop.WorkshopAction.FINISH, 0);
+            h.assertTrue(!refusedPackaging.accepted() && fresh.ledger() != null, "a full shelf refuses packaging without losing the batch");
             for (int i = 1; i <= 4; i++) fresh.inventory().extractItem(i, 64, false);
-            TestSupport.openMortar(player, fresh);
-            fresh.resume(player);
         });
+        TestSupport.driveMortar(h, player, com.otectus.immersivebrewing.testing.MortarTender.competent());
         h.succeedWhen(() -> {
             var fresh = installed[0];
             h.assertTrue(fresh != null && fresh.ledger() == null, "recovered preparation still running");
             h.assertTrue(TestSupport.count(fresh, 1, 4, ModItems.PREPARED_REAGENT_KIT.get()) == 2, "exactly two kits issued");
-            h.assertTrue(KitData.read(fresh.inventory().getStackInSlot(1)).orElseThrow().source().is(Items.SUGAR), "source reagent preserved");
+            ItemStack kit = ItemStack.EMPTY;
+            for (int i = 1; i <= 4; i++) if (!fresh.inventory().getStackInSlot(i).isEmpty()) kit = fresh.inventory().getStackInSlot(i);
+            h.assertTrue(KitData.read(kit).orElseThrow().source().is(Items.SUGAR), "source reagent preserved");
         });
     }
 
@@ -152,21 +157,20 @@ public final class WorkshopRegressionGameTests {
         var mortar = TestSupport.mortar(h, TestSupport.STATION);
         mortar.inventory().setStackInSlot(0, new ItemStack(Items.SUGAR, 4));
         var player = TestSupport.player(h, "OldPrepSave");
-        TestSupport.openMortar(player, mortar);
-        mortar.start(player, 4);
-        h.runAfterDelay(100, () -> {
-            SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), CLOSED);
-            var finished = (SimHandles.Preparation) SimHandles.create(SessionKind.PREPARATION, mortar.ledger().params(), mortar.ledger().simState());
+        var fixture = LegacyFixtures.sealedPreparation(h, mortar, player, 4, 60);
+        h.runAfterDelay(5, () -> {
+            var mortar0 = fixture;
+            var finished = (SimHandles.Preparation) SimHandles.create(SessionKind.PREPARATION, mortar0.ledger().params(), mortar0.ledger().simState());
             var bot = MortarBot.competent();
             while (!finished.finished()) finished.step(bot.decide(finished.sim()).pack());
             int extraction = finished.sim().score().extraction();
             // Reproduce a pre-fix save: a completed job whose only obstruction was the occupied output shelf.
-            mortar.ledger().setSimState(finished.saveState());
-            fillShelf(mortar);
-            mortar.ledger().hold("recovery.immersive_brewing.no_room");
-            CompoundTag saved = mortar.saveWithFullMetadata();
-            var pos = mortar.getBlockPos();
-            h.getLevel().setBlockEntity(BlockEntity.loadStatic(pos, mortar.getBlockState(), saved));
+            mortar0.ledger().setSimState(finished.saveState());
+            fillShelf(mortar0);
+            mortar0.ledger().hold("recovery.immersive_brewing.no_room");
+            CompoundTag saved = mortar0.saveWithFullMetadata();
+            var pos = mortar0.getBlockPos();
+            h.getLevel().setBlockEntity(BlockEntity.loadStatic(pos, mortar0.getBlockState(), saved));
             var loaded = (ApothecaryMortarBlockEntity) h.getLevel().getBlockEntity(pos);
             loaded.revalidateRecovery();
             h.assertTrue(loaded.ledger().state() == JobState.RECOVERY, "full shelf still holds the saved job");
@@ -222,19 +226,18 @@ public final class WorkshopRegressionGameTests {
         kettle.startBrew(brewer, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1, 1);
         TestSupport.openKettle(viewer, kettle);
         checkPaddleLocked(h, kettle, viewer);
-        TestSupport.driveKettle(h, brewer, KettleBot.competent());
+        TestSupport.driveKettle(h, brewer, com.otectus.immersivebrewing.testing.KettleTender.competent());
         boolean[] resumed = {false};
         h.runAfterDelay(140, () -> {
             checkPaddleLocked(h, kettle, viewer);
-            SessionManager.leave(brewer, TestSupport.session(brewer).orElseThrow().id(), CLOSED);
+            TestSupport.seal(brewer);
             var menu = viewer.containerMenu;
             menu.clicked(BrewersKettleBlockEntity.PADDLE, 0, ClickType.PICKUP, viewer);
             h.assertTrue(menu.getCarried().is(ModItems.WOODEN_BREWING_PADDLE.get()), "a sealed job allows paddle maintenance");
             menu.clicked(BrewersKettleBlockEntity.PADDLE, 0, ClickType.PICKUP, viewer);
             h.assertTrue(menu.getCarried().isEmpty(), "the paddle can be returned before resuming");
-            TestSupport.openKettle(brewer, kettle);
-            kettle.resume(brewer);
-            checkPaddleLocked(h, kettle, viewer); // SEALED ledger, but a resumed count-in owns the tool.
+            TestSupport.unseal(brewer, kettle);
+            checkPaddleLocked(h, kettle, viewer); // reopened: the running batch owns its tool again.
             resumed[0] = true;
         });
         h.succeedWhen(() -> {
@@ -262,4 +265,50 @@ public final class WorkshopRegressionGameTests {
     }
 
     private WorkshopRegressionGameTests() {}
+
+    /**
+     * A station whose presentation is behind its ledger (here a 1.1 batch loaded into a live kettle) refreshes it while
+     * vanilla builds the station's update packet, which happens inside the chunk's change broadcast. That refresh must
+     * never record a block change itself: a change recorded there strands the section's change set, and no later
+     * change in that section would reach any client (blocks placed nearby stayed invisible in the client smoke test).
+     */
+    @GameTest(template = "empty")
+    public static void buildingAnUpdatePacketNeverMarksTheChunk(GameTestHelper h) {
+        BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
+        TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
+        FakePlayer player = TestSupport.player(h, "Stale");
+        h.runAfterDelay(3, () -> {
+            BlockPos pos = kettle.getBlockPos();
+            h.assertTrue(pendingChange(h, pos) == null, "the placement was broadcast");
+            var ledger = com.otectus.immersivebrewing.testing.LegacyBatches.brew(kettle, player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS), 20);
+            kettle.load(com.otectus.immersivebrewing.testing.LegacyBatches.withLedger(kettle, ledger));
+            h.assertTrue(pendingChange(h, pos) == null, "loading records no change");
+            kettle.getUpdateTag();
+            kettle.getUpdatePacket();
+            h.assertTrue(pendingChange(h, pos) == null, "building the update packet recorded a block change: " + pendingChange(h, pos));
+        });
+        // The refreshed presentation still reaches clients: the station owes them an update and sends it from its tick.
+        h.runAfterDelay(6, () -> {
+            h.assertTrue(kettle.ledger() != null && kettle.ledger().legacy() && pendingChange(h, kettle.getBlockPos()) == null,
+                    "the loaded 1.1 batch is there and its update went out");
+            h.succeed();
+        });
+    }
+
+    /** The pending change set of {@code pos}'s chunk section, or null (vanilla internals, read reflectively in dev). */
+    @org.jetbrains.annotations.Nullable
+    private static Object pendingChange(GameTestHelper h, BlockPos pos) {
+        try {
+            var level = h.getLevel();
+            var get = net.minecraft.server.level.ChunkMap.class.getDeclaredMethod("getVisibleChunkIfPresent", long.class);
+            get.setAccessible(true);
+            Object holder = get.invoke(level.getChunkSource().chunkMap, new net.minecraft.world.level.ChunkPos(pos).toLong());
+            var field = net.minecraft.server.level.ChunkHolder.class.getDeclaredField("changedBlocksPerSection");
+            field.setAccessible(true);
+            Object[] sets = (Object[]) field.get(holder);
+            return sets[level.getSectionIndex(pos.getY())];
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("chunk holder internals unreadable", e);
+        }
+    }
 }

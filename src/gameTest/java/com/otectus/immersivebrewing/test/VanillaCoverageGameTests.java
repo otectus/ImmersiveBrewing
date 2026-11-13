@@ -173,8 +173,8 @@ public final class VanillaCoverageGameTests {
         FakePlayer player = TestSupport.player(h, name);
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, output).key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the brew started");
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        h.assertTrue(TestSupport.working(player), "the brew started");
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         return kettle;
     }
 

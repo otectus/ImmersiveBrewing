@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:generic",
+  "reaction": "generic",
+  "temperature": {
+    "ideal": [
+      0.46,
+      0.6
+    ],
+    "workable": [
+      0.34,
+      0.74
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 9.0,
+    "rest_seconds": 3.0
+  }
+}

@@ -3,6 +3,7 @@ package com.otectus.immersivebrewing.client.screen;
 import com.otectus.immersivebrewing.batch.LedgerCodec;
 import com.otectus.immersivebrewing.client.ClientSession;
 import com.otectus.immersivebrewing.client.ClientGuide;
+import com.otectus.immersivebrewing.client.PotionTooltips;
 import com.otectus.immersivebrewing.client.sound.BrewingSounds;
 import com.otectus.immersivebrewing.network.ModNetwork;
 import com.otectus.immersivebrewing.network.packet.SetLabelC2S;
@@ -36,13 +37,16 @@ public class ResultScreen extends Screen {
     private EditBox label;
     private EditBox note;
     private int px, py, pw, ph;
+    private boolean details;
     private final Ui.ScrollArea content = new Ui.ScrollArea();
 
     public ResultScreen(ClientSession session) {
         super(Component.translatable("screen.immersive_brewing.result"));
         this.session = session;
         this.result = session.result();
-        if (result != null && !session.practice) BrewingSounds.complete();
+        // Productive completion is owned by the authoritative spatial outcome
+        // event.  Reopening this screen must not replay it; practice is local.
+        if (result != null && session.practice) BrewingSounds.complete();
         BrewingSounds.stop();
     }
 
@@ -53,7 +57,7 @@ public class ResultScreen extends Screen {
         px = (width - pw) / 2;
         py = (height - ph) / 2;
         boolean labelable = result != null && !session.practice && "brewing".equals(result.getString("kind"));
-        content.bounds(px + 8, py + 8, pw - 16, ph - (labelable ? 70 : 48));
+        content.bounds(px + 8, py + 8, pw - 16, ph - (labelable ? 96 : 48));
         if (labelable) {
             String oldLabel = label == null ? "" : label.getValue();
             String oldNote = note == null ? "" : note.getValue();
@@ -71,7 +75,12 @@ public class ResultScreen extends Screen {
                     .bounds(px + 8, py + ph - 30, pw / 2 - 12, 20).build());
         }
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
-                .bounds(labelable ? px + pw / 2 : px + pw / 2 - 50, py + ph - 30, labelable ? pw / 2 - 8 : 100, 20).build());
+                .bounds(labelable ? px + pw / 2 : px + pw - 108, py + ph - 30, labelable ? pw / 2 - 8 : 100, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.result.details"), b -> {
+            details = !details; b.setMessage(Component.translatable(details ? "screen.immersive_brewing.result.summary" : "screen.immersive_brewing.result.details"));
+            content.reset();
+        }).bounds(labelable ? px + pw / 2 : px + 8, labelable ? py + ph - 74 : py + ph - 30,
+                labelable ? pw / 2 - 8 : 100, 20).build());
     }
 
     private void applyLabel() {
@@ -124,6 +133,23 @@ public class ResultScreen extends Screen {
             g.renderItem(output, px + 8, y);
             y += Math.max(20, Ui.wrapped(g, Component.translatable("screen.immersive_brewing.result.made", result.getInt("count"), output.getHoverName()),
                     px + 28, y + 4, content.width() - 20, p.text()) + 6);
+        }
+        // First view is deliberately actionable: actual output, grade, one real
+        // policy-backed contributor/tip, and where the committed result waits.
+        if (!details && !session.practice) {
+            if (result.contains("Q")) y = scoreLine(g, y, "screen.immersive_brewing.result.quality", result.getInt("Q"), true);
+            var outputMeta = BrewingMetadata.read(output);
+            if (outputMeta.isPresent()) {
+                Ui.wrapped(g, PotionTooltips.boundedBenefitSummary(output, outputMeta.get()), px + 8, y, content.width(), p.text());
+                y += 12;
+            }
+            y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.result.location"), px + 8, y, content.width(), p.muted()) + 3;
+            Component tip = tipComponent();
+            if (tip != null) {
+                g.drawString(font, Component.translatable("screen.immersive_brewing.result.tip"), px + 8, y, p.accent(), false);
+                y += 12 + Ui.wrapped(g, tip, px + 8, y + 12, content.width(), p.text());
+            }
+            return y + 4;
         }
         switch (kind) {
             case "brewing" -> y = brewing(g, y);

@@ -1,9 +1,9 @@
 # Testing
 
-This file separates the **current 1.1.0 development commands and pending gates** from historical 1.0.0/1.0.2 results.
-The implementation-to-recommendation map and final validation results are in
-[`docs/reports/1.1.0-implementation.md`](reports/1.1.0-implementation.md). A historical pass does not establish that the
-current tree passed after later fixes. Logs from `gradlew-quiet.sh` are written to
+This file separates the **current development commands and pending gates** (the hands-on workshop, 1.2.0) from
+historical results. The work-package map, coverage of former features, exact results and limits are in
+[`docs/reports/1.2.0-hands-on-overhaul.md`](reports/1.2.0-hands-on-overhaul.md); the 1.1.0 report remains for its own
+revision. A historical pass does not establish that the current tree passed after later fixes. Logs from `gradlew-quiet.sh` are written to
 `/tmp/gradle-ImmersiveBrewing-<task>-<timestamp>.log`; durable current matrix output uses the paths under
 [Artifacts](#artifacts).
 
@@ -27,7 +27,7 @@ python3 tools/generate_textures.py --check && python3 tools/generate_textures.py
 python3 tools/generate_sounds.py --check
 python3 tools/check_release.py                # source-locale key/placeholder parity; rejects CJK in non-Chinese locales
 python3 tools/check_release.py --fixtures     # separately provisioned optional-jar checksums
-python3 tools/check_release.py --jar build/libs/immersive-brewing-1.1.0.jar
+python3 tools/check_release.py --jar build/libs/immersive-brewing-1.2.0.jar
 ```
 
 `tools/run_compat_matrix.py` reads already provisioned jars from `libs/`, or copies them from
@@ -36,39 +36,46 @@ Apothecary configuration byte-for-byte even after failure.
 
 ## Suites
 
-### JUnit (29 tests declared in the current source, `src/test`)
+### JUnit (44 tests declared in the current source, `src/test`)
 
 | Class | Covers |
 | --- | --- |
+| `WorkshopProcessTest` | The hands-on domain: every reaction family completes with competent tending and also without any stirring (stirring is never mandatory); 10 Hz and 20 Hz tool samples earn the same; stationary, teleporting and in-air tools earn nothing; bursts are capped; no farming after the treatment; save/load round trip; Mortar endpoint and overwork, four units sharing the work, every effort reaching the same ceiling; Alembic routing and an idle still |
+| `StationVisualCacheTest` | Bounded client visual cache |
 | `QualityMathTest` | Grade bands, component scores, the quality formula, the duration multiplier (exact at 50), drinking time, purification |
-| `KettleSimulationTest` | Determinism, seal and resume, competent play reaching Masterwork on every signature, every generated schedule playable, idle and poor play scoring lower, bounded state under arbitrary input, tier durations, addition windows and disturbances following the contract, assistance limits, automatic additions scoring nothing |
-| `PreparationSimulationTest` | Competent, poor and idle preparation, determinism with seal and resume, capped motion, parameter encoding |
-| `DistillationSimulationTest` | Competent routing scores high and finishes in time; sloppy and idle score lower |
-| `GuidedPracticeTest` | Staged heat/circulation/addition/recovery practice parameters, progression and non-productive result contract |
+| `KettleSimulationTest` | (1.1 simulation, kept for migrated batches) Determinism, seal and resume, competent play reaching Masterwork on every signature, every generated schedule playable, idle and poor play scoring lower, bounded state under arbitrary input, tier durations, addition windows and disturbances following the contract, assistance limits, automatic additions scoring nothing |
+| `PreparationSimulationTest` | (1.1 simulation) Competent, poor and idle preparation, determinism with seal and resume, capped motion, parameter encoding |
+| `DistillationSimulationTest` | (1.1 simulation) Competent routing scores high and finishes in time; sloppy and idle score lower |
+| `GuidedPracticeTest` | (1.1 lessons; the 1.2 Notebook lessons run in the working view) Staged heat/circulation/addition/recovery practice parameters, progression and non-productive result contract |
 
-### GameTests (144 tests declared in the current source, `src/gameTest`)
+### GameTests (162 tests declared in the current source, `src/gameTest`)
+
+Hands-on stations are driven by the reference tenders in `src/testShared` (`KettleTender`, `MortarTender`,
+`AlembicTender`), which act only through `WorkshopHand`, the same intent envelope a client sends.
 
 | Class | Tests | Covers (spec) |
 | --- | --- | --- |
 | `PotionPathGameTests` | 13 | Every quality application path, once: drinking (untagged potions unchanged), use time, instant effects, bundles, idempotence, custom effects, splash attenuation and instant damage, lingering clouds, tipped-arrow crafting, arrow impact, dispensers; each of the five mixins has a test here or in replacement mode (12) |
-| `KettleGameTests` | 4 | Three-serving Swiftness with exact reagent and fuel accounting, prepared kits, seal and resume at the same step, count-in cancel (milestone 1) |
-| `LifecycleGameTests` | 9 | Save mid-run loads sealed; save during the count-in loads released; break while running drops one Recovery Batch, installs once and finishes; break during the count-in packages the reservation; a second completion issues nothing; disconnect, death, range and dimension change seal with progress kept (20) |
-| `ContentionGameTests` | 3 | Two players at one Kettle (refused start, locked slots, foreign input ignored, resume as assistant, brewer credited); one session per player; packets need the station's open menu (20.1, 21.1) |
+| `KettleGameTests` | 5 | Three-serving Swiftness by hand with exact reagent and fuel accounting, prepared kits, seal and reopen with the state unchanged, withdrawing an untouched batch, a dose making the batch irreversible |
+| `LifecycleGameTests` | 14 | A running ledger reloads sealed; a reservation that never started reloads released; an untouched batch reloads sealed and can be withdrawn; break while running drops one Recovery Batch that installs once and finishes; a completion issues once; disconnect, death, walking away and dimension change seal after the grace with progress kept; a helper keeps a batch attended, a passer-by does not; six inputs, two bottled, then broken keeps four portions owned once; an occupied position pauses bottling without a debit (handoff 14, 16) |
+| `ContentionGameTests` | 4 | Two players at one Kettle (refused start, leased tools, brewer credited); two players can not both collect one bottle; one player tending two stations; a guessed position does nothing (handoff 16) |
+| `WorkshopProtocolGameTests` | 4 | Envelopes that must not act change nothing (stale job, duplicate or replayed sequence, non-finite and out-of-range values, wrong dimension); no open view, remote position and obstruction are refused; a sample flood can not buy work; a refused action keeps the held stack (handoff 15) |
+| `Presentation111GameTests` | 3 | Typed snapshots are bounded and do not change the process; frozen material is published truthfully for paused, counting-in and sealed (1.1) batches and for a sealed hands-on batch |
 | `AutomationGameTests` | 7 | Face rules for insertion and extraction, nothing reachable during a job, comparator modes, water filling (simulate equals execute, whole bottles, one bucket fills four), real hoppers, Mortar and Alembic faces (22) |
-| `ReplayGameTests` | 4 | Duplicate, reordered, oversized, invalid, far-future and stale packets; the wire decoder; a viewer cannot end or steer another session; a flood seals with progress kept; a late addition is carried into the next step (21, ADR-2) |
+| `ReplayGameTests` | 4 | (1.1 sessions) Duplicate, reordered, oversized, invalid, far-future and stale packets; the wire decoder; a viewer cannot end or steer another session; a flood seals with progress kept; a late addition is carried into the next step (21, ADR-2) |
 | `VanillaCoverageGameTests` | 8 | Every vanilla plan replayed through `BrewingRecipeRegistry` at 1-6 servings with costs, fuel and remainders; every registry transformation covered; blaze powder as reagent or fuel; dragon's breath bottle once; Turtle Master metadata-only; Weakness from water; quality inheritance through modifiers and corruptions (13, 15.3, 12.3) |
 | `ServingEconomyGameTests` | 9 | One to six servings, kits replacing reagents exactly, kit and raw extraction averaging, four-kit preparation (5.2) |
 | `ReplacementModeGameTests` | 8 | COEXIST untouched; stand metadata pass-through; REPLACE_COVERED stops covered stands before fuel or time (mixin) with the `PotionBrewEvent.Pre` backstop, modifiers and mixed cycles pass; DISABLED refuses new jobs but resumes sealed ones (14) |
-| `AlembicGameTests` | 11 | 3→2 and 6→4 purification, baseline start, cap and once-per-line refusals, interrupted and broken purifications without duplicates, reclamation conservation, cancel refund, Recovery Batch handling, safe grouping and exact mismatch reasons (11) |
+| `AlembicGameTests` | 13 | 3→2 and 6→4 purification by hand, baseline start, cap and once-per-line refusals, the charge preview, coolant reserved and returned untouched, a run without coolant refused before anything moves, collecting everything earning less than routing the heart, interrupted and broken purifications without duplicates, reclamation conservation, cancel refund, reclamation inside a Recovery Batch (11) |
 | `CarrierGameTests` | 7 | Exact transfer, overflow kept, collection, no nesting, narrow handler, never a recipe or station item, Alembic exchange, safe selected-slot equip, empty-selection behavior and newer preference data (10) |
 | `LabelGameTests` | 2 | Code-point limits, control and formatting characters rejected whole, literal JSON, identity and power unchanged, batch labelling (10) |
 | `NotebookGameTests` | 4 | Explicit bounded favourites, compact 32-entry journal/clear history, guide-v2 unknown-data preservation and notebook granted once (10, 25) |
-| `DataGameTests` | 4 | The `ib_test` example pack: a datapack plan and brew profile brew at the Kettle, a datapack reagent profile prepares, equal profiles tie-break with a diagnostic, invalid data is reported and never offered, an excluded item stays out of every path (16) |
+| `DataGameTests` | 5 | The `ib_test` example pack: a datapack plan and brew profile brew at the Kettle, a datapack reagent profile prepares, equal profiles tie-break with a diagnostic, invalid data is reported and never offered, workshop profiles validate, refine the hands-on setup and fall back to translations, an excluded item stays out of every path (16) |
 | `IntegrationGameTests` | 4 | Exactly one iron-paddle recipe (smithed or crafted), Smithing never treats carriers or recovery batches as metal, Smithing quality reduces paddle wear, the Tanning strap is presentation only, paddles take Unbreaking and Mending only (17) |
 | `ContentGameTests` | 2 | Advancement tree (root plus one per milestone, no rewards), cleric trades off by default (23.4, 25) |
-| `PerformanceGameTests` | 1 | 32 Kettles brewing at once with live input: session time per tick, messages per controller, no entities (26.6) |
-| `PauseGameTests` | 3 | The help overlay pauses a session, count-in included, and the resume restarts the clock from the client's timing; only the controller pauses, repeated or impossible toggles are violations, a flood seals |
-| `WorkshopRegressionGameTests` | 7 | Regressions from the workshop audit: clock offsets, output recovery, batch identity and tool locks |
+| `PerformanceGameTests` | 1 | 32 kettles tended at once with 8 observers: the workshop's share of the server tick, snapshot count and size, notices per player (26.6) |
+| `PauseGameTests` | 3 | (1.1 batches finished in their original interface) The help overlay pauses a session, count-in included, and the resume restarts the clock from the client's timing; only the controller pauses, repeated or impossible toggles are violations, a flood seals |
+| `WorkshopRegressionGameTests` | 8 | Regressions from the workshop audits: clock offsets, output recovery, batch identity, tool locks, and building a station's update packet never recording a chunk change (a re-entrant change stopped later block changes reaching clients) |
 | `CompatGameTests` | 16 | The four potion mods (18, 26.5), each only when loaded: their `compat/` data loads exactly with them; every plan validates (Apothecary's Burning is reported once More Potions' Fire claims the magma block); a complete registry probe finds no uncovered transformation; one real brew per mod; every listed effect scales on drinking at quality 0 and 100, the rest keep their duration; Mortar profiles and Alembic recipes; RPG Potions' loose matches refused; stackable potions; the bounded catalog completed by the tray |
 | `ApothecaryRackGameTests` | 3 | Six independent mixed-metadata stacks through save/load, capacity/filter carrier transfers, non-mutating automation simulation, access security and exactly-once drops |
 | `Migration110GameTests` | 5 | Runtime-extracted 1.0.2 potion, kit, guide, Notebook and schema-1 ledger data; exact first-resave accounting; clearly labeled baseline-derived non-empty carrier fixture; provenance manifest |
@@ -80,19 +87,46 @@ invalid recipe, an invalid definition and an exclusion; the coverage report writ
 
 ### Client smoke test (`src/smokeTest`, `runClient -PsmokeTest`)
 
-A test-only companion mod drives a development client from the title screen into a fresh flat world and plays the
-workshop through the real screens and packets with the reference bots: a preparation at the Mortar, a three-serving
-Swiftness brew sealed halfway and resumed, a drink whose applied duration must equal the tooltip, a purification, the
-Notebook, the operator report, then a gallery of station states and a refused plan. It checks JEI received every
-category, closes each tutorial overlay with the real key, records results in `run/smoketest/smoketest-result.json` and
-saves screenshots to `run/screenshots/`.
+A test-only companion mod drives a development client from the title screen into a fresh flat world and works the
+stations through the real working view and intent packets with `WorkshopDriver` (mouse-style tool movement, or only
+the workshop key bindings in the `keyboard` variant): an ordinary use opens each working view; two sugar kits are
+prepared with pestle and scraper; a three-serving Swiftness batch is set out from the route book, poured, heated,
+dosed, stirred, sealed with the lid halfway (the stored process must not change while sealed), reopened, rested and
+bottled from the spout; one potion is drunk and its applied duration must equal the tooltip; the Alembic's jacket is
+filled from a bucket and a purification is routed through the diverter; a client-only practice runs at the idle kettle
+and must change nothing on the server; container finishing is done at the fitting; the Rack packs a carrier. A
+migration-only path loads a batch in the 1.1 format into a kettle and finishes it through its original interface.
+Then the operator report, a gallery of station states and facings (stand-ins tend real batches), a refused plan and
+block-sync probes (a marker block placed on the server must reach the client). Results go to
+`run/smoketest/smoketest-result.json`, screenshots to `run/screenshots/`.
 
-Variants (`tools/run_smoke_matrix.sh`): `keyboard` plays all three games through the key bindings only (no injected
-frames); `accessible` uses the high-contrast palette, reduced motion, numbers, large markers and master volume 0;
-`colorblind` the colour-blind palette; `gui1`-`gui4` set the GUI scale in a 1280×960 window, giving GUI sizes 1280×960,
+Variants (`tools/run_smoke_matrix.sh`): `keyboard` works every station through the workshop key bindings only;
+`accessible` uses the high-contrast palette, reduced motion, numeric readings, large markers and master volume 0;
+`colorblind` the colour-blind palette; `visual` captures every station's working view and the other screens in all
+five languages at GUI scale 4; `gui1`-`gui4` set the GUI scale in a 1280×960 window, giving GUI sizes 1280×960,
 640×480, 427×320 and exactly 320×240, the smallest Minecraft allows.
 
-## Current 1.1.0 validation status
+## Current 1.2.0 validation status
+
+Validated on 2026-11-12 against the uncommitted tree recorded in the
+[1.2.0 report](reports/1.2.0-hands-on-overhaul.md), which also lists every command, log path and limit. Automated gates
+below; human gates remain **PENDING**.
+
+| Current-tree gate | Result | Durable evidence |
+| --- | --- | --- |
+| Build + 44 unit tests | **PASS; 0 failures/errors/skips** | `build/test-results/test/`, quiet-wrapper `build` log |
+| 162 GameTests (core, no optional jars) | **PASS** | quiet-wrapper `runGameTestServer` log, `docs/reports/gametest-coverage-report.txt` |
+| Generated resources, locales, packaged-jar audit, `check_mod` | **PASS; data 532, textures 57, icons 3, sounds 27, 1212 keys in five locales, jar 1.2.0 without test code; 0 errors/0 warnings** | tool output in the report |
+| Client smoke: default, keyboard-only, accessible, colour-blind, GUI 640×480 | **PASS; 121/124/121/121/121 boolean checks** | `run/smoketest-matrix/{default,keyboard,accessible,colorblind,gui2}.json` |
+| Client smoke: GUI 1280×960, 427×320, 320×240 | **PASS; 121/121/121** after harness fixes for the compact layouts (one intermittent GUI-1 miss of the Alembic receiver step, not reproduced) | `run/smoketest-matrix/{gui1,gui3,gui4}.json` |
+| Client smoke: five languages at 320×240 | **755/756**; 185 captures; the one false check is the Mortar's first-use tutorial after an interrupted earlier run saved tutorial progress (the harness now resets it) | `run/smoketest-matrix/visual.json` |
+| Client smoke: final-code default journey at 1920×1080 | **PASS; 121/121** | the capture run for `docs/screenshots/` |
+| Compatibility matrix (all eight cases; optional jars present in `libs/`) | **PASS; 162/162 GameTests per case** | `build/compat-matrix/results.json`, per-case server logs |
+
+Human formative trials, a dedicated server with two real clients under latency, native-language review of the new
+strings and video/rendering review remain **PENDING**.
+
+## Validation status at 1.1.0
 
 Validated on 2026-10-28. All automated gates pass; human release gates remain explicitly pending. Exact commands,
 fixture versions, log paths, migration provenance and interpretation limits are in the
@@ -100,7 +134,7 @@ fixture versions, log paths, migration provenance and interpretation limits are 
 
 | Current-tree gate | Result | Durable evidence |
 | --- | --- | --- |
-| Build + 29 unit tests | **PASS; 0 failures/errors/skips** | `build/test-results/test/`, `build/reports/tests/test/`, quiet-wrapper log |
+| Build + 29 unit tests (1.1.0) | **PASS; 0 failures/errors/skips** | `build/test-results/test/`, `build/reports/tests/test/`, quiet-wrapper log |
 | Core 144 GameTests | **PASS, including fresh build without optional jars** | `build/compat-matrix/core-server.log`, `docs/reports/gametest-coverage-report.txt` |
 | Isolated potion mods, collision, combined optional mods | **PASS; 144 tests per case** | `build/compat-matrix/results.json` and per-case logs/reports |
 | Changed Apothecary configuration | **PASS; stack size 16 and changed Iron Skin reagent** | `build/compat-matrix/apothecary_config-server.log`; configuration restored afterward |
@@ -255,7 +289,8 @@ the refmap's five mixins with a `searge` block as before. `check_mod.py`: 0 erro
 
 | Path | Content |
 | --- | --- |
-| `docs/reports/1.1.0-implementation.md` | Implementation traceability, decisions, automated results, deferred scope and pending human gates |
+| `docs/reports/1.2.0-hands-on-overhaul.md` | The hands-on overhaul: work packages, Diegesis decision, coverage map, conservation examples, commands, results, fixed defects and pending gates |
+| `docs/reports/1.1.0-implementation.md` | Implementation traceability, decisions, automated results, deferred scope and pending human gates for 1.1.0 |
 | `docs/reports/coverage-report.txt` | `/immersivebrewing report` from the clean smoke-test world (no test pack): 168 supported recipes, 251 registry transformations, 0 uncovered |
 | `docs/reports/gametest-coverage-report.txt` | The same report from the GameTest world, which includes the `ib_test` pack (its invalid file, unsupported recipe and exclusion appear there on purpose) |
 | `docs/reports/gametest-coverage-report-potion-mods.txt` | The GameTest world's report with every optional mod (the "Everything" run): each potion mod's plans by status, the reported Burning plan, loose matches |

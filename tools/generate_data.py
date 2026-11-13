@@ -5,7 +5,8 @@
   python3 tools/generate_data.py --write    # write every generated file
 
 Covers: the vanilla infusion plans (every mix of PotionBrewing.bootStrap in Forge 1.20.1-47.4.23, for drinkable,
-splash and lingering bottles), the generic container conversions, reagent and brew profiles, Alembic recipes,
+splash and lingering bottles), the generic container conversions, reagent and brew profiles, the hands-on workshop
+profiles that refine them (1.2), Alembic recipes,
 crafting recipes, block loot tables, tags, blockstates and block/item models, and the data for the optional potion mods
 under compat/ (plans, reagent profiles, effect policies and Alembic recipes, each conditioned on its mod). Hand-written files (lang, the spec's
 swiftness example, advancements) are not touched.
@@ -158,6 +159,45 @@ def brew_profile(name):
     out['inertia'] = 1.0
     out['presentation'] = {'accent': spec['accent'], 'particle': spec['particle']}
     return out
+
+
+# ---- workshop profiles (hands-on processes, 1.2): refine the reagent and brew profiles above ----
+# Material operations and the effort window each preparation family rewards.
+WORK_OPS = {'crystalline': ['press', 'grind', 'fold'], 'fibrous': ['press', 'grind', 'fold'], 'soft': ['press', 'grind', 'fold'],
+            'brittle': ['press', 'grind', 'fold'], 'liquid': ['grind', 'fold', 'sweep']}
+USEFUL_EFFORT = {'crystalline': [0.25, 0.70], 'fibrous': [0.25, 0.65], 'soft': [0.20, 0.55], 'brittle': [0.20, 0.60],
+                 'liquid': [0.15, 0.50]}
+# brew profile: (reaction family, ideal temperature, workable temperature, seconds per reaction step, seconds of rest)
+BREW_WORKSHOP = {
+    'generic': ('generic', [0.46, 0.60], [0.34, 0.74], 9.0, 3.0),
+    'light_foam': ('light_foam', [0.46, 0.60], [0.34, 0.74], 9.0, 3.0),
+    'dense_sediment': ('dense_sediment', [0.50, 0.64], [0.38, 0.78], 10.0, 4.0),
+    'delicate_shimmer': ('delicate_shimmer', [0.38, 0.52], [0.26, 0.66], 9.0, 3.0),
+    'magma_streaks': ('magma_streaks', [0.50, 0.66], [0.38, 0.80], 10.0, 3.0),
+    'suspended_bubbles': ('suspended_bubbles', [0.44, 0.58], [0.32, 0.72], 9.0, 3.0),
+    'dark_whorls': ('dark_whorls', [0.42, 0.56], [0.30, 0.70], 8.0, 3.0),
+    'aligning_glints': ('aligning_glints', [0.44, 0.58], [0.32, 0.72], 9.0, 4.0),
+    'floating_motes': ('floating_motes', [0.44, 0.58], [0.32, 0.72], 9.0, 3.0),
+}
+
+
+def preparation_workshop(item):
+    mode, duration, endpoint, limit, overwork, profile, cooling, sensitivity = PREPARABLE[item]
+    return {'schema_version': 1, 'kind': 'preparation', 'priority': 100, 'selector': {'items': [f'minecraft:{item}']},
+            'source_profile': f'{MOD}:{item}', 'material': mode,
+            'work': {'operations': WORK_OPS[mode], 'required_work': round(duration / 240, 2), 'max_work_per_tick': 0.05,
+                     'useful_effort': USEFUL_EFFORT[mode], 'endpoint': endpoint, 'overwork_starts': overwork}}
+
+
+def brewing_workshop(name):
+    family, ideal, workable, step, rest = BREW_WORKSHOP[name]
+    return {'schema_version': 1, 'kind': 'brewing', 'target': f'{MOD}:{name}', 'reaction': family,
+            'temperature': {'ideal': ideal, 'workable': workable, 'inertia': 1.0},
+            'treatment': {'step_seconds': step, 'rest_seconds': rest}}
+
+
+def distillation_workshop(recipe):
+    return {'schema_version': 1, 'kind': 'distillation', 'target': f'{MOD}:{recipe}', 'fractions': [0.20, 0.78], 'run_seconds': 27.0}
 
 
 # ---- crafting ----
@@ -533,9 +573,9 @@ def box(frm, to, tex, faces='all', uv=None):
     return out
 
 
-def kettle_model():
+def kettle_model(lit=False):
     t = {'particle': f'{MOD}:block/kettle_iron', 'iron': f'{MOD}:block/kettle_iron', 'copper': f'{MOD}:block/kettle_copper',
-         'burner': f'{MOD}:block/kettle_burner', 'vent': f'{MOD}:block/kettle_vent', 'wood': f'{MOD}:block/kettle_rack'}
+         'burner': f'{MOD}:block/kettle_burner', 'vent': f'{MOD}:block/kettle_vent' if lit else f'{MOD}:block/kettle_vent_cold', 'wood': f'{MOD}:block/kettle_rack'}
     els = [
         box([1, 0, 1], [15, 5, 15], '#burner', ['south', 'east', 'west', 'up', 'down']),
         box([1, 0, 1], [15, 5, 1.01], '#vent', ['north']),
@@ -557,9 +597,15 @@ def mortar_model():
         box([2, 3, 2], [14, 9, 4], '#stone'), box([2, 3, 12], [14, 9, 14], '#stone'),
         box([2, 3, 4], [4, 9, 12], '#stone'), box([12, 3, 4], [14, 9, 12], '#stone'),
         box([4, 3, 4], [12, 5, 12], '#stone', ['up']),
-        box([9, 5, 5], [11, 15, 7], '#pestle'),
     ]
     return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els}
+
+
+def mortar_item_model():
+    """Inventory silhouette is assembled; only the placed block delegates the pestle to the BER."""
+    model = mortar_model()
+    model['elements'].append(box([9, 5, 5], [11, 15, 7], '#pestle'))
+    return model
 
 
 def alembic_model():
@@ -571,10 +617,17 @@ def alembic_model():
         box([4, 10, 6], [8, 15, 10], '#copper'),
         box([8, 13, 7], [12, 14, 9], '#copper'),
         box([11, 9, 7], [12, 13, 9], '#copper'),
-        box([10, 3, 9], [15, 9, 14], '#glass'),
         box([3, 3, 1], [5, 6, 3], '#iron'),
     ]
-    return {'parent': 'block/block', 'render_type': 'minecraft:translucent', 'textures': t, 'elements': els}
+    # Only the inspection receiver is glass.  Declaring the complete copper/brick apparatus translucent creates
+    # needless sorting work and produces avoidable ordering artefacts on several renderers.
+    return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els}
+
+
+def alembic_glass_model():
+    return {'parent': 'block/block', 'render_type': 'minecraft:translucent',
+            'textures': {'particle': f'{MOD}:block/alembic_glass', 'glass': f'{MOD}:block/alembic_glass'},
+            'elements': [box([10, 3, 9], [15, 9, 14], '#glass')]}
 
 
 def rack_model():
@@ -582,10 +635,19 @@ def rack_model():
 
 
 def blockstate(block):
+    if block == 'alembic':
+        parts = []
+        for facing, y in (('north', 0), ('east', 90), ('south', 180), ('west', 270)):
+            when = {'facing': facing}
+            opaque = {'model': f'{MOD}:block/alembic'}
+            glass = {'model': f'{MOD}:block/alembic_glass'}
+            if y: opaque['y'] = y; glass['y'] = y
+            parts.extend([{'when': when, 'apply': opaque}, {'when': when, 'apply': glass}])
+        return {'multipart': parts}
     variants = {}
     for facing, y in (('north', 0), ('east', 90), ('south', 180), ('west', 270)):
         for lit in ('false', 'true'):
-            v = {'model': f'{MOD}:block/{block}'}
+            v = {'model': f'{MOD}:block/{block}' + ('_lit' if block == 'brewers_kettle' and lit == 'true' else '')}
             if y:
                 v['y'] = y
             variants[f'facing={facing},lit={lit}'] = v
@@ -601,6 +663,7 @@ for name in ('prepared_reagent_kit', 'recovery_batch', 'batch_carrier', 'batch_c
 ITEM_MODELS['batch_carrier']['overrides'] = [{'predicate': {f'{MOD}:strapped': 1}, 'model': f'{MOD}:item/batch_carrier_strapped'}]
 for block in STATIONS:
     ITEM_MODELS[block] = {'parent': f'{MOD}:block/{block}'}
+ITEM_MODELS['apothecary_mortar'] = {'parent': f'{MOD}:block/apothecary_mortar_item'}
 
 
 def files():
@@ -624,6 +687,11 @@ def files():
         out[DATA / f'{MOD}/reagent_profiles/{item}.json'] = reagent_profile(item)
     for name in BREW:
         out[DATA / f'{MOD}/brew_profiles/{name}.json'] = brew_profile(name)
+    for item in PREPARABLE:
+        out[DATA / f'{MOD}/workshop_profiles/preparation/{item}.json'] = preparation_workshop(item)
+    for name in BREW:
+        out[DATA / f'{MOD}/workshop_profiles/brewing/{name}.json'] = brewing_workshop(name)
+    out[DATA / f'{MOD}/workshop_profiles/distillation/vanilla_potions.json'] = distillation_workshop('distillation/vanilla_potions')
     for name, recipe in ALEMBIC.items():
         out[DATA / f'recipes/{name}.json'] = recipe
     for name, recipe in CRAFTING.items():
@@ -640,9 +708,12 @@ def files():
     for block in STATIONS:
         out[DATA / f'loot_tables/blocks/{block}.json'] = loot(block)
         out[ASSETS / f'blockstates/{block}.json'] = blockstate(block)
-    out[ASSETS / 'models/block/brewers_kettle.json'] = kettle_model()
+    out[ASSETS / 'models/block/brewers_kettle.json'] = kettle_model(False)
+    out[ASSETS / 'models/block/brewers_kettle_lit.json'] = kettle_model(True)
     out[ASSETS / 'models/block/apothecary_mortar.json'] = mortar_model()
+    out[ASSETS / 'models/block/apothecary_mortar_item.json'] = mortar_item_model()
     out[ASSETS / 'models/block/alembic.json'] = alembic_model()
+    out[ASSETS / 'models/block/alembic_glass.json'] = alembic_glass_model()
     out[ASSETS / 'models/block/apothecary_rack.json'] = rack_model()
     out[ASSETS / 'models/item/apothecary_rack.json'] = {'parent': f'{MOD}:block/apothecary_rack'}
     rack_loot = loot('apothecary_rack')

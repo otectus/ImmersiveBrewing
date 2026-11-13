@@ -47,12 +47,12 @@ public final class KettleGameTests {
         h.assertTrue(plan.steps().size() == 2, "water -> awkward -> swiftness has two steps");
         h.assertTrue(plan.fuelCharges(3) == 2 && plan.costs(3).stream().allMatch(c -> c.count() == 1), "3 servings: 1 wart, 1 sugar, 2 charges");
         kettle.startBrew(player, plan.key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the session started");
+        h.assertTrue(TestSupport.working(player), "the session started");
         h.assertTrue(kettle.ledger() != null && kettle.ledger().inputs().size() == 3, "the ledger owns the three bottles");
         h.assertTrue(kettle.fuelCharges() == 18, "one blaze powder became 20 charges, 2 reserved: " + kettle.fuelCharges());
         h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.NETHER_WART) == 1
                 && TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.SUGAR) == 1, "exactly one wart and one sugar reserved");
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
             ItemStack expected = BrewingRecipeRegistry.getOutput(BrewingRecipeRegistry.getOutput(TestSupport.water(), new ItemStack(Items.NETHER_WART)),
@@ -82,7 +82,7 @@ public final class KettleGameTests {
         mortar.start(player, StationActionC2S.withAssist(2, 1, 1));
         h.assertTrue(mortar.ledger() != null && mortar.ledger().inputs().get(0).getCount() == 2, "two sugar reserved for two kits");
         h.assertTrue(mortar.inventory().getStackInSlot(ApothecaryMortarBlockEntity.INPUT).getCount() == 1, "one sugar left in the bowl");
-        TestSupport.driveMortar(h, player, MortarBot.competent());
+        TestSupport.driveMortar(h, player, com.otectus.immersivebrewing.testing.MortarTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(mortar.ledger() == null, "still preparing");
             ItemStack kits = ItemStack.EMPTY;
@@ -103,21 +103,24 @@ public final class KettleGameTests {
         FakePlayer player = TestSupport.player(h, "Sealer");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, SWIFTNESS).key(), 1F, 1F);
-        TestSupport.driveKettle(h, player, KettleBot.competent());
-        int[] sealedAt = {-1};
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
+        net.minecraft.nbt.CompoundTag[] sealed = {null};
         h.runAfterDelay(300, () -> {
-            var session = TestSupport.session(player).orElseThrow();
-            SessionManager.leave(player, session.id(), "session.immersive_brewing.end.closed");
-            h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.SEALED, "closing seals the running batch");
-            sealedAt[0] = kettle.ledger().simState()[1] > 0 ? (int) kettle.ledger().simState()[1] : -1;
-            h.assertTrue(sealedAt[0] > 0, "the sealed state kept its step");
+            h.assertTrue(TestSupport.working(player), "the batch is being tended");
+            TestSupport.seal(player);
+            h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.SEALED, "closing the lid seals the running batch");
+            sealed[0] = kettle.ledger().process().copy();
+            h.assertTrue(com.otectus.immersivebrewing.workshop.KettleProcess.load(sealed[0]).ticks() > 0, "the sealed process kept its progress");
         });
         h.runAfterDelay(340, () -> {
-            h.assertTrue(TestSupport.session(player).isEmpty(), "no session while sealed");
-            TestSupport.openKettle(player, kettle);
-            kettle.resume(player);
-            var session = TestSupport.session(player).orElseThrow();
-            h.assertTrue(session.sim().step() == sealedAt[0], "resumed at the sealed step, no rewind and no reroll");
+            h.assertTrue(kettle.ledger().state() == JobState.SEALED && kettle.liveProcess().save().equals(sealed[0]),
+                    "nothing changed while sealed: no cost, no penalty, no progress");
+            TestSupport.unseal(player, kettle);
+            h.assertTrue(kettle.ledger().state() == JobState.RUNNING, "opening the lid carries on");
+            var resumed = kettle.liveProcess();
+            var before = com.otectus.immersivebrewing.workshop.KettleProcess.load(sealed[0]);
+            h.assertTrue(resumed.doses() == before.doses() && resumed.computeControl() == before.computeControl()
+                    && resumed.ticks() == before.ticks(), "resumed with every dose flag and score contribution, no reroll");
         });
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "still brewing");
@@ -127,20 +130,47 @@ public final class KettleGameTests {
     }
 
     @GameTest(template = "empty")
-    public static void cancelDuringCountInReturnsEverything(GameTestHelper h) {
+    public static void withdrawingAnUntouchedBatchReturnsEverything(GameTestHelper h) {
         BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
         TestSupport.load(kettle, 2, 1, new ItemStack(Items.NETHER_WART, 3), new ItemStack(Items.SUGAR, 5));
         FakePlayer player = TestSupport.player(h, "Changed Mind");
         TestSupport.openKettle(player, kettle);
         kettle.startBrew(player, TestSupport.plan(h, kettle, SWIFTNESS).key(), 1F, 1F);
-        var session = TestSupport.session(player).orElseThrow();
-        SessionManager.leave(player, session.id(), "session.immersive_brewing.end.closed");
-        h.assertTrue(kettle.ledger() == null, "the reservation is released");
-        h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.RACK, 6, Items.POTION) == 2, "bottles back in the rack");
-        h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.NETHER_WART) == 3
-                && TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.SUGAR) == 5, "reagents back in the tray");
-        h.assertTrue(kettle.fuelCharges() == 20, "fuel charges refunded to the burner: " + kettle.fuelCharges());
-        h.succeed();
+        var hand = TestSupport.hand(player, kettle);
+        // Pouring and heating are reversible; only a dose is not.
+        hand.batch(com.otectus.immersivebrewing.workshop.WorkshopParts.K_RACK, com.otectus.immersivebrewing.workshop.WorkshopAction.POUR, -1);
+        hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_BURNER, com.otectus.immersivebrewing.workshop.WorkshopAction.SET_CONTROL, 5);
+        h.runAfterDelay(30, () -> {
+            h.assertTrue(kettle.liveProcess() != null && kettle.liveProcess().allCharged(), "both servings are in the vessel");
+            var result = hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_LID, com.otectus.immersivebrewing.workshop.WorkshopAction.CANCEL, 0);
+            h.assertTrue(result.accepted(), "an untouched batch can be withdrawn");
+            h.assertTrue(kettle.ledger() == null, "the reservation is released");
+            h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.RACK, 6, Items.POTION) == 2, "the exact bottles are back in the rack");
+            h.assertTrue(TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.NETHER_WART) == 3
+                    && TestSupport.count(kettle, BrewersKettleBlockEntity.TRAY, 6, Items.SUGAR) == 5, "reagents back on the tray");
+            h.assertTrue(kettle.fuelCharges() == 20, "fuel charges refunded to the burner: " + kettle.fuelCharges());
+            h.succeed();
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void aDoseMakesTheBatchIrreversible(GameTestHelper h) {
+        BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
+        TestSupport.load(kettle, 1, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
+        FakePlayer player = TestSupport.player(h, "Committed");
+        TestSupport.openKettle(player, kettle);
+        kettle.startBrew(player, TestSupport.plan(h, kettle, SWIFTNESS).key(), 1F, 1F);
+        var hand = TestSupport.hand(player, kettle);
+        hand.batch(com.otectus.immersivebrewing.workshop.WorkshopParts.K_RACK, com.otectus.immersivebrewing.workshop.WorkshopAction.POUR, -1);
+        h.runAfterDelay(15, () -> {
+            var dose = hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_CUP, com.otectus.immersivebrewing.workshop.WorkshopAction.DOSE, 0);
+            h.assertTrue(dose.accepted(), "the first dose goes in");
+            var again = hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_CUP, com.otectus.immersivebrewing.workshop.WorkshopAction.DOSE, 0);
+            h.assertTrue(!again.accepted() && kettle.liveProcess().doses() == 1, "a repeated dose is refused and debits nothing");
+            var cancel = hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_LID, com.otectus.immersivebrewing.workshop.WorkshopAction.CANCEL, 0);
+            h.assertTrue(!cancel.accepted() && kettle.ledger() != null, "after a dose nothing refunds fresh reagents");
+            h.succeed();
+        });
     }
 
     private KettleGameTests() {}

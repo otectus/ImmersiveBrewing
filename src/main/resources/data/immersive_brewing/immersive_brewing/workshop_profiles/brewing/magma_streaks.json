@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:magma_streaks",
+  "reaction": "magma_streaks",
+  "temperature": {
+    "ideal": [
+      0.5,
+      0.66
+    ],
+    "workable": [
+      0.38,
+      0.8
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 10.0,
+    "rest_seconds": 3.0
+  }
+}

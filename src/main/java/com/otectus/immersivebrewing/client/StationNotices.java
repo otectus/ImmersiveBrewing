@@ -36,9 +36,13 @@ public final class StationNotices {
     private record Notice(Component text, boolean failure, long shownMs) {}
 
     private static final Deque<Notice> NOTICES = new ArrayDeque<>();
+    /** Bounded accessible history survives visual expiry for the current connection. */
+    private static final Deque<Component> HISTORY = new ArrayDeque<>();
 
     public static void show(Component text, boolean failure) {
         Minecraft mc = Minecraft.getInstance();
+        HISTORY.addLast(text);
+        while (HISTORY.size() > 20) HISTORY.removeFirst();
         if (!ClientConfig.get(ClientConfig.STATION_NOTICES)) {
             mc.gui.setOverlayMessage(text, false);
         } else {
@@ -51,10 +55,31 @@ public final class StationNotices {
 
     public static void clear() {
         NOTICES.clear();
+        HISTORY.clear();
     }
 
     public static int count() {
         return NOTICES.size();
+    }
+
+    /** Full untruncated messages for related screens/narration; newest last. */
+    public static List<Component> history() {
+        List<Component> out = new ArrayList<>();
+        for (Component notice : HISTORY) out.add(notice);
+        return List.copyOf(out);
+    }
+
+    /** Keyboard path used by station screens: the narrator receives full text, never the two-line overlay truncation. */
+    public static void narrateHistory() {
+        Minecraft mc = Minecraft.getInstance();
+        List<Component> all = history();
+        if (all.isEmpty()) {
+            mc.getNarrator().sayNow(Component.translatable("notice.immersive_brewing.history_empty"));
+            return;
+        }
+        Component line = Component.empty();
+        for (Component message : all) line = line.getString().isEmpty() ? message.copy() : line.copy().append(" ").append(message);
+        mc.getNarrator().sayNow(line);
     }
 
     static void register(RegisterGuiOverlaysEvent event) {

@@ -26,6 +26,7 @@ public class DistillationScreen extends GameScreen {
     private int coolant;
     private boolean collect;
     private int px, py, pw, ph;
+    private Ui.StationLayout layout;
     private Button heatDown, heatUp, coolDown, coolUp, receiver;
     private DistillationSimulation.Condensate lastCondensate;
 
@@ -49,10 +50,8 @@ public class DistillationScreen extends GameScreen {
     @Override
     protected void init() {
         super.init();
-        pw = Math.min(width - 16, 380);
-        ph = Math.min(height - 28, 230);
-        px = (width - pw) / 2;
-        py = 22 + Math.max(0, (height - 28 - ph) / 2);
+        layout = Ui.StationLayout.play(width, height);
+        pw = layout.panelW(); ph = layout.panelH(); px = layout.panelX(); py = layout.panelY();
         int w = colW();
         int half = w / 2 - 2;
         int by = controlsY();
@@ -60,7 +59,8 @@ public class DistillationScreen extends GameScreen {
         heatUp = gameButton(Component.literal("+ ").append(key(Keys.HEAT_UP)), col(0) + half + 4, by, half, 18, b -> setHeat(heat + 1));
         coolDown = gameButton(Component.literal("− ").append(key(Keys.COOL_DOWN)), col(1), by, half, 18, b -> setCool(coolant - 1));
         coolUp = gameButton(Component.literal("+ ").append(key(Keys.COOL_UP)), col(1) + half + 4, by, half, 18, b -> setCool(coolant + 1));
-        receiver = gameButton(Component.empty(), col(2), by, w, 18, b -> toggleReceiver());
+        receiver = gameButton(Component.empty(), layout.compact() ? px + 8 : col(2), by,
+                layout.compact() ? pw - 16 : w, 18, b -> toggleReceiver());
     }
 
     /** The valve settings and receiver position the next frame sends. */
@@ -145,6 +145,8 @@ public class DistillationScreen extends GameScreen {
         ItemStack input = LedgerCodec.loadStack(session.display.getCompound("input"));
         Component time = Component.translatable("screen.immersive_brewing.seconds_left", (s.remainingSteps() + 19) / 20);
         header(g, input, Component.translatable("screen.immersive_brewing.alembic.refining", input.getHoverName()), time, px, py, pw);
+        Ui.fit(g, Component.translatable("screen.immersive_brewing.run_progress"), px + 8, py + 37, pw / 2 - 8, p.muted());
+        Ui.fit(g, Component.translatable("screen.immersive_brewing.collected_amount"), px + pw / 2, py + 37, pw / 2 - 8, p.muted());
 
         int w = colW();
         int top = py + 48;
@@ -175,8 +177,11 @@ public class DistillationScreen extends GameScreen {
         int nominalTails = top + 2 + gh - 1 - (int) Math.round(DistillationParams.NOMINAL_TAILS_START * (gh - 2));
         g.fill(col(2) + 1, nominalTails, col(2) + w - 1, nominalHeads, p.band());
         g.drawString(font, "★", col(2) + w + 2, (nominalTails + nominalHeads) / 2 - 4, p.good(), false);
-        int level = top + 2 + gh - 1 - (int) Math.round(s.fraction() * (gh - 2));
-        g.fill(col(2) + 1, level, col(2) + w - 1, level + 1, 0xFFFFFFFF);
+        // Receiver level is collected condensate, not total material that has run
+        // through the still.  Waste routing may advance the run without filling it.
+        double collected = s.collectedFraction();
+        int level = top + 2 + gh - 1 - (int) Math.round(collected * (gh - 2));
+        g.fill(col(2) + 1, level, col(2) + w - 1, top + 1 + gh, 0xFFB8D8E8);
         // Condensate sample, described in words as well as colour
         DistillationSimulation.Condensate c = s.condensate();
         int sampleColor = switch (c) {
@@ -187,6 +192,15 @@ public class DistillationScreen extends GameScreen {
             case HAZY -> 0xFFD0C080;
         };
         g.fill(col(2), sy, col(2) + 12, sy + 12, sampleColor);
+        // Shape carries condensate state when colour/sound are unavailable.
+        if (c == DistillationSimulation.Condensate.CLOUDY || c == DistillationSimulation.Condensate.HAZY) {
+            for (int i = 0; i < 5; i++) g.fill(col(2) + 2 + (i * 5) % 8, sy + 2 + (i * 3) % 8,
+                    col(2) + 3 + (i * 5) % 8, sy + 3 + (i * 3) % 8, 0xFFFFFFFF);
+        } else if (c == DistillationSimulation.Condensate.CLEARING) {
+            g.fill(col(2) + 2, sy + 2, col(2) + 5, sy + 5, 0xFFFFFFFF);
+        } else if (c == DistillationSimulation.Condensate.HAZE_RISING) {
+            g.fill(col(2) + 2, sy + 2, col(2) + 10, sy + 3, 0xFFFFFFFF);
+        }
         Ui.wrapped(g, Component.translatable("condensate.immersive_brewing." + c.name().toLowerCase(java.util.Locale.ROOT)), col(2) + 16, sy + 1,
                 w - 16, c == DistillationSimulation.Condensate.CLEAR ? p.good() : c == DistillationSimulation.Condensate.HAZY ? p.bad() : p.warn());
 
@@ -198,9 +212,12 @@ public class DistillationScreen extends GameScreen {
         coolDown.active = coolant > 0;
         coolUp.active = coolant < DistillationInput.LEVELS - 1;
         receiver.active = !session.countingIn();
-        Ui.message(receiver, Component.translatable(collect ? "screen.immersive_brewing.collecting" : "screen.immersive_brewing.to_waste"));
-        g.fill(col(2) - 1, by - 1, col(2) + w + 1, by + 19, collect ? p.good() : p.warn());
-        fitted(g, key(Keys.RECEIVER), col(2), by + 20, w, p.muted());
+        Ui.message(receiver, Component.translatable(collect ? "screen.immersive_brewing.routing_send_waste" : "screen.immersive_brewing.routing_collect",
+                key(Keys.RECEIVER)));
+        int routeX = layout.compact() ? px + 8 : col(2);
+        int routeW = layout.compact() ? pw - 16 : w;
+        g.fill(routeX - 1, by - 1, routeX + routeW + 1, by + 19, collect ? p.good() : p.warn());
+        fitted(g, key(Keys.RECEIVER), routeX, by + 20, routeW, p.muted());
         // The numbers replace the standing reminder (it is also in the help overlay), so neither overlaps the other.
         if (ClientConfig.get(ClientConfig.NUMERIC_DISPLAY)) {
             g.drawString(font, String.format("T %.2f  K %.2f  d %.2f  D %d", s.temperature(), s.coolant(), s.fraction(), s.score().distillation()),

@@ -81,7 +81,7 @@ public final class CarrierGameTests {
         kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
         h.assertTrue(TestSupport.use(player, kettle, carrier()).is(ModItems.BATCH_CARRIER.get()) && CarrierContents.isEmpty(player.getMainHandItem()),
                 "nothing to collect or load during a job");
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.startSequence().thenWaitUntil(() -> h.assertTrue(kettle.ledger() == null, "still brewing")).thenExecute(() -> {
             List<ItemStack> expected = new ArrayList<>();
             for (int i = 0; i < 3; i++) expected.add(kettle.inventory().getStackInSlot(RACK + i).copy());

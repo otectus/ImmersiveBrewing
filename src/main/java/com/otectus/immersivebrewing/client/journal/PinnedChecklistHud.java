@@ -4,6 +4,7 @@ import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.client.ClientGuide;
 import com.otectus.immersivebrewing.client.ServerCatalog;
 import com.otectus.immersivebrewing.client.screen.Ui;
+import com.otectus.immersivebrewing.config.ClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -18,7 +19,8 @@ import net.minecraftforge.fml.common.Mod;
 /** Minimal outside-the-Notebook reminder from the server-resolved, generation-bound cost snapshot. */
 @Mod.EventBusSubscriber(modid = ImmersiveBrewing.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class PinnedChecklistHud {
-    private static final int MAX_LINES = 8;
+    private static final int MAX_LINES = 5;
+    private static final int ROW_HEIGHT = 18;
 
     @SubscribeEvent
     public static void register(RegisterGuiOverlaysEvent event) {
@@ -28,13 +30,17 @@ public final class PinnedChecklistHud {
     private static void render(ForgeGui gui, GuiGraphics g, float partialTick, int width, int height) {
         Minecraft mc = Minecraft.getInstance();
         ClientGuide.Pinned pin = ClientGuide.pinned();
-        if (pin == null || mc.level == null || mc.options.hideGui) return;
+        if (pin == null || mc.level == null || mc.options.hideGui
+                || (ClientConfig.get(ClientConfig.PINNED_HUD_HIDE_SCREEN) && mc.screen != null)) return;
         boolean available = ServerCatalog.ready() && pin.generation() == ServerCatalog.generation() && !pin.costs().isEmpty();
-        int boxW = Math.min(150, Math.max(96, width / 4));
+        boolean compact = ClientConfig.get(ClientConfig.PINNED_HUD_COMPACT);
+        int boxW = compact ? 78 : Math.min(150, Math.max(96, width / 4));
         int lines = available ? Math.min(MAX_LINES, pin.costs().size()) : 0;
-        int boxH = 20 + lines * 11 + (available ? 0 : 11);
-        int x = width - boxW - 6;
-        int y = Math.max(6, height / 2 - boxH / 2);
+        boolean overflow = available && pin.costs().size() > lines;
+        int boxH = 20 + lines * ROW_HEIGHT + (overflow || !available ? 11 : 0);
+        int x = ClientConfig.get(ClientConfig.PINNED_HUD_ANCHOR) == ClientConfig.HudAnchor.LEFT ? 6 : width - boxW - 6;
+        int y = Math.max(6, Math.min(height - boxH - 42,
+                height / 2 - boxH / 2 + ClientConfig.get(ClientConfig.PINNED_HUD_Y_OFFSET)));
         g.fill(x, y, x + boxW, y + boxH, 0xB0101010);
         Ui.fit(g, Component.translatable("hud.immersive_brewing.pinned", pin.servings(), pin.output().getHoverName()),
                 x + 5, y + 5, boxW - 10, 0xFFFFFFFF);
@@ -45,10 +51,14 @@ public final class PinnedChecklistHud {
             for (int i = 0; i < lines; i++) {
                 ClientGuide.PinCost cost = pin.costs().get(i);
                 ItemStack stack = cost.item();
-                g.renderItem(stack, x + 4, row - 4);
-                Ui.fit(g, Component.literal(cost.count() + "× ").append(stack.getHoverName()), x + 22, row, boxW - 27, 0xFFE0E0E0);
-                row += 11;
+                g.renderItem(stack, x + 4, row);
+                Component text = compact ? Component.literal(cost.count() + "×")
+                        : Component.literal(cost.count() + "× ").append(stack.getHoverName());
+                Ui.fit(g, text, x + 22, row + 4, boxW - 27, 0xFFE0E0E0);
+                row += ROW_HEIGHT;
             }
+            if (overflow) Ui.fit(g, Component.translatable("hud.immersive_brewing.pinned_more", pin.costs().size() - lines),
+                    x + 5, row, boxW - 10, 0xFFFFD27F);
         }
     }
 

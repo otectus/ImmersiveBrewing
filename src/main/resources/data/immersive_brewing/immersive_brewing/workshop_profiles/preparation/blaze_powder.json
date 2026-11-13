@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "preparation",
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:blaze_powder"
+    ]
+  },
+  "source_profile": "immersive_brewing:blaze_powder",
+  "material": "crystalline",
+  "work": {
+    "operations": [
+      "press",
+      "grind",
+      "fold"
+    ],
+    "required_work": 0.92,
+    "max_work_per_tick": 0.05,
+    "useful_effort": [
+      0.25,
+      0.7
+    ],
+    "endpoint": [
+      0.62,
+      0.8
+    ],
+    "overwork_starts": 0.88
+  }
+}

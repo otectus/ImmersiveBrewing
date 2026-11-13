@@ -123,7 +123,7 @@ public final class Migration110GameTests {
                 "plan authority and serving count survive");
 
         CompoundTag resaved = LedgerCodec.save(ledger);
-        h.assertTrue(resaved.getInt("schema") == LedgerCodec.SCHEMA, "first save advances only the ledger schema");
+        h.assertTrue(resaved.getInt("schema") == LedgerCodec.LEGACY_SCHEMA, "first save advances only the ledger schema (a legacy job stays schema 2)");
         for (String key : old.getAllKeys()) {
             if (key.equals("schema")) continue;
             h.assertTrue(resaved.contains(key) && resaved.get(key).equals(old.get(key)), "first save preserves captured field " + key);

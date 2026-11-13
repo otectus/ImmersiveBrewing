@@ -128,6 +128,11 @@ public final class DistillationSimulation {
         return fraction;
     }
 
+    /** Actual liquid routed to the receiver, using the existing saved accumulators. */
+    public double collectedFraction() {
+        return Math.min(1, heads + heart + tails);
+    }
+
     public boolean collecting() {
         return collecting;
     }

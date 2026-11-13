@@ -5,6 +5,7 @@ import com.otectus.immersivebrewing.client.ClientSession;
 import com.otectus.immersivebrewing.client.Keys;
 import com.otectus.immersivebrewing.client.sound.BrewingSounds;
 import com.otectus.immersivebrewing.config.ClientConfig;
+import com.otectus.immersivebrewing.client.presentation.PresentationPolicy;
 import com.otectus.immersivebrewing.minigame.preparation.PreparationInput;
 import com.otectus.immersivebrewing.minigame.preparation.PreparationMode;
 import com.otectus.immersivebrewing.minigame.preparation.PreparationParams;
@@ -14,6 +15,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -34,6 +36,7 @@ public class PreparationScreen extends GameScreen {
     private boolean narratedClump;
     private Button foldButton, finishButton;
     private int px, py, pw, ph, bowlX, bowlY, radius, colX, colW;
+    private Ui.StationLayout layout;
 
     public PreparationScreen(ClientSession session) {
         super(Component.translatable("screen.immersive_brewing.mortar"), session);
@@ -53,10 +56,8 @@ public class PreparationScreen extends GameScreen {
     @Override
     protected void init() {
         super.init();
-        pw = Math.min(width - 16, 360);
-        ph = Math.min(height - 28, 230);
-        px = (width - pw) / 2;
-        py = 22 + Math.max(0, (height - 28 - ph) / 2);
+        layout = Ui.StationLayout.play(width, height);
+        pw = layout.panelW(); ph = layout.panelH(); px = layout.panelX(); py = layout.panelY();
         radius = Math.max(32, Math.min(80, Math.min(controlsY() - 6 - (py + 46), pw / 2 - 30) / 2));
         bowlX = px + 14 + radius;
         bowlY = py + 46 + radius;
@@ -120,7 +121,7 @@ public class PreparationScreen extends GameScreen {
 
     @Override
     public void mouseMoved(double mx, double my) {
-        if (!helpShowing() && inBowl(mx, my)) {
+        if (!controlsBlocked() && inBowl(mx, my)) {
             targetX = Math.max(-1, Math.min(1, (mx - bowlX) / radius));
             targetY = Math.max(-1, Math.min(1, (my - bowlY) / radius));
         }
@@ -130,7 +131,7 @@ public class PreparationScreen extends GameScreen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (super.mouseClicked(mx, my, button)) return true;
-        if (session.countingIn()) return true;
+        if (controlsBlocked() || session.countingIn()) return true;
         if (inBowl(mx, my)) {
             if (button == 0) mousePressing = true;
             else if (button == 1) foldQueued = true;
@@ -141,7 +142,7 @@ public class PreparationScreen extends GameScreen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
-        if (!helpShowing() && inBowl(mx, my)) {
+        if (!controlsBlocked() && inBowl(mx, my)) {
             targetX = Math.max(-1, Math.min(1, (mx - bowlX) / radius));
             targetY = Math.max(-1, Math.min(1, (my - bowlY) / radius));
         }
@@ -208,6 +209,14 @@ public class PreparationScreen extends GameScreen {
         int tcolor = texture == PreparationSimulation.Texture.ENDPOINT ? p.good()
                 : texture == PreparationSimulation.Texture.OVERWORKED ? p.bad() : p.warn();
         Component description = Component.translatable("texture.immersive_brewing." + texture.name().toLowerCase(java.util.Locale.ROOT));
+        // Shared authored material swatches are a texture target, never a fake
+        // inventory item.  Current and target use the same family/stage art.
+        String mode = Integer.toString(params.mode().ordinal());
+        int targetStage = s.processed() > params.overworkThreshold() ? 3 : s.processed() >= params.endpointLow() ? 2 : s.processed() > .25 ? 1 : 0;
+        ResourceLocation swatch = new ResourceLocation("immersive_brewing", "textures/gui/preparation/" + mode + "_" + targetStage + ".png");
+        g.blit(swatch, colX, y + 2, 0, 0, 16, 16, 16, 16);
+        fitted(g, Component.translatable("screen.immersive_brewing.mortar.target_texture"), colX + 20, y + 4, colW - 20, p.muted());
+        y += 20;
         int lines = Math.min(Ui.lines(description, colW), Math.max(0, (controlsY() - 6 - y) / 10));
         cueText(g, description, colX, y, colW, lines, tcolor);
         y += lines * 10 + 2;
@@ -253,7 +262,7 @@ public class PreparationScreen extends GameScreen {
             case LIQUID -> 0xD8A040;
         };
         double x = s.processed();
-        int fragments = 70;
+        int fragments = 0; // authored material tiles below replace procedural rectangle confetti
         int size = x < 0.25 ? 4 : x < params.endpointLow() ? 3 : x <= params.endpointHigh() ? 2 : 1;
         double spread = radius * 0.62 * (1.0 - 0.45 * s.clump());
         for (int i = 0; i < fragments; i++) {
@@ -265,9 +274,17 @@ public class PreparationScreen extends GameScreen {
             int color = 0xFF000000 | shadeColor(base, shade - (int) (x * 30));
             g.fill(fx, fy, fx + size, fy + size, color);
         }
-        if (params.mode() == PreparationMode.LIQUID && x > params.overworkThreshold()) {
+        int stage = x > params.overworkThreshold() ? 3 : x >= params.endpointLow() ? 2 : x > .25 ? 1 : 0;
+        ResourceLocation material = new ResourceLocation("immersive_brewing", "textures/gui/preparation/" + params.mode().ordinal() + "_" + stage + ".png");
+        // Four stable tiles make every mode/family legible at a glance.  Their
+        // positions derive only from texture/clump state, never wall-clock time.
+        int spreadTile = Math.max(6, radius / 3);
+        g.blit(material, bowlX - spreadTile - 8, bowlY - 8, 0, 0, 16, 16, 16, 16);
+        g.blit(material, bowlX + spreadTile - 8, bowlY - 8, 0, 0, 16, 16, 16, 16);
+        g.blit(material, bowlX - 8, bowlY + (int) Math.round(s.clump() * radius / 3.0) - 8, 0, 0, 16, 16, 16, 16);
+        if (PresentationPolicy.current().particles() && params.mode() == PreparationMode.LIQUID && x > params.overworkThreshold()) {
             g.fill(bowlX - radius / 2, bowlY - 4, bowlX + radius / 2, bowlY - 2, 0xAAE8D070);
-        } else if (x > params.overworkThreshold()) {
+        } else if (PresentationPolicy.current().particles() && x > params.overworkThreshold()) {
             for (int i = 0; i < 24; i++) {
                 int fx = bowlX + (int) Math.round(Math.cos(i * 1.3) * radius * 0.8);
                 int fy = bowlY - radius / 3 + (int) Math.round(Math.sin(i * 2.1) * radius * 0.3);

@@ -55,6 +55,17 @@ public final class CoverageReport {
                 + (data.keptPrevious() ? " (the last reload was invalid; previous generation kept)" : ""));
         data.errors().forEach(e -> out.add("  error: " + e));
         data.warnings().forEach(w -> out.add("  warning: " + w));
+        var workshop = com.otectus.immersivebrewing.workshop.WorkshopProfiles.all();
+        out.add("Workshop profiles: " + workshop.size() + " active ("
+                + workshop.stream().filter(w -> w.kind() == com.otectus.immersivebrewing.workshop.WorkshopProfile.Kind.PREPARATION).count() + " preparation, "
+                + workshop.stream().filter(w -> w.kind() == com.otectus.immersivebrewing.workshop.WorkshopProfile.Kind.BREWING).count() + " brewing, "
+                + workshop.stream().filter(w -> w.kind() == com.otectus.immersivebrewing.workshop.WorkshopProfile.Kind.DISTILLATION).count()
+                + " distillation); reagent and brew profiles without one use the translated fallback");
+        for (var brew : defs.brewProfiles().keySet()) {
+            var resolved = com.otectus.immersivebrewing.workshop.WorkshopProfiles.brewing(brew, defs);
+            out.add("  brewing " + brew + ": " + resolved.value().family().serialized() + " via " + resolved.source()
+                    + (resolved.fallback() ? " (fallback)" : ""));
+        }
         out.add("");
         Map<PlanIndex.Status, Integer> counts = new EnumMap<>(PlanIndex.Status.class);
         for (PlanIndex.Entry e : plans.report()) counts.merge(e.status(), 1, Integer::sum);

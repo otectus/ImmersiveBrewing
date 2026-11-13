@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "immersive_brewing:dense_sediment",
+  "reaction": "dense_sediment",
+  "temperature": {
+    "ideal": [
+      0.5,
+      0.64
+    ],
+    "workable": [
+      0.38,
+      0.78
+    ],
+    "inertia": 1.0
+  },
+  "treatment": {
+    "step_seconds": 10.0,
+    "rest_seconds": 4.0
+  }
+}

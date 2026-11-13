@@ -9,7 +9,6 @@ import com.otectus.immersivebrewing.network.packet.StationActionC2S;
 import com.otectus.immersivebrewing.potion.BrewingMetadata;
 import com.otectus.immersivebrewing.recipe.PlanKey;
 import com.otectus.immersivebrewing.registry.ModBlocks;
-import com.otectus.immersivebrewing.session.ActiveSession;
 import com.otectus.immersivebrewing.session.SessionManager;
 import com.otectus.immersivebrewing.testing.KettleBot;
 import net.minecraft.core.BlockPos;
@@ -30,73 +29,96 @@ import static com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.
 import static com.otectus.immersivebrewing.test.TestSupport.STATION;
 
 /**
- * Milestone 2 (spec 20.1 invariant 1, 21.1): one controller per station and one session per player; a second player at
- * the same station can watch and later resume, never steer, start, insert into the job or end someone else's session.
+ * Cooperative work (handoff 16): shared observation, one hand per tool, one transaction per dose and per bottle, and no
+ * steering of someone else's work. Two players can help at one kettle without multiplying anything; stale or competing
+ * requests fail harmlessly.
  */
 @GameTestHolder(ImmersiveBrewing.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class ContentionGameTests {
+    private static final int PADDLE_PART = com.otectus.immersivebrewing.workshop.WorkshopParts.K_PADDLE;
+
     @GameTest(template = "empty", timeoutTicks = 2000)
     public static void twoPlayersOneKettle(GameTestHelper h) {
         BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
-        TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART, 2), new ItemStack(Items.SUGAR, 2));
+        TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
         FakePlayer alice = TestSupport.player(h, "Alice");
         FakePlayer bob = TestSupport.player(h, "Bob");
+        var key = TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key();
         TestSupport.openKettle(alice, kettle);
-        TestSupport.openKettle(bob, kettle);
-        PlanKey key = TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key();
         kettle.startBrew(alice, key, 1F, 1F);
-        ActiveSession aliceSession = TestSupport.session(alice).orElseThrow();
-        UUID job = kettle.ledger().jobId();
-
-        kettle.startBrew(bob, key, 1F, 1F);
-        h.assertTrue(TestSupport.session(bob).isEmpty() && kettle.ledger().jobId().equals(job), "a second start is refused and changes nothing");
+        java.util.UUID job = kettle.ledger().jobId();
         TestSupport.openKettle(bob, kettle);
-        kettle.handleAction(bob, StationActionC2S.Action.RESUME, 0);
-        h.assertTrue(TestSupport.session(bob).isEmpty(), "a viewer can not take over a running station");
-
-        // The job's slots refuse a viewer's items through every path.
-        h.assertTrue(!kettle.inventory().isItemValid(RACK + 3, TestSupport.water()), "the rack refuses bottles while the job is open");
-        h.assertTrue(!kettle.inventory().isItemValid(TRAY + 2, new ItemStack(Items.SUGAR)), "the tray refuses reagents while the job is open");
-        h.assertTrue(!bob.containerMenu.getSlot(RACK + 3).mayPlace(TestSupport.water()), "the menu slot agrees");
-        h.assertTrue(kettle.inventory().insertItem(TRAY + 2, new ItemStack(Items.SUGAR), false).getCount() == 1, "insertion is refused, not swallowed");
-
-        // A viewer's packets naming the controller's session do nothing.
-        int frame = new KettleInput(2, 8, true).pack();
-        SessionManager.receive(bob, new InputFramesC2S(aliceSession.id(), 0, 2, new int[] {frame, frame, frame, frame}));
-        h.assertTrue(aliceSession.bufferedFrames() == 0 && aliceSession.violations() == 0, "the viewer's frames were not taken");
-        SessionManager.leave(bob, aliceSession.id(), "session.immersive_brewing.end.closed");
-        h.assertTrue(TestSupport.session(alice).isPresent(), "a viewer can not close the controller's session");
-
-        TestSupport.driveKettle(h, alice, KettleBot.competent());
-        TestSupport.driveKettle(h, bob, KettleBot.competent());
-        h.runAfterDelay(200, () -> {
-            // Alice walks off; Bob resumes the sealed batch where it stopped and finishes it as an assistant.
-            SessionManager.leave(alice, TestSupport.session(alice).orElseThrow().id(), "session.immersive_brewing.end.closed");
-            h.assertTrue(kettle.ledger().state() == JobState.SEALED, "sealed when Alice left");
-            TestSupport.openKettle(bob, kettle);
-            kettle.resume(bob);
-            h.assertTrue(TestSupport.session(bob).isPresent(), "Bob resumed the sealed batch");
-            TestSupport.openKettle(alice, kettle);
-            kettle.resume(alice);
-            h.assertTrue(TestSupport.session(alice).isEmpty(), "and Alice can not take it back while he works");
+        kettle.startBrew(bob, key, 1F, 1F);
+        h.assertTrue(kettle.ledger().jobId().equals(job), "a second set-out is refused and changes nothing");
+        var a = TestSupport.hand(alice, kettle);
+        var b = TestSupport.hand(bob, kettle);
+        TestSupport.openView(bob, kettle);
+        h.assertTrue(a.batch(com.otectus.immersivebrewing.workshop.WorkshopParts.K_RACK, com.otectus.immersivebrewing.workshop.WorkshopAction.POUR, -1).accepted(),
+                "Alice pours");
+        h.assertTrue(a.act(PADDLE_PART, com.otectus.immersivebrewing.workshop.WorkshopAction.GRAB, 0).accepted(), "Alice takes the paddle");
+        var refused = b.act(PADDLE_PART, com.otectus.immersivebrewing.workshop.WorkshopAction.GRAB, 0);
+        h.assertTrue(!refused.accepted() && refused.reason() != null, "Bob is told who holds the paddle and can not take it");
+        b.sample(PADDLE_PART, 0.5, 0, true, com.otectus.immersivebrewing.workshop.Effort.FIRM);
+        h.runAfterDelay(20, () -> {
+            var p = kettle.liveProcess();
+            h.assertTrue(p.allCharged(), "the bottles went in once");
+            // Bob helps at another control while Alice holds the paddle: one live drag lease, discrete changes serialise.
+            h.assertTrue(b.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_BURNER, com.otectus.immersivebrewing.workshop.WorkshopAction.SET_CONTROL, 5).accepted(),
+                    "Bob turns the burner while Alice stirs");
+            h.assertTrue(a.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_BURNER, com.otectus.immersivebrewing.workshop.WorkshopAction.GRAB, 0).accepted(),
+                    "Alice takes the burner control for a live drag");
+            h.assertTrue(!b.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_BURNER, com.otectus.immersivebrewing.workshop.WorkshopAction.SET_CONTROL, 8).accepted()
+                    && p.burner() == 5, "a control under another's live drag refuses a competing change");
+            a.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_BURNER, com.otectus.immersivebrewing.workshop.WorkshopAction.RELEASE, 0);
         });
-        h.runAfterDelay(300, () -> h.assertTrue(kettle.ledger() != null && kettle.ledger().assistants().contains("Bob"),
-                "the ledger records Bob as an assistant"));
+        h.runAfterDelay(120, () -> {
+            var p = kettle.liveProcess();
+            // Both reach for the same dose in the same instant: exactly one transfer.
+            var first = a.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_CUP, com.otectus.immersivebrewing.workshop.WorkshopAction.DOSE, 0);
+            var second = b.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_CUP, com.otectus.immersivebrewing.workshop.WorkshopAction.DOSE, 0);
+            h.assertTrue(first.accepted() && !second.accepted(), "exactly one of the two doses was accepted");
+            h.assertTrue(p.doses() == 1, "one dose, once");
+            h.assertTrue(kettle.ledger().assistants().contains("Bob") && "Alice".equals(kettle.ledger().brewerName()),
+                    "Bob's productive help is recorded; Alice stays the brewer");
+        });
+        // Alice tends the rest of the batch once the race is over.
+        TestSupport.driveKettle(h, alice, com.otectus.immersivebrewing.testing.KettleTender.competent(), () -> h.getTick() > 125);
         h.succeedWhen(() -> {
-            h.assertTrue(kettle.ledger() == null, "still brewing");
-            for (int i = 0; i < 3; i++) {
-                ItemStack out = kettle.inventory().getStackInSlot(RACK + i);
-                h.assertTrue(PotionUtils.getPotion(out) == Potions.SWIFTNESS, "output " + i);
-                h.assertTrue("Alice".equals(BrewingMetadata.read(out).orElseThrow().brewerName()), "the original brewer is credited");
-            }
-            h.assertTrue(TestSupport.count(kettle, TRAY, 6, Items.NETHER_WART) == 1 && TestSupport.count(kettle, TRAY, 6, Items.SUGAR) == 1,
-                    "one batch's reagents spent, not two");
+            h.assertTrue(kettle.ledger() == null, "still brewing: " + TestSupport.describe(kettle));
+            h.assertTrue(TestSupport.count(kettle, RACK, 6, Items.POTION) == 3, "exactly three potions, nothing multiplied");
+            h.assertTrue(TestSupport.results(h, TestSupport.STATION) == 1, "one completion");
         });
     }
 
+    @GameTest(template = "empty", timeoutTicks = 2400)
+    public static void twoPlayersCanNotBothCollectOneBottle(GameTestHelper h) {
+        BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
+        TestSupport.load(kettle, 1, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
+        FakePlayer alice = TestSupport.player(h, "Filler");
+        FakePlayer bob = TestSupport.player(h, "Grabber");
+        TestSupport.openKettle(alice, kettle);
+        kettle.startBrew(alice, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
+        TestSupport.openView(bob, kettle);
+        TestSupport.driveKettle(h, alice, com.otectus.immersivebrewing.testing.KettleTender.competent());
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(kettle.ledger() == null, "still brewing")).thenExecute(() -> {
+            h.assertTrue(TestSupport.count(kettle, RACK, 6, Items.POTION) == 1, "the bottle waits in the rack: " + TestSupport.describe(kettle)
+                    + "; Filler holds " + alice.getInventory().countItem(Items.POTION) + ", Grabber holds " + bob.getInventory().countItem(Items.POTION));
+            var a = TestSupport.hand(alice, kettle);
+            var b = TestSupport.hand(bob, kettle);
+            var first = a.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_RACK, com.otectus.immersivebrewing.workshop.WorkshopAction.TAKE, 0);
+            var second = b.act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_RACK, com.otectus.immersivebrewing.workshop.WorkshopAction.TAKE, 0);
+            h.assertTrue(first.accepted() && !second.accepted(), "the bottle is taken once; the stale take fails harmlessly: "
+                    + first.kind() + " " + (first.reason() == null ? "" : first.reason().getString()) + " / " + second.kind()
+                    + "; " + TestSupport.describe(kettle) + ", view " + TestSupport.workingAt(alice));
+            int total = alice.getInventory().countItem(Items.POTION) + bob.getInventory().countItem(Items.POTION)
+                    + TestSupport.count(kettle, RACK, 6, Items.POTION);
+            h.assertTrue(total == 1, "one potion in the world: " + total);
+        }).thenSucceed();
+    }
+
     @GameTest(template = "empty")
-    public static void onePlayerOneSession(GameTestHelper h) {
+    public static void onePlayerCanTendTwoStations(GameTestHelper h) {
         BrewersKettleBlockEntity first = TestSupport.kettle(h);
         TestSupport.load(first, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
         BlockPos secondPos = new BlockPos(5, 1, 4);
@@ -106,15 +128,16 @@ public final class ContentionGameTests {
         FakePlayer player = TestSupport.player(h, "Juggler");
         TestSupport.openKettle(player, first);
         first.startBrew(player, TestSupport.plan(h, first, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the first brew started");
         TestSupport.openKettle(player, second);
         second.startBrew(player, TestSupport.plan(h, second, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        h.assertTrue(second.ledger() == null, "a player already working can not start a second station");
-        h.assertTrue(TestSupport.count(second, RACK, 6, Items.POTION) == 3 && second.fuelCharges() == 0
-                && second.inventory().getStackInSlot(BrewersKettleBlockEntity.FUEL).getCount() == 1, "and nothing was reserved there");
-        h.assertTrue(SessionManager.at(h.getLevel(), first.getBlockPos()) != null && SessionManager.at(h.getLevel(), second.getBlockPos()) == null,
-                "one session, at the first kettle");
-        SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), "session.immersive_brewing.end.closed");
+        h.assertTrue(first.ledger() != null && second.ledger() != null && !first.ledger().jobId().equals(second.ledger().jobId()),
+                "two stations hold two independent batches");
+        h.assertTrue(TestSupport.workingAt(player) != null && TestSupport.workingAt(player).equals(second.getBlockPos()),
+                "the working view follows the player to the second kettle");
+        var stale = new com.otectus.immersivebrewing.testing.WorkshopHand(player, first.getBlockPos())
+                .act(com.otectus.immersivebrewing.workshop.WorkshopParts.K_LID, com.otectus.immersivebrewing.workshop.WorkshopAction.SEAL, 0);
+        h.assertTrue(!stale.accepted() && first.ledger().state() == com.otectus.immersivebrewing.batch.JobState.RUNNING,
+                "an intent for a station whose view is not open does nothing");
         h.succeed();
     }
 

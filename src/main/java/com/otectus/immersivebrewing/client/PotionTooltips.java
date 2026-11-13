@@ -8,6 +8,7 @@ import com.otectus.immersivebrewing.potion.Grade;
 import com.otectus.immersivebrewing.potion.PotionContentsService;
 import com.otectus.immersivebrewing.potion.QualityMath;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -32,6 +33,13 @@ import java.util.Locale;
  */
 @Mod.EventBusSubscriber(modid = ImmersiveBrewing.MOD_ID, value = Dist.CLIENT)
 public final class PotionTooltips {
+    /** One truthful result-screen line; detailed effect policy remains in the tooltip. */
+    public static Component boundedBenefitSummary(ItemStack stack, BrewingMetadata meta) {
+        if (!PotionContentsService.effectsSupported(stack)) return Component.translatable("tooltip.immersive_brewing.metadata_only");
+        if (meta.quality() == QualityMath.BASELINE) return Component.translatable("tooltip.immersive_brewing.quality.exact_baseline");
+        return Component.translatable(meta.quality() > QualityMath.BASELINE
+                ? "tooltip.immersive_brewing.quality.policy_unchanged" : "tooltip.immersive_brewing.quality.standard_band", meta.quality());
+    }
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onTooltip(ItemTooltipEvent event) {
@@ -53,6 +61,10 @@ public final class PotionTooltips {
         tooltip.add(Component.literal(grade.symbol() + " ").append(Component.translatable("tooltip.immersive_brewing.quality", meta.quality(),
                 Component.translatable(grade.key()))).withStyle(s -> s.withColor(grade.color())));
         addBenefitExplanation(stack, meta, tooltip);
+        if (!Screen.hasShiftDown()) {
+            tooltip.add(Component.translatable("tooltip.immersive_brewing.details_hint").withStyle(ChatFormatting.DARK_GRAY));
+            return;
+        }
         tooltip.add(Component.translatable("tooltip.immersive_brewing.scores", meta.extraction(), meta.control()).withStyle(ChatFormatting.GRAY));
         if (!PotionContentsService.effectsSupported(stack)) {
             tooltip.add(Component.translatable("tooltip.immersive_brewing.metadata_only").withStyle(ChatFormatting.DARK_GRAY));

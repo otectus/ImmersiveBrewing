@@ -51,6 +51,9 @@ public final class CommonEvents {
         if (event.phase == TickEvent.Phase.END) {
             SessionManager.tick(event.getServer());
             com.otectus.immersivebrewing.recipe.CatalogSearch.tick(event.getServer());
+            com.otectus.immersivebrewing.interaction.WorkshopPresence.tick(event.getServer());
+            com.otectus.immersivebrewing.interaction.WorkshopIntents.tick(event.getServer());
+            com.otectus.immersivebrewing.workshop.WorkshopMetrics.endTick();
         }
     }
 
@@ -71,6 +74,8 @@ public final class CommonEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         SessionManager.clear();
+        com.otectus.immersivebrewing.interaction.WorkshopPresence.clear();
+        com.otectus.immersivebrewing.interaction.WorkshopIntents.clear();
         com.otectus.immersivebrewing.recipe.CatalogSearch.clear();
         PlanIndex.invalidate();
         BrewingDataLoader.reset();
@@ -98,16 +103,34 @@ public final class CommonEvents {
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if(event.getEntity() instanceof ServerPlayer player) com.otectus.immersivebrewing.recipe.CatalogSearch.leave(player);
         if (event.getEntity() instanceof ServerPlayer player) SessionManager.sealPlayer(player, "session.immersive_brewing.end.disconnected");
+        if (event.getEntity() instanceof ServerPlayer player) {
+            // Leases release at once; any batch follows the attended-workshop rule (it seals if nobody else is near).
+            com.otectus.immersivebrewing.interaction.WorkshopPresence.drop(player);
+            com.otectus.immersivebrewing.interaction.WorkshopIntents.forget(player.getUUID());
+        }
+    }
+
+    /** Damage immediately releases focus and every held tool (handoff 4); the batch is protected by the normal policy. */
+    @SubscribeEvent
+    public static void onHurt(net.minecraftforge.event.entity.living.LivingDamageEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && event.getAmount() > 0
+                && com.otectus.immersivebrewing.interaction.WorkshopPresence.of(player.getUUID()) != null) {
+            com.otectus.immersivebrewing.interaction.WorkshopPresence.leave(player, "workshop.immersive_brewing.focus.end.hurt");
+        }
     }
 
     @SubscribeEvent
     public static void onDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) SessionManager.sealPlayer(player, "session.immersive_brewing.end.died");
+        if (event.getEntity() instanceof ServerPlayer player) com.otectus.immersivebrewing.interaction.WorkshopPresence.leave(player,
+                "workshop.immersive_brewing.focus.end.died");
     }
 
     @SubscribeEvent
     public static void onDimensionChange(PlayerEvent.PlayerChangedDimensionEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) SessionManager.sealPlayer(player, "session.immersive_brewing.end.dimension");
+        if (event.getEntity() instanceof ServerPlayer player) com.otectus.immersivebrewing.interaction.WorkshopPresence.leave(player,
+                "workshop.immersive_brewing.focus.end.dimension");
     }
 
     @SubscribeEvent

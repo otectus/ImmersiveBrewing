@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "preparation",
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:sugar"
+    ]
+  },
+  "source_profile": "immersive_brewing:sugar",
+  "material": "crystalline",
+  "work": {
+    "operations": [
+      "press",
+      "grind",
+      "fold"
+    ],
+    "required_work": 1.0,
+    "max_work_per_tick": 0.05,
+    "useful_effort": [
+      0.25,
+      0.7
+    ],
+    "endpoint": [
+      0.6,
+      0.78
+    ],
+    "overwork_starts": 0.86
+  }
+}

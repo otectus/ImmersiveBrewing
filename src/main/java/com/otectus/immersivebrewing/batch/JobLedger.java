@@ -44,6 +44,13 @@ public final class JobLedger {
     /** A newer-schema ledger kept byte for byte (always in RECOVERY). */
     @Nullable
     private final CompoundTag unknownSchema;
+    /**
+     * The versioned physical-process payload of a hands-on workshop job (schema 3), or null for a legacy minigame job.
+     * Opaque here: the owning station decodes it, and replaces it only after a successful decode, so a newer or damaged
+     * payload stays byte for byte.
+     */
+    @Nullable
+    private CompoundTag process;
 
     public JobLedger(UUID jobId, Operation operation, JobState state, List<ItemStack> inputs, List<SlotStack> reserved, int fuelCharges,
                      CompoundTag snapshot, ItemStack outputSnapshot, long[] params, long[] simState, long seed, int extraction,
@@ -199,6 +206,26 @@ public final class JobLedger {
     @Nullable
     public CompoundTag unknownSchema() {
         return unknownSchema;
+    }
+
+    @Nullable
+    public CompoundTag process() {
+        return process;
+    }
+
+    /** Stores the physical-process payload (bounded by {@link LedgerCodec#MAX_PROCESS_BYTES} when saved). */
+    public void setProcess(@Nullable CompoundTag process) {
+        this.process = process;
+    }
+
+    /** A hands-on job: its state lives in {@link #process}, never in the legacy simulation arrays. */
+    public boolean physical() {
+        return process != null;
+    }
+
+    /** A job written by the 1.0/1.1 minigames that still needs their legacy resume path (no physical payload). */
+    public boolean legacy() {
+        return process == null && unknownSchema == null && operation.interactive();
     }
 
     /** Whether the job is between reservation and commit (anything but a plain held recovery). */

@@ -19,6 +19,8 @@ public final class ModSounds {
     public static final RegistryObject<SoundEvent> PESTLE_LIFT = register("mortar.lift");
     public static final RegistryObject<SoundEvent> KETTLE_SIMMER = register("kettle.simmer");
     public static final RegistryObject<SoundEvent> KETTLE_BOIL = register("kettle.boil");
+    public static final RegistryObject<SoundEvent> KETTLE_POUR = register("kettle.pour");
+    public static final RegistryObject<SoundEvent> BOTTLE_FILL = register("bottle.fill");
     public static final RegistryObject<SoundEvent> FOAM_HISS = register("kettle.foam");
     public static final RegistryObject<SoundEvent> PADDLE_SWIRL = register("kettle.swirl");
     public static final RegistryObject<SoundEvent> INGREDIENT_ADD = register("kettle.add");

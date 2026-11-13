@@ -9,6 +9,9 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.Direction;
+import com.otectus.immersivebrewing.block.StationBlock;
+import com.otectus.immersivebrewing.blockentity.StationBlockEntity;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
@@ -17,6 +20,16 @@ import java.util.Map;
 
 /** Client-only acceptance checks for overflow, real mouse controls and resize persistence. Never shipped. */
 final class VisualChecks {
+    /** Gallery invariant: each directional model is a real station with a synced presentation, not a screenshot prop. */
+    static boolean fourFacings(Minecraft mc, net.minecraft.core.BlockPos[] positions) {
+        java.util.EnumSet<Direction> found = java.util.EnumSet.noneOf(Direction.class);
+        for (var pos : positions) {
+            if (!(mc.level.getBlockEntity(pos) instanceof StationBlockEntity station)) return false;
+            found.add(station.getBlockState().getValue(StationBlock.FACING));
+            if (station.visual() == null) return false;
+        }
+        return found.containsAll(java.util.EnumSet.of(Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST));
+    }
     /** Measure complete status strings with the loaded Minecraft font, including the longest phase and numeric mode. */
     static void statusText(Screen screen, Map<String, Object> checks, String name) {
         int available = (Integer) field(screen, "pw") - 40;
@@ -76,7 +89,14 @@ final class VisualChecks {
     }
 
     static boolean notebookTab(Screen screen, String tab) {
-        if (!field(screen, "page").toString().equalsIgnoreCase(tab)) click(screen, "notebook.immersive_brewing.tab." + tab);
+        boolean compact = (Boolean) field(screen, "compact");
+        for (int i = 0; i < 16 && !field(screen, "page").toString().equalsIgnoreCase(tab); i++) {
+            // Compact layout (GUI narrower than 480 or lower than 300): one button names the current chapter and turns to
+            // the next. A chapter's own widgets can share a label with another chapter (Favourites' Practice action), so
+            // only that button is used there.
+            String key = "notebook.immersive_brewing.tab." + (compact ? field(screen, "page").toString().toLowerCase(java.util.Locale.ROOT) : tab);
+            if (!click(screen, key)) break;
+        }
         return field(screen, "page").toString().equalsIgnoreCase(tab);
     }
 

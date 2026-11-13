@@ -4,6 +4,7 @@
 #   default                       the plain walkthrough (also resets every accessibility option)
 #   keyboard|accessible|colorblind  -Pvariant=<name>: keyboard-only play, or presentation trials
 #   visual                        all screens, Notebook tabs and JEI in every shipped language at GUI scale 4
+#   dense                         60-second dense-workshop client instrumentation (no baseline comparison implied)
 #   gui1 .. gui4                  -PguiScale=<N>: in the 1280x960 window, GUI 1280x960 down to exactly 320x240
 # With no arguments: default gui1 gui2 gui3 gui4. SMOKE_GRADLE_ARGS adds Gradle arguments to every run, for example
 # SMOKE_GRADLE_ARGS=-PwithPotionMods for the four optional potion mods. Under Hyprland the tiling layout would choose
@@ -38,6 +39,7 @@ for run in $RUNS; do
         default) props=() ;;
         keyboard|accessible|colorblind) props=("-Pvariant=$run") ;;
         visual) props=("-Pvariant=visual" "-PguiScale=4") ;;
+        dense) props=("-Pvariant=dense" "-PguiScale=2") ;;
         gui[1-4]) props=("-PguiScale=${run#gui}") ;;
         *) echo "unknown run: $run"; failed=1; continue ;;
     esac

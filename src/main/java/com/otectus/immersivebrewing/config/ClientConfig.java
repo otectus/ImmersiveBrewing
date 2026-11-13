@@ -28,17 +28,57 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.BooleanValue SHOW_TUTORIAL;
     public static final ForgeConfigSpec.BooleanValue STATION_NOTICES;
     public static final ForgeConfigSpec.IntValue NOTICE_SECONDS;
+    public static final ForgeConfigSpec.EnumValue<HudAnchor> PINNED_HUD_ANCHOR;
+    public static final ForgeConfigSpec.IntValue PINNED_HUD_Y_OFFSET;
+    public static final ForgeConfigSpec.BooleanValue PINNED_HUD_COMPACT;
+    public static final ForgeConfigSpec.BooleanValue PINNED_HUD_HIDE_SCREEN;
+    public static final ForgeConfigSpec.BooleanValue INSPECTION_HINTS;
     public static final ForgeConfigSpec.BooleanValue REQUEST_ASSIST;
     public static final ForgeConfigSpec.DoubleValue ASSIST_TIME;
     public static final ForgeConfigSpec.DoubleValue ASSIST_BAND;
 
+    public enum HudAnchor { LEFT, RIGHT }
+
+    /** How the working view frames a station: a comfortable turn toward it, or the player's own unchanged view. */
+    public enum CameraMode { FOCUS, DIRECT }
+
+    public static final ForgeConfigSpec.EnumValue<CameraMode> CAMERA_MODE;
+    public static final ForgeConfigSpec.BooleanValue HOLD_TO_GRAB;
+    public static final ForgeConfigSpec.DoubleValue TOOL_SENSITIVITY;
+    public static final ForgeConfigSpec.DoubleValue TOOL_DEAD_ZONE;
+    public static final ForgeConfigSpec.DoubleValue TOOL_SMOOTHING;
+    public static final ForgeConfigSpec.BooleanValue MIRROR_TOOLS;
+    public static final ForgeConfigSpec.BooleanValue PART_HINTS;
+    public static final ForgeConfigSpec.IntValue TUTORIAL_STAGE;
+
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
+        // 1.2: the minigame options keep their keys and carry a player's choice into the hands-on workshop.
         b.comment("Controls").push("controls");
-        TOGGLE_STIR = b.comment("Tap a stir key to start or stop stirring instead of holding it.").define("toggleStir", false);
-        TOGGLE_PRESSURE = b.comment("Tap the press key to start or stop pressing the pestle instead of holding it.").define("togglePressure", false);
-        MOUSE_STIRRING = b.comment("Circles drawn with the mouse over the liquid also stir (capped exactly like the keys).").define("mouseStirring", true);
-        REDUCED_INPUT = b.comment("Use one-key/toggle control paths without requiring simultaneous key chords.").define("reducedInput", false);
+        TOGGLE_STIR = b.comment("Tap the Work key to start or stop working a held tool (stirring, grinding) instead of holding it.",
+                "Was: toggle stirring in the Kettle minigame.").define("toggleStir", false);
+        TOGGLE_PRESSURE = b.comment("Firm pestle pressure toggles with the press key instead of following a held mouse button.",
+                "Was: toggle pestle pressure in the Mortar minigame.").define("togglePressure", false);
+        MOUSE_STIRRING = b.comment("A held tool follows the mouse over its work surface. Off: tools move only with the keys and the Work action.",
+                "Was: mouse circles also stir.").define("mouseStirring", true);
+        REDUCED_INPUT = b.comment("One-key paths everywhere: every hold becomes a toggle and nothing needs two keys at once.").define("reducedInput", false);
+        HOLD_TO_GRAB = b.comment("Hold the mouse button to keep a tool in hand (release puts it down). Off: click to take, click its rest to put down.")
+                .define("holdToGrab", false);
+        TOOL_SENSITIVITY = b.comment("How far a held tool moves for a given mouse movement or key press.").defineInRange("toolSensitivity", 1.0, 0.25, 3.0);
+        TOOL_DEAD_ZONE = b.comment("Mouse movement (part of the work surface) ignored before a held tool moves; steadies shaky hands.")
+                .defineInRange("toolDeadZone", 0.0, 0.0, 0.2);
+        TOOL_SMOOTHING = b.comment("Visual weight of a held tool following the hand, 0 (none) to 0.9. Never delays what the server receives.")
+                .defineInRange("toolSmoothing", 0.35, 0.0, 0.9);
+        b.pop();
+
+        b.comment("The working view at a station").push("workshop");
+        CAMERA_MODE = b.comment("FOCUS turns your view toward the apparatus when you start working; DIRECT keeps your own view.",
+                "Neither moves the camera through walls or away from your eyes.").defineEnum("cameraMode", CameraMode.FOCUS);
+        MIRROR_TOOLS = b.comment("Left-handed presentation: rests and held tools are drawn mirrored. The parts you act on stay the same.")
+                .define("mirrorTools", false);
+        PART_HINTS = b.comment("Show the short action label beside the part under the cursor or the selected part.").define("partHints", true);
+        TUTORIAL_STAGE = b.comment("First-use demonstrations seen so far (0 = none; 3 = tool, burner and dose all shown).")
+                .defineInRange("tutorialStage", 0, 0, 3);
         b.pop();
 
         b.comment("Display").push("display");
@@ -54,6 +94,11 @@ public final class ClientConfig {
         SHOW_TUTORIAL = b.comment("Offer the tutorial overlay on a station screen until it has been completed once.").define("showTutorial", true);
         STATION_NOTICES = b.comment("Keep station messages readable above the hotbar instead of the vanilla action bar.").define("stationNotices", true);
         NOTICE_SECONDS = b.comment("How long a station notice stays.").defineInRange("noticeSeconds", 6, 2, 30);
+        PINNED_HUD_ANCHOR = b.comment("Anchor for the pinned Notebook reminder.").defineEnum("pinnedHudAnchor", HudAnchor.RIGHT);
+        PINNED_HUD_Y_OFFSET = b.comment("Vertical offset for the pinned Notebook reminder.").defineInRange("pinnedHudYOffset", 0, -120, 120);
+        PINNED_HUD_COMPACT = b.comment("Show only item icons and counts in the pinned Notebook reminder.").define("pinnedHudCompact", false);
+        PINNED_HUD_HIDE_SCREEN = b.comment("Hide the pinned Notebook reminder while a screen is open.").define("pinnedHudHideWhileScreenOpen", true);
+        INSPECTION_HINTS = b.comment("Show a concise station status hint when looking at a station without Jade.").define("inspectionHints", true);
         b.pop();
 
         b.comment("Sound").push("sound");

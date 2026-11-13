@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "preparation",
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:glistering_melon_slice"
+    ]
+  },
+  "source_profile": "immersive_brewing:glistering_melon_slice",
+  "material": "fibrous",
+  "work": {
+    "operations": [
+      "press",
+      "grind",
+      "fold"
+    ],
+    "required_work": 1.08,
+    "max_work_per_tick": 0.05,
+    "useful_effort": [
+      0.25,
+      0.65
+    ],
+    "endpoint": [
+      0.55,
+      0.75
+    ],
+    "overwork_starts": 0.85
+  }
+}

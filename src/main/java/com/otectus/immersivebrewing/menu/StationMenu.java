@@ -76,6 +76,30 @@ public abstract class StationMenu extends AbstractContainerMenu {
         return player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= max * max;
     }
 
+    /** One acknowledgment per accepted player transaction, including drag, swap and shift-click. */
+    @Override
+    public void clicked(int slotId, int button, net.minecraft.world.inventory.ClickType type, Player player) {
+        if (!(player instanceof ServerPlayer) || station == null || !stillValid(player)) {
+            super.clicked(slotId, button, type, player);
+            return;
+        }
+        ItemStack[] before = new ItemStack[stationSlots];
+        for (int i = 0; i < stationSlots; i++) before[i] = slots.get(i).getItem().copy();
+        super.clicked(slotId, button, type, player);
+        boolean changed = false, inserted = false;
+        for (int i = 0; i < stationSlots; i++) {
+            ItemStack after = slots.get(i).getItem();
+            if (!ItemStack.matches(before[i], after)) {
+                changed = true;
+                inserted |= !after.isEmpty() && (!ItemStack.isSameItemSameTags(before[i], after) || after.getCount() > before[i].getCount());
+            }
+        }
+        if (changed) station.effect(inserted
+                ? com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD
+                : com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COLLECT,
+                station.visual().jobId(), station.visual().simulationStep(), 0, 0);
+    }
+
     /** Station slot indices a stack moved from the player inventory should try, in order. */
     protected abstract int[] routeFor(ItemStack stack);
 
@@ -108,6 +132,12 @@ public abstract class StationMenu extends AbstractContainerMenu {
     public static StationBlockEntity openStation(ServerPlayer player, BlockPos pos) {
         if (player.containerMenu instanceof StationMenu menu && menu.pos.equals(pos) && menu.station != null && menu.stillValid(player)) {
             return menu.station;
+        }
+        // The hands-on working view counts like an open menu: the same station, opened by an ordinary use, still in reach.
+        if (com.otectus.immersivebrewing.interaction.WorkshopPresence.at(player, pos) && player.level().isLoaded(pos)
+                && player.level().getBlockEntity(pos) instanceof StationBlockEntity station && !station.isRemoved()) {
+            double max = ServerConfig.get(ServerConfig.MAX_STATION_DISTANCE) + 2;
+            if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= max * max) return station;
         }
         return null;
     }

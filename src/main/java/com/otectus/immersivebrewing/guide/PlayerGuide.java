@@ -165,16 +165,24 @@ public final class PlayerGuide {
                     return;
                 }
                 int servings = Math.max(1, Math.min(6, msg.value()));
-                var setup = com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.setupPlan(plan, servings,
-                        com.otectus.immersivebrewing.data.BrewingDefinitions.server());
-                var params = com.otectus.immersivebrewing.minigame.brewing.KettleSetup.build(setup, player.getRandom().nextLong(),
-                        com.otectus.immersivebrewing.config.ServerConfig.get(com.otectus.immersivebrewing.config.ServerConfig.MAX_BREW_DURATION_SECONDS),
-                        com.otectus.immersivebrewing.minigame.brewing.KettleSetup.Assist.NONE);
-                CompoundTag display = new CompoundTag();
-                display.put("output", displayOnly(plan.output()).save(new CompoundTag()));
-                display.putInt("servings", servings);
-                ModNetwork.sendTo(player, new com.otectus.immersivebrewing.network.packet.OpenPracticeS2C(
-                        com.otectus.immersivebrewing.session.SessionKind.BREWING, plan.brewProfile(), params.encode(), display));
+                // The exact route's hands-on parameters, run locally by the client: nothing comes back.
+                ModNetwork.sendTo(player, com.otectus.immersivebrewing.workshop.WorkshopPractice.forPlan(plan, servings));
+            }
+            case PRACTICE_KIND -> {
+                var kinds = com.otectus.immersivebrewing.session.SessionKind.values();
+                if (msg.value() < 0 || msg.value() >= kinds.length) return;
+                var kind = kinds[msg.value()];
+                var defs = com.otectus.immersivebrewing.data.BrewingDefinitions.server();
+                // A reagent hint (the one in the bowl) practises that reagent when it is prepared; anything else is ignored.
+                var practice = kind == com.otectus.immersivebrewing.session.SessionKind.PREPARATION && !msg.display().isEmpty()
+                        ? com.otectus.immersivebrewing.workshop.WorkshopPractice.forReagent(msg.display().getItem(), null, defs) : null;
+                if (practice == null) practice = com.otectus.immersivebrewing.workshop.WorkshopPractice.defaultFor(player.server, kind, null);
+                if (practice == null) {
+                    ModNetwork.notice(player, net.minecraft.network.chat.Component.translatable("notice.immersive_brewing.practice_unavailable"), true);
+                    return;
+                }
+                ModNetwork.sendTo(player, practice);
+                return;
             }
         }
         save(player, data);

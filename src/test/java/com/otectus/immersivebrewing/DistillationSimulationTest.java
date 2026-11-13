@@ -42,4 +42,28 @@ class DistillationSimulationTest {
         assertTrue(sloppy < competent);
         assertEquals(0, play(p, DistillBot.idle(), steps).distillation());
     }
+    @Test
+    void receiverTracksOnlyPositiveCondensationRoutedToCollectionAndSurvivesResume() {
+        var params = DistillationParams.create(17, 1, 1);
+        var sim = new DistillationSimulation(params);
+        for (int i = 0; i < 80; i++) sim.step(new com.otectus.immersivebrewing.minigame.distillation.DistillationInput(2, 2, false));
+        assertTrue(sim.fraction() > 0);
+        assertEquals(0, sim.collectedFraction(), 0);
+        for (int i = 0; i < 30; i++) sim.step(new com.otectus.immersivebrewing.minigame.distillation.DistillationInput(2, 2, true));
+        assertTrue(sim.collectedFraction() > 0);
+        double collected = sim.collectedFraction();
+        double progress = sim.fraction();
+        for (int i = 0; i < 30; i++) sim.step(new com.otectus.immersivebrewing.minigame.distillation.DistillationInput(2, 2, false));
+        assertTrue(sim.fraction() > progress);
+        assertEquals(collected, sim.collectedFraction(), 0);
+        var resumed = new DistillationSimulation(params);
+        resumed.loadState(sim.saveState());
+        assertEquals(sim.collectedFraction(), resumed.collectedFraction(), 0);
+        assertEquals(sim.score(), resumed.score());
+        var cold = new DistillationSimulation(params);
+        for (int i = 0; i < 80; i++) cold.step(new com.otectus.immersivebrewing.minigame.distillation.DistillationInput(0, 0, true));
+        assertEquals(0, cold.lastCondensed(), 0);
+        assertEquals(0, cold.collectedFraction(), 0);
+    }
+
 }

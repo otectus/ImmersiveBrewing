@@ -32,17 +32,20 @@ import snownee.jade.api.config.IPluginConfig;
 @WailaPlugin
 public final class BrewingJadePlugin implements IWailaPlugin {
     static final ResourceLocation STATION = ImmersiveBrewing.id("station");
+    static final ResourceLocation RACK = ImmersiveBrewing.id("rack");
     static final ResourceLocation STAND = ImmersiveBrewing.id("stand");
 
     @Override
     public void register(IWailaCommonRegistration registration) {
         registration.registerBlockDataProvider(Station.INSTANCE, StationBlockEntity.class);
+        registration.registerBlockDataProvider(Rack.INSTANCE, com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity.class);
         registration.registerBlockDataProvider(Stand.INSTANCE, BrewingStandBlockEntity.class);
     }
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerBlockComponent(Station.INSTANCE, StationBlock.class);
+        registration.registerBlockComponent(Rack.INSTANCE, com.otectus.immersivebrewing.block.ApothecaryRackBlock.class);
         registration.registerBlockComponent(Stand.INSTANCE, BrewingStandBlock.class);
     }
 
@@ -63,14 +66,40 @@ public final class BrewingJadePlugin implements IWailaPlugin {
             StationResult last = station.lastResult();
             if (last != null && ledger == null) tag.putByte("grade", (byte) last.grade().ordinal());
             tag.putFloat("progress", station.visual().active() ? station.visual().progress() : -1);
+            // Hands-on state: what the apparatus shows now, its heat in words, who holds which tool, what is ready.
+            CompoundTag workshop = station.buildWorkshopSnapshot();
+            for (String kind : new String[] {"kettle", "mortar", "alembic", "finishing"}) {
+                if (workshop.contains(kind)) {
+                    CompoundTag process = workshop.getCompound(kind);
+                    if (process.contains("cue")) tag.putString("cue", process.getString("cue"));
+                    if (process.contains("temp")) tag.putInt("heat", com.otectus.immersivebrewing.workshop.KettleProcess.heatBand(process.getByte("temp") / 100.0));
+                    if (kind.equals("kettle")) {
+                        int ready = 0;
+                        for (byte b : process.getByteArray("portions")) if (b == com.otectus.immersivebrewing.workshop.KettleProcess.Portion.READY.ordinal()) ready++;
+                        if (ready > 0) tag.putInt("ready", ready);
+                    }
+                }
+            }
+            net.minecraft.nbt.ListTag held = workshop.getList("held", net.minecraft.nbt.Tag.TAG_COMPOUND);
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < held.size() && i < 3; i++) {
+                String name = held.getCompound(i).getString("name");
+                if (!names.toString().contains(name)) names.append(names.length() == 0 ? "" : ", ").append(name);
+            }
+            if (names.length() > 0) tag.putString("working", names.toString());
             data.put("immersive_brewing", tag);
         }
 
         @Override
         public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
             if (!(accessor.getBlockEntity() instanceof StationBlockEntity station)) return;
-            tooltip.add(station.view().status());
+            com.otectus.immersivebrewing.blockentity.StationSummary.lines(station.view()).forEach(tooltip::add);
             CompoundTag tag = accessor.getServerData().getCompound("immersive_brewing");
+            if (tag.contains("cue")) tooltip.add(Component.translatable(tag.getString("cue")));
+            if (tag.contains("heat")) tooltip.add(Component.translatable("jade.immersive_brewing.heat",
+                    Component.translatable("heat.immersive_brewing.band." + tag.getInt("heat"))));
+            if (tag.contains("working")) tooltip.add(Component.translatable("jade.immersive_brewing.working", tag.getString("working")));
+            if (tag.contains("ready")) tooltip.add(Component.translatable("jade.immersive_brewing.ready", tag.getInt("ready")));
             if (tag.contains("servings")) tooltip.add(Component.translatable("jade.immersive_brewing.servings", tag.getInt("servings")));
             if (tag.contains("controller")) tooltip.add(Component.translatable("jade.immersive_brewing.controller", tag.getString("controller")));
             if (tag.contains("brewer")) tooltip.add(Component.translatable("jade.immersive_brewing.brewer", tag.getString("brewer")));
@@ -87,6 +116,29 @@ public final class BrewingJadePlugin implements IWailaPlugin {
         public ResourceLocation getUid() {
             return STATION;
         }
+    }
+
+    enum Rack implements IServerDataProvider<BlockAccessor>, IBlockComponentProvider {
+        INSTANCE;
+        @Override public void appendServerData(CompoundTag data, BlockAccessor accessor) {
+            // Rack contents, reservations and labels already have an authoritative block-entity baseline.
+        }
+        @Override public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
+            if (!(accessor.getBlockEntity() instanceof com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity rack)) return;
+            int slot = com.otectus.immersivebrewing.block.ApothecaryRackBlock.targetSlot(rack.getBlockState(), rack.getBlockPos(), accessor.getHitResult());
+            tooltip.add(Component.translatable("screen.immersive_brewing.carrier.slot", slot + 1, rack.label(slot)));
+            String label = rack.label(slot);
+            if (!label.isEmpty()) tooltip.add(Component.literal(label));
+            ItemStack stack = rack.inventory().getStackInSlot(slot);
+            if (stack.isEmpty()) tooltip.add(Component.translatable(rack.filter(slot).isEmpty()
+                    ? "screen.immersive_brewing.carrier.empty" : "state.immersive_brewing.reserved"));
+            else {
+                tooltip.add(Component.translatable("screen.immersive_brewing.result.made", stack.getCount(), stack.getHoverName()));
+                com.otectus.immersivebrewing.potion.BrewingMetadata.read(stack).ifPresent(meta ->
+                        tooltip.add(Component.translatable(Grade.of(meta.quality()).key())));
+            }
+        }
+        @Override public ResourceLocation getUid() { return RACK; }
     }
 
     enum Stand implements IServerDataProvider<BlockAccessor>, IBlockComponentProvider {

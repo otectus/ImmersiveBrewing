@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "preparation",
+  "priority": 100,
+  "selector": {
+    "items": [
+      "minecraft:magma_cream"
+    ]
+  },
+  "source_profile": "immersive_brewing:magma_cream",
+  "material": "liquid",
+  "work": {
+    "operations": [
+      "grind",
+      "fold",
+      "sweep"
+    ],
+    "required_work": 1.08,
+    "max_work_per_tick": 0.05,
+    "useful_effort": [
+      0.15,
+      0.5
+    ],
+    "endpoint": [
+      0.6,
+      0.8
+    ],
+    "overwork_starts": 0.9
+  }
+}

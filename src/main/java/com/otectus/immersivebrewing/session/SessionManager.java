@@ -5,6 +5,7 @@ import com.otectus.immersivebrewing.blockentity.StationBlockEntity;
 import com.otectus.immersivebrewing.blockentity.StationVisual;
 import com.otectus.immersivebrewing.config.ServerConfig;
 import com.otectus.immersivebrewing.network.ModNetwork;
+import com.otectus.immersivebrewing.network.packet.StationEffectEvent;
 import com.otectus.immersivebrewing.network.packet.InputFramesC2S;
 import com.otectus.immersivebrewing.network.packet.SessionEndS2C;
 import com.otectus.immersivebrewing.network.packet.SessionResultS2C;
@@ -102,6 +103,9 @@ public final class SessionManager {
         BY_PLAYER.put(session.playerId, session);
         BY_STATION.put(session.station(), session);
         station.setController(session.playerName);
+        display.putUUID("incarnation", station.visual().incarnation());
+        display.putUUID("job", station.ledger().jobId());
+        station.publishVisual(sim.visual(), resumed ? StationVisual.Activity.RESUME_COUNT_IN : StationVisual.Activity.COUNT_IN);
         ModNetwork.sendTo(player, new SessionStartS2C(session.id, sim.kind(), station.getBlockPos(), sim.params(), sim.saveState(),
                 countIn, buffer, resumed, display));
         debug("begin {} {} at {} for {} (buffer {}, resumed {})", sim.kind(), session.id, station.getBlockPos(), session.playerName, buffer, resumed);
@@ -161,6 +165,7 @@ public final class SessionManager {
                 s.running = true;
                 if (s.resumed) s.sim.neutraliseHeld();
                 station.onRunStarted(player, s.resumed);
+                station.publishVisual(s.sim.visual(), StationVisual.Activity.WORKING);
             }
             long due = s.initialStep + now - s.runStartTick - s.bufferTicks;
             int advanced = 0;
@@ -170,11 +175,16 @@ public final class SessionManager {
                 int packed = frame != null ? frame : s.sim.neutral(s.lastPacked);
                 packed |= s.pendingEdges & s.sim.edgeMask();
                 s.pendingEdges = 0;
+                int beforeAction = actionCounter(s.sim);
+                int beforeControls = controlState(s.sim);
                 s.sim.step(packed);
+                acceptedEffects(station, s, beforeAction, beforeControls);
                 s.lastPacked = packed & ~s.sim.edgeMask();
                 advanced++;
             }
             if (advanced > 0) {
+                if (station.visual().activity() != StationVisual.Activity.WORKING)
+                    station.publishVisual(s.sim.visual(), StationVisual.Activity.WORKING);
                 s.frames.keySet().removeIf(step -> step < s.sim.step());
                 if (s.sim.step() % SNAPSHOT_EVERY < advanced || s.sim.finished()) {
                     ModNetwork.sendTo(player, new StateSnapshotS2C(s.id, s.sim.step(), s.sim.saveState()));
@@ -183,6 +193,34 @@ public final class SessionManager {
             }
             if (s.sim.finished()) complete(s, station, player);
         }
+    }
+
+    private static int actionCounter(SimHandle handle) {
+        if (handle instanceof SimHandles.Brewing b) return b.sim().nextAddition();
+        if (handle instanceof SimHandles.Preparation p) return p.sim().folds();
+        return handle instanceof SimHandles.Distillation d && d.sim().collecting() ? 1 : 0;
+    }
+
+    private static int controlState(SimHandle handle) {
+        if (handle instanceof SimHandles.Brewing b) return b.sim().draft();
+        if (handle instanceof SimHandles.Distillation d) return d.sim().heatLevel() * 8 + d.sim().coolLevel();
+        return 0;
+    }
+
+    private static void acceptedEffects(StationBlockEntity station, ActiveSession session, int previous, int previousControls) {
+        int current = actionCounter(session.sim);
+        int controls = controlState(session.sim);
+        if (current == previous && controls == previousControls) return;
+        UUID job = station.ledger().jobId();
+        station.publishVisual(session.sim.visual(), StationVisual.Activity.WORKING);
+        if (session.sim instanceof SimHandles.Brewing brewing) {
+            for (int i = previous; i < current; i++)
+                station.effect(StationEffectEvent.Kind.ADDITION, job, session.sim.step(), i, brewing.sim().outcome(i).ordinal());
+        } else if (current != previous) {
+            station.effect(session.sim instanceof SimHandles.Preparation ? StationEffectEvent.Kind.FOLD : StationEffectEvent.Kind.RECEIVER,
+                    job, session.sim.step(), current, 0);
+        }
+        if (controls != previousControls) station.effect(StationEffectEvent.Kind.VALVE, job, session.sim.step(), controls, 0);
     }
 
     /** The session's player while it is still the live one for that UUID (fake players are never in the player list). */
@@ -231,7 +269,10 @@ public final class SessionManager {
             station.cancelCountIn(s.resumed);
             sealed = s.resumed;
         }
-        station.setVisual(StationVisual.IDLE);
+        if (sealed) {
+            station.publishVisual(s.sim.visual(), StationVisual.Activity.SEALED);
+            station.effect(StationEffectEvent.Kind.SEAL, station.ledger().jobId(), s.sim.step(), 0, 0);
+        } else station.setVisual(StationVisual.IDLE);
         if (player != null) {
             ModNetwork.sendTo(player, new SessionEndS2C(s.id, reason, sealed));
             ModNetwork.notice(player, Component.translatable(sealed ? "notice.immersive_brewing.sealed" : "notice.immersive_brewing.released",
@@ -330,6 +371,8 @@ public final class SessionManager {
         if (++s.pausesInWindow > MAX_PAUSES_PER_SECOND) s.violations++;
         if (paused) {
             s.pausedSince = now;
+            StationBlockEntity station = stationOf(player.server, s);
+            if (station != null) station.publishVisual(s.sim.visual(), StationVisual.Activity.HELP_PAUSED);
             debug("pause {} {} at step {}", s.sim.kind(), s.id, s.sim.step());
             return;
         }
@@ -339,7 +382,19 @@ public final class SessionManager {
         if (next != step || wait != countIn) s.violations++;
         s.runStartTick = now + wait + RESUME_SLACK - (next - s.initialStep);
         s.pausedSince = -1;
+        StationBlockEntity station = stationOf(player.server, s);
+        if (station != null) station.publishVisual(s.sim.visual(), StationVisual.Activity.RESUME_COUNT_IN);
         debug("resume {} {} at step {}: client step {} after {} ticks", s.sim.kind(), s.id, current, next, wait);
+    }
+
+    public static void resumePresentation(ServerPlayer player, UUID sessionId) {
+        ActiveSession s = BY_PLAYER.get(player.getUUID());
+        if (s == null || !s.id.equals(sessionId) || !s.paused()) return;
+        StationBlockEntity station = stationOf(player.server, s);
+        if (station == null || problem(s, player, station) != null || station.visual().activity() == StationVisual.Activity.RESUME_COUNT_IN) return;
+        window(s, player.server.getTickCount());
+        if (++s.pausesInWindow > MAX_PAUSES_PER_SECOND) { s.violations++; return; }
+        station.publishVisual(s.sim.visual(), StationVisual.Activity.RESUME_COUNT_IN);
     }
 
     /** The controller closed the game screen: seal a running job, release a reservation still counting in. */

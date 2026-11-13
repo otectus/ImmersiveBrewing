@@ -44,7 +44,8 @@ def sounds_json():
     out = {}
     for name in sorted(brewing_audio.SOUNDS):
         event = name.replace('/', '.')
-        out[event] = {'subtitle': f'subtitles.immersive_brewing.{event}', 'sounds': [{'name': f'immersive_brewing:{name}'}]}
+        names = [name] + [f'{name}_{i}' for i in range(2, 2 + len(brewing_audio.VARIANTS.get(name, [])))]
+        out[event] = {'subtitle': f'subtitles.immersive_brewing.{event}', 'sounds': [{'name': f'immersive_brewing:{variant}'} for variant in names]}
     return json.dumps(out, indent=2) + '\n'
 
 

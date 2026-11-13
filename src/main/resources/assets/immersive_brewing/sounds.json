@@ -4,6 +4,12 @@
     "sounds": [
       {
         "name": "immersive_brewing:alembic/drop"
+      },
+      {
+        "name": "immersive_brewing:alembic/drop_2"
+      },
+      {
+        "name": "immersive_brewing:alembic/drop_3"
       }
     ]
   },
@@ -28,6 +34,20 @@
     "sounds": [
       {
         "name": "immersive_brewing:bottle/clink"
+      },
+      {
+        "name": "immersive_brewing:bottle/clink_2"
+      },
+      {
+        "name": "immersive_brewing:bottle/clink_3"
+      }
+    ]
+  },
+  "bottle.fill": {
+    "subtitle": "subtitles.immersive_brewing.bottle.fill",
+    "sounds": [
+      {
+        "name": "immersive_brewing:bottle/fill"
       }
     ]
   },
@@ -79,6 +99,14 @@
       }
     ]
   },
+  "kettle.pour": {
+    "subtitle": "subtitles.immersive_brewing.kettle.pour",
+    "sounds": [
+      {
+        "name": "immersive_brewing:kettle/pour"
+      }
+    ]
+  },
   "kettle.simmer": {
     "subtitle": "subtitles.immersive_brewing.kettle.simmer",
     "sounds": [
@@ -100,6 +128,12 @@
     "sounds": [
       {
         "name": "immersive_brewing:mortar/crush"
+      },
+      {
+        "name": "immersive_brewing:mortar/crush_2"
+      },
+      {
+        "name": "immersive_brewing:mortar/crush_3"
       }
     ]
   },
@@ -108,6 +142,12 @@
     "sounds": [
       {
         "name": "immersive_brewing:mortar/grind"
+      },
+      {
+        "name": "immersive_brewing:mortar/grind_2"
+      },
+      {
+        "name": "immersive_brewing:mortar/grind_3"
       }
     ]
   },

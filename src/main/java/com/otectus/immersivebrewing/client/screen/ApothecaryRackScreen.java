@@ -37,22 +37,22 @@ public class ApothecaryRackScreen extends AbstractContainerScreen<ApothecaryRack
             }).createNarration(ignored -> Component.translatable("screen.immersive_brewing.rack.slot", index + 1,
                     menu.slots.get(index).getItem().getHoverName(), menu.rack() == null ? "" : menu.rack().label(index)))
                     .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("screen.immersive_brewing.rack.select", i + 1)))
-                    .bounds(leftPos + 34 + i * 18, topPos + 41, 17, 11).build());
+                    .bounds(leftPos + menu.slots.get(i).x - 1, topPos + menu.slots.get(i).y - 9, 17, 9).build());
         }
-        shelfLabel = new EditBox(font, leftPos + 8, topPos + 55, 64, 16, Component.translatable("screen.immersive_brewing.rack.label"));
+        shelfLabel = new EditBox(font, leftPos + 8, topPos + 58, 64, 16, Component.translatable("screen.immersive_brewing.rack.label"));
         shelfLabel.setMaxLength(ApothecaryRackBlockEntity.MAX_LABEL);
         refreshLabel();
         addRenderableWidget(shelfLabel);
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.rack.save_label"), b -> {
             ModNetwork.sendToServer(new RackLabelC2S(menu.pos(), selectedShelf, shelfLabel.getValue()));
-        }).bounds(leftPos + 76, topPos + 55, 25, 16).build());
+        }).bounds(leftPos + 76, topPos + 58, 25, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.rack.filter"), b -> {
             if (minecraft != null && minecraft.gameMode != null) minecraft.gameMode.handleInventoryButtonClick(menu.containerId, selectedShelf);
         }).tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("screen.immersive_brewing.rack.filter_tip")))
-                .bounds(leftPos + 104, topPos + 55, 31, 16).build());
+                .bounds(leftPos + 104, topPos + 58, 31, 16).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.rack.pack"), b -> {
             if (minecraft != null && minecraft.gameMode != null) minecraft.gameMode.handleInventoryButtonClick(menu.containerId, ApothecaryRackMenu.PACK_BUTTON);
-        }).bounds(leftPos + 138, topPos + 55, 30, 16).build());
+        }).bounds(leftPos + 138, topPos + 58, 30, 16).build());
     }
 
     private void refreshLabel() {
@@ -77,11 +77,18 @@ public class ApothecaryRackScreen extends AbstractContainerScreen<ApothecaryRack
             if (i >= ApothecaryRackBlockEntity.SLOTS || rack == null) continue;
             ItemStack filter = rack.filter(i);
             if (slot.getItem().isEmpty() && !filter.isEmpty()) {
-                g.renderItem(filter, leftPos + slot.x, topPos + slot.y);
-                g.fill(leftPos + slot.x, topPos + slot.y, leftPos + slot.x + 16, topPos + slot.y + 16, 0x88707070);
+                // A reservation is a plaque, not a ghost bottle that can be
+                // mistaken for stock ready to collect.
+                int x = leftPos + slot.x, y = topPos + slot.y;
+                int c = Ui.palette().accent();
+                g.fill(x + 3, y + 3, x + 13, y + 4, c);
+                g.fill(x + 3, y + 12, x + 13, y + 13, c);
+                g.fill(x + 3, y + 3, x + 4, y + 13, c);
+                g.fill(x + 12, y + 3, x + 13, y + 13, c);
+                g.drawString(font, "R", x + 6, y + 5, c, false);
             }
             int marker = i == selectedShelf ? 0xFFFFFFFF : filter.isEmpty() ? 0xFF777777 : 0xFF55AAFF;
-            g.fill(leftPos + slot.x - 1, topPos + 41, leftPos + slot.x + 17, topPos + 43, marker);
+            g.fill(leftPos + slot.x - 1, topPos + slot.y + 16, leftPos + slot.x + 17, topPos + slot.y + 18, marker);
             String label = rack.label(i);
 
         }
@@ -91,5 +98,8 @@ public class ApothecaryRackScreen extends AbstractContainerScreen<ApothecaryRack
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
         Ui.fit(g, title, titleLabelX, titleLabelY, imageWidth - 16, Ui.palette().text());
         g.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, Ui.palette().text(), false);
+        ApothecaryRackBlockEntity rack = menu.rack();
+        if (rack != null) Ui.fit(g, Component.translatable("screen.immersive_brewing.rack.selected", selectedShelf + 1, rack.label(selectedShelf)),
+                8, 18, imageWidth - 16, Ui.palette().muted());
     }
 }

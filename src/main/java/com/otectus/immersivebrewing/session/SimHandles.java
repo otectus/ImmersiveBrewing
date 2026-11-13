@@ -1,6 +1,7 @@
 package com.otectus.immersivebrewing.session;
 
 import com.otectus.immersivebrewing.blockentity.StationVisual;
+import com.otectus.immersivebrewing.batch.Operation;
 import com.otectus.immersivebrewing.minigame.brewing.KettleInput;
 import com.otectus.immersivebrewing.minigame.brewing.KettleParams;
 import com.otectus.immersivebrewing.minigame.brewing.KettleSimulation;
@@ -72,7 +73,11 @@ public final class SimHandles {
 
         public StationVisual visual() {
             return new StationVisual(0, sim.texture().ordinal(), (float) sim.pressure(), (float) sim.lastWork(), (float) sim.processed(),
-                    (float) sim.step() / sim.params().durationSteps(), true);
+                    (float) sim.step() / sim.params().durationSteps(), true).details(
+                    new StationVisual.Mortar(sim.params().mode().ordinal(), (float) sim.processed(), (float) sim.pressure(),
+                            (float) sim.clump(), sim.texture().ordinal(), (float) sim.pestleX(), (float) sim.pestleY(),
+                            sim.pressing(), (float) sim.lastWork(), sim.folds()),
+                    StationVisual.Kettle.EMPTY, StationVisual.Alembic.EMPTY, sim.step(), Operation.PREPARE);
         }
     }
 
@@ -126,7 +131,12 @@ public final class SimHandles {
 
         public StationVisual visual() {
             return new StationVisual(sim.phase().phase().ordinal(), sim.phase().signature().ordinal(), (float) sim.heat(),
-                    (float) sim.circulation(), (float) sim.trouble(), (float) sim.step() / sim.params().totalSteps(), true);
+                    (float) sim.circulation(), (float) sim.trouble(), (float) sim.step() / sim.params().totalSteps(), true).details(
+                    StationVisual.Mortar.EMPTY,
+                    new StationVisual.Kettle(sim.draft(), (float) sim.burner(), sim.nextAddition(),
+                            sim.nextAddition() == 0 ? 0 : sim.outcome(sim.nextAddition() - 1).ordinal(), 0x385DC6, 0x385DC6,
+                            Math.min(1, (float) (sim.step() - sim.phase().start()) / sim.phase().length())),
+                    StationVisual.Alembic.EMPTY, sim.step(), Operation.BREW);
         }
     }
 
@@ -176,7 +186,9 @@ public final class SimHandles {
 
         public StationVisual visual() {
             return new StationVisual(0, sim.condensate().ordinal(), (float) sim.temperature(), (float) sim.coolant(), (float) sim.fraction(),
-                    (float) sim.fraction(), true);
+                    (float) sim.fraction(), true).details(StationVisual.Mortar.EMPTY, StationVisual.Kettle.EMPTY,
+                    new StationVisual.Alembic(sim.heatLevel(), sim.coolLevel(), (float) sim.collectedFraction(),
+                            sim.collecting(), (float) sim.lastCondensed()), sim.step(), Operation.PURIFY);
         }
     }
 

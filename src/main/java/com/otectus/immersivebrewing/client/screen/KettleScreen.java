@@ -8,6 +8,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 
 /** Loading the Kettle (outside active play, spec 24.2): rack, tray, fuel, paddle, by-products, status and the plan picker. */
@@ -56,7 +57,29 @@ public class KettleScreen extends StationScreen<KettleMenu> {
         plan.visible = !sealed;
         plan.active = station != null && station.view().state() == null;
         seal.visible=station!=null&&station.view().operation()==com.otectus.immersivebrewing.batch.Operation.FINISH&&station.view().state()==JobState.RUNNING;
-        if (station != null) comparator.setMessage(Component.literal(station.statusComparator() ? "☰" : "≡"));
+        if (station != null) {
+            comparator.setMessage(Component.literal(station.statusComparator() ? "☰" : "≡"));
+            comparator.setTooltip(Tooltip.create(Component.translatable(station.statusComparator()
+                    ? "screen.immersive_brewing.comparator_job" : "screen.immersive_brewing.comparator_output")));
+        }
+    }
+
+    @Override
+    protected void renderExtras(GuiGraphics g, int mouseX, int mouseY) {
+        Ui.Palette p = Ui.palette();
+        // Captions label real menu roles; they are never fake stacks or requirements.
+        label(g, Component.translatable("screen.immersive_brewing.slot.bottles"), 35, 7, 108, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.fuel"), 8, 31, 22, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.reagents"), 35, 31, 108, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.paddle"), 143, 7, 28, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.returns"), 116, 55, 52, p.muted(), mouseX, mouseY);
+        String[] roles = {"bottle", "bottle", "bottle", "bottle", "bottle", "bottle", "reagent", "reagent", "reagent", "reagent", "fuel", "paddle", "returns", "returns"};
+        for (int i = 0; i < Math.min(roles.length, menu.slots.size()); i++) {
+            if (!menu.slots.get(i).getItem().isEmpty()) continue;
+            var slot = menu.slots.get(i);
+            g.blit(new ResourceLocation("immersive_brewing", "textures/gui/slot_roles/" + roles[i] + ".png"),
+                    leftPos + slot.x, topPos + slot.y, 0, 0, 16, 16, 16, 16);
+        }
     }
 
     @Override

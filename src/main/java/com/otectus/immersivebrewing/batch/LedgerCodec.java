@@ -20,14 +20,18 @@ import java.util.UUID;
  * never discarded and never reinterpreted.
  */
 public final class LedgerCodec {
-    public static final int SCHEMA = 2;
+    /** Schema 3 adds the physical-process payload; legacy ledgers are still written as schema 2. */
+    public static final int SCHEMA = 3;
+    public static final int LEGACY_SCHEMA = 2;
+    public static final int MAX_PROCESS_BYTES = 32 * 1024;
     public static final int MAX_STACKS = 32;
     public static final int MAX_BYTES = 256 * 1024;
 
     public static CompoundTag save(JobLedger ledger) {
         if (ledger.unknownSchema() != null) return ledger.unknownSchema().copy();
         CompoundTag tag = new CompoundTag();
-        tag.putInt("schema", SCHEMA);
+        // A legacy job keeps schema 2 so the previous release can still read it; only hands-on jobs need schema 3.
+        tag.putInt("schema", ledger.process() == null ? LEGACY_SCHEMA : SCHEMA);
         tag.putUUID("job", ledger.jobId());
         tag.putString("state", ledger.state().name());
         tag.putString("operation", ledger.operation().name());
@@ -51,6 +55,11 @@ public final class LedgerCodec {
         tag.putInt("resumes", ledger.resumes());
         tag.putInt("generation", ledger.dataGeneration());
         tag.putLong("lineage", ledger.lineage());
+        if (ledger.process() != null) {
+            int processSize = encodedSize(ledger.process());
+            if (processSize > MAX_PROCESS_BYTES) throw new IllegalStateException("physical process too large: " + processSize + " bytes");
+            tag.put("process", ledger.process().copy());
+        }
         int size = encodedSize(tag);
         if (size > MAX_BYTES) throw new IllegalStateException("job ledger too large: " + size + " bytes");
         return tag;
@@ -80,9 +89,15 @@ public final class LedgerCodec {
                 tag.contains("brewerName", Tag.TAG_STRING) ? tag.getString("brewerName") : null, assistants,
                 tag.contains("recovery", Tag.TAG_STRING) ? tag.getString("recovery") : null, tag.getInt("resumes"),
                 tag.getInt("generation"), tag.getLong("lineage"));
+        if (schema >= 3 && tag.contains("process", Tag.TAG_COMPOUND)) {
+            CompoundTag process = tag.getCompound("process");
+            if (encodedSize(process) > MAX_PROCESS_BYTES) return JobLedger.unknown(tag.copy(), "recovery.immersive_brewing.process_unreadable");
+            ledger.setProcess(process.copy());
+        }
         // A ledger that was mid-session when the world saved loads sealed: never resumed without a player (spec 20.4).
         // A reservation that never started is released by the station when it loads (ordinary inventory restored).
-        if (ledger.state() == JobState.RUNNING && operation.interactive()) ledger.setState(JobState.SEALED);
+        // A hands-on job loads sealed too: no offline progression, and a returning participant reopens it.
+        if (ledger.state() == JobState.RUNNING && (operation.interactive() || ledger.physical())) ledger.setState(JobState.SEALED);
         return ledger;
     }
 

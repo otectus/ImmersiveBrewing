@@ -22,8 +22,8 @@ import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import java.util.UUID;
 
 /**
- * The help overlay pauses a productive session (playtest feedback: the games kept running while players read the
- * help). The controller's pause stops the server's clock, count-in included, and the resume restarts it from the
+ * Legacy-resume sessions (batches saved by 1.1, finished through their original interface): the help overlay pauses a
+ * productive session (playtest feedback: the games kept running while players read the help). The controller's pause stops the server's clock, count-in included, and the resume restarts it from the
  * client's own timing, at one step per tick. Only the controller can pause, a repeated toggle or an impossible resume is
  * a violation, a flood of toggles seals, and a session sealed while paused keeps its progress.
  */
@@ -32,13 +32,18 @@ import java.util.UUID;
 public final class PauseGameTests {
     private static final String CLOSED = "session.immersive_brewing.end.closed";
 
+    /**
+     * A batch saved by 1.1 mid-reaction, resumed through its original interface: the only way a legacy session still
+     * starts (handoff 17). Its protocol keeps every guarantee it had.
+     */
     private static FakePlayer brewing(GameTestHelper h, String name) {
         BrewersKettleBlockEntity kettle = TestSupport.kettle(h);
         TestSupport.load(kettle, 3, 1, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR));
         FakePlayer player = TestSupport.player(h, name);
-        TestSupport.openKettle(player, kettle);
-        kettle.startBrew(player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS).key(), 1F, 1F);
-        h.assertTrue(TestSupport.session(player).isPresent(), "the session started");
+        BrewersKettleBlockEntity legacy = LegacyFixtures.sealedBrew(h, kettle, player, TestSupport.plan(h, kettle, KettleGameTests.SWIFTNESS), 0);
+        TestSupport.openKettle(player, legacy);
+        legacy.resume(player);
+        h.assertTrue(TestSupport.session(player).isPresent(), "the legacy session started");
         return player;
     }
 
@@ -50,7 +55,7 @@ public final class PauseGameTests {
     public static void helpStopsTheCountInAndTheRun(GameTestHelper h) {
         FakePlayer player = brewing(h, "Reader");
         ActiveSession s = TestSupport.session(player).orElseThrow();
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveLegacyKettle(h, player, com.otectus.immersivebrewing.testing.KettleBot.competent());
         int initial = s.sim().step();
         long countIn = s.runStartTick() - now(h);
         // The tutorial opens with the game screen, before the count-in has moved; the client's whole count-in is left.
@@ -124,7 +129,7 @@ public final class PauseGameTests {
     public static void aSessionSealedWhilePausedKeepsItsProgress(GameTestHelper h) {
         FakePlayer player = brewing(h, "Sealer");
         BrewersKettleBlockEntity kettle = (BrewersKettleBlockEntity) h.getLevel().getBlockEntity(h.absolutePos(TestSupport.STATION));
-        TestSupport.driveKettle(h, player, KettleBot.competent());
+        TestSupport.driveLegacyKettle(h, player, com.otectus.immersivebrewing.testing.KettleBot.competent());
         h.runAfterDelay(120, () -> {
             ActiveSession s = TestSupport.session(player).orElseThrow();
             h.assertTrue(s.running() && s.sim().step() > 20, "running with progress before the pause");

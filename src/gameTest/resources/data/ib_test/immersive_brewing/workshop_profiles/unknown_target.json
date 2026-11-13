@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "kind": "brewing",
+  "target": "ib_test:no_such_profile",
+  "reaction": "light_foam"
+}

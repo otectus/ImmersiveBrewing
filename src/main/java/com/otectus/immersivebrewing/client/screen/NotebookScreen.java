@@ -3,7 +3,6 @@ package com.otectus.immersivebrewing.client.screen;
 import com.otectus.immersivebrewing.ImmersiveBrewing;
 import com.otectus.immersivebrewing.client.ClientGuide;
 import com.otectus.immersivebrewing.client.ClientPacketHandler;
-import com.otectus.immersivebrewing.client.PracticeSetup;
 import com.otectus.immersivebrewing.client.ServerCatalog;
 import com.otectus.immersivebrewing.client.tutorial.GuidedPractice;
 import com.otectus.immersivebrewing.config.ClientConfig;
@@ -72,6 +71,7 @@ public class NotebookScreen extends Screen {
     private int mouseX, mouseY;
     private EditBox search;
     private int px, py, pw, ph, tabW;
+    private boolean compact;
     @Nullable
     private CraftingRecipe kettleRecipe;
     @Nullable private CraftingRecipe paddleRecipe;
@@ -107,14 +107,15 @@ public class NotebookScreen extends Screen {
         }
         pw = Math.min(width - 12, 420);
         ph = Math.min(height - 12, 250);
+        compact = width < 480 || height < 300;
         px = (width - pw) / 2;
         py = (height - ph) / 2;
         int widestTab = 0;
         for (Page tab : Page.values()) widestTab = Math.max(widestTab,
                 font.width(Component.translatable("notebook.immersive_brewing.tab." + tab.name().toLowerCase(Locale.ROOT))));
-        tabW = Math.min(pw - 150, Math.max(92, widestTab + 16));
+        tabW = compact ? 0 : Math.min(pw - 150, Math.max(92, widestTab + 16));
         String query = search == null ? ClientGuide.search() : search.getValue();
-        search = new EditBox(font, px + tabW + 4, py + 6, pw - tabW - 10, 14, Component.translatable("screen.immersive_brewing.search"));
+        search = new EditBox(font, px + tabW + 4, py + (compact ? 26 : 6), pw - tabW - 10, 14, Component.translatable("screen.immersive_brewing.search"));
         Ui.hint(search, Component.translatable("screen.immersive_brewing.search_hint"));
         search.setValue(query);
         search.setResponder(s -> content.reset());
@@ -150,7 +151,13 @@ public class NotebookScreen extends Screen {
         previousEntry = nextEntry = null;
         Page[] pages = Page.values();
         int th = Math.max(14, Math.min(18, (ph - 12) / pages.length));
-        for (int i = 0; i < pages.length; i++) {
+        if (compact) {
+            addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.tab." + page.name().toLowerCase(Locale.ROOT)), b -> {
+                page = pages[(page.ordinal() + 1) % pages.length]; content.reset(); rebuild();
+            }).bounds(px + 4, py + 6, pw - 60, 18).build());
+            addRenderableWidget(Button.builder(Component.translatable("gui.back"), b -> onClose()).bounds(px + pw - 52, py + 6, 48, 18).build());
+        }
+        for (int i = 0; !compact && i < pages.length; i++) {
             Page p = pages[i];
             Button b = Button.builder(Component.translatable("notebook.immersive_brewing.tab." + p.name().toLowerCase(Locale.ROOT)), btn -> {
                 persistView();
@@ -172,7 +179,7 @@ public class NotebookScreen extends Screen {
             int y = py + ph - 134;
             for (GuidedPractice.Stage stage : GuidedPractice.Stage.values()) {
                 addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.practice.guided." + GuidedPractice.id(stage)),
-                        b -> ClientPacketHandler.open(PracticeSetup.createGuided(stage))).bounds(px + tabW + 6, y, pw - tabW - 14, 16).build());
+                        b -> ClientPacketHandler.guidedPractice()).bounds(px + tabW + 6, y, pw - tabW - 14, 16).build());
                 y += 18;
             }
             for (SessionKind kind : SessionKind.values()) {
@@ -220,7 +227,7 @@ public class NotebookScreen extends Screen {
 
     private void chooseOnboarding(int choice) {
         send(NotebookPrefsC2S.Action.SET_ONBOARDING, "", ItemStack.EMPTY, choice);
-        if (choice == 1) ClientPacketHandler.open(PracticeSetup.createGuided(GuidedPractice.Stage.HEAT));
+        if (choice == 1) ClientPacketHandler.guidedPractice();
         else {
             page = choice == 2 ? Page.QUALITY : Page.RECIPES;
             content.reset();
@@ -472,7 +479,7 @@ public class NotebookScreen extends Screen {
         int w = pw - tabW - 14;
         g.fill(px + tabW - 2, py + 6, px + tabW - 1, py + ph - 6, p.panelDark());
         g.fill(px + tabW - 1, py + 6, px + tabW, py + ph - 6, p.panelLight());
-        int top = (page == Page.RECIPES || page == Page.REAGENTS) ? py + 26 : py + 8;
+        int top = compact ? py + 30 : (page == Page.RECIPES || page == Page.REAGENTS) ? py + 26 : py + 8;
         clipTop = top;
         clipBottom = py + ph - (page == Page.PRACTICE ? 140 : page == Page.FAVORITES || page == Page.JOURNAL ? 52
                 : page == Page.START || page == Page.RECIPES ? 32 : 6);
@@ -521,7 +528,33 @@ public class NotebookScreen extends Screen {
             y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.mode." + ServerConfig.brewingMode().name().toLowerCase(Locale.ROOT)),
                     x, y, w, p.accent()) + 4;
         }
+        if (key.equals("stations")) y = instructionCards(g, x, y, w);
+        if (key.equals("recovery")) y = recoveryCard(g, x, y, w);
         return y;
+    }
+
+    /** Still-first cards reuse live-screen language; they remain useful at zero animation intensity. */
+    private int instructionCards(GuiGraphics g, int x, int y, int w) {
+        y = card(g, x, y, w, Component.translatable("screen.immersive_brewing.mortar"),
+                Component.translatable("help.immersive_brewing.mortar.goal"));
+        y = card(g, x, y, w, Component.translatable("screen.immersive_brewing.kettle"),
+                Component.translatable("help.immersive_brewing.kettle.signature"));
+        return card(g, x, y, w, Component.translatable("screen.immersive_brewing.alembic"),
+                Component.translatable("help.immersive_brewing.alembic.receiver", "[R]"));
+    }
+
+    private int recoveryCard(GuiGraphics g, int x, int y, int w) {
+        return card(g, x, y, w, Component.translatable("screen.immersive_brewing.sealed_title"),
+                Component.translatable("screen.immersive_brewing.sealed_body"));
+    }
+
+    private int card(GuiGraphics g, int x, int y, int w, Component title, Component body) {
+        Ui.Palette p = Ui.palette();
+        int h = 26 + Ui.lines(body, w - 12) * 10;
+        Ui.inset(g, x, y, w, h);
+        Ui.fit(g, title, x + 6, y + 4, w - 12, p.insetText());
+        Ui.wrapped(g, body, x + 6, y + 15, w - 12, p.insetMuted());
+        return y + h + 5;
     }
 
     private void renderEntrySelection(GuiGraphics g, int mouseX, int mouseY) {

@@ -6,7 +6,6 @@ import com.otectus.immersivebrewing.batch.JobState;
 import com.otectus.immersivebrewing.batch.Operation;
 import com.otectus.immersivebrewing.blockentity.AlembicBlockEntity;
 import com.otectus.immersivebrewing.item.RecoveryBatchItem;
-import com.otectus.immersivebrewing.network.packet.SessionResultS2C;
 import com.otectus.immersivebrewing.network.packet.StationActionC2S;
 import com.otectus.immersivebrewing.potion.BrewingMetadata;
 import com.otectus.immersivebrewing.potion.QualityMath;
@@ -63,6 +62,7 @@ public final class AlembicGameTests {
         for (int i = 0; i < alembic.inventory().getSlots(); i++) alembic.inventory().setStackInSlot(i, ItemStack.EMPTY);
         for (int i = 0; i < inputs.length; i++) alembic.inventory().setStackInSlot(INPUT + i, inputs[i]);
         if (powder > 0) alembic.inventory().setStackInSlot(FUEL, new ItemStack(Items.BLAZE_POWDER, powder));
+        TestSupport.coolant(alembic, 1000);
         return alembic;
     }
 
@@ -95,18 +95,12 @@ public final class AlembicGameTests {
         TestSupport.openAlembic(player, alembic);
         String problem = problemKey(alembic);
         alembic.startPurification(player, 0);
-        h.assertTrue(TestSupport.session(player).isPresent(), "purification started (" + problem + ")");
-        TestSupport.driveAlembic(h, player, DistillBot.competent());
+        h.assertTrue(TestSupport.working(player), "purification started (" + problem + ")");
+        TestSupport.driveAlembic(h, player, com.otectus.immersivebrewing.testing.AlembicTender.competent());
         return player;
     }
 
     /** The D score the server reported to the player for the last purification. */
-    static int distillation(FakePlayer player) {
-        int d = -1;
-        for (Object m : TestSupport.messages(player)) if (m instanceof SessionResultS2C r) d = r.result().getInt("D");
-        return d;
-    }
-
     @GameTest(template = "empty", timeoutTicks = 1600)
     public static void purifyThreeIntoTwo(GameTestHelper h) {
         AlembicBlockEntity alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
@@ -119,7 +113,7 @@ public final class AlembicGameTests {
             List<ItemStack> potions = outputs(alembic, Items.POTION);
             h.assertTrue(count(potions) == 2, "two potions out of three: " + count(potions));
             h.assertTrue(count(outputs(alembic, Items.GLASS_BOTTLE)) == 1, "the third bottle returns empty");
-            int d = distillation(player);
+            int d = alembic.lastResult().control();
             int expected = QualityMath.purified(40, d, 70);
             for (ItemStack p : potions) {
                 BrewingMetadata meta = BrewingMetadata.read(p).orElseThrow();
@@ -177,7 +171,7 @@ public final class AlembicGameTests {
         FakePlayer player = TestSupport.player(h, "Refused");
         TestSupport.openAlembic(player, alembic);
         alembic.startPurification(player, 0);
-        h.assertTrue(alembic.ledger() == null && TestSupport.session(player).isEmpty(), "a refused start reserves nothing");
+        h.assertTrue(alembic.ledger() == null && !TestSupport.working(player), "a refused start reserves nothing");
         h.succeed();
     }
 
@@ -203,14 +197,51 @@ public final class AlembicGameTests {
     }
 
     @GameTest(template = "empty")
-    public static void approvedDistillationAssistIsSavedForDisplayAndResume(GameTestHelper h) {
+    public static void aChargeReservesItsCoolantAndReturnsItUntouched(GameTestHelper h) {
         AlembicBlockEntity alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
-        FakePlayer player = TestSupport.player(h, "Accessible");
+        h.assertTrue(alembic.coolantMb() == 1000, "one bucket fills the jacket");
+        h.assertTrue(TestSupport.coolant(alembic, 250) == 0, "a full jacket accepts no more water: fluid is conserved");
+        FakePlayer player = TestSupport.player(h, "Measured");
         TestSupport.openAlembic(player, alembic);
-        alembic.startPurification(player, StationActionC2S.withAssist(0, 1.5, 1.25));
-        h.assertTrue(alembic.ledger() != null && alembic.ledger().snapshot().getDouble("assistTime") >= 1.0
-                && alembic.ledger().snapshot().getDouble("assistBand") >= 1.0, "approved assist multipliers are persisted with the job");
+        alembic.startPurification(player, 0);
+        h.assertTrue(alembic.ledger() != null && alembic.coolantMb() == 750, "a group of three reserves 250 mB at the start: " + alembic.coolantMb());
+        h.assertTrue(TestSupport.coolant(alembic, 1000) == 0, "the reservation still counts against the jacket's capacity");
+        var hand = TestSupport.hand(player, alembic);
+        h.assertTrue(hand.act(com.otectus.immersivebrewing.workshop.WorkshopParts.A_CLAMP, com.otectus.immersivebrewing.workshop.WorkshopAction.CANCEL, 0).accepted(),
+                "an untouched charge can be withdrawn");
+        h.assertTrue(alembic.ledger() == null && alembic.coolantMb() == 1000, "and its coolant returns exactly: " + alembic.coolantMb());
+        h.assertTrue(TestSupport.count(alembic, INPUT, AlembicBlockEntity.INPUT_SIZE, Items.POTION) == 3 && alembic.fuelCharges() == 20,
+                "every bottle and the fuel charge are back");
         h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void aRunWithoutCoolantIsRefusedBeforeAnythingMoves(GameTestHelper h) {
+        AlembicBlockEntity alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
+        alembic.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.FLUID_HANDLER, net.minecraft.core.Direction.UP)
+                .ifPresent(fluid -> fluid.drain(1000, net.minecraftforge.fluids.capability.IFluidHandler.FluidAction.EXECUTE));
+        FakePlayer player = TestSupport.player(h, "Dry");
+        TestSupport.openAlembic(player, alembic);
+        alembic.startPurification(player, 0);
+        h.assertTrue(alembic.ledger() == null && alembic.fuelCharges() == 0
+                && alembic.inventory().getStackInSlot(FUEL).getCount() == 1, "no charge, no fuel spent, nothing reserved");
+        h.assertTrue(TestSupport.count(alembic, INPUT, AlembicBlockEntity.INPUT_SIZE, Items.POTION) == 3, "the bottles stay in the rack");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 1600)
+    public static void collectingEverythingEarnsLessThanRoutingTheHeart(GameTestHelper h) {
+        AlembicBlockEntity careful = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
+        FakePlayer player = TestSupport.player(h, "Careless");
+        TestSupport.openAlembic(player, careful);
+        careful.startPurification(player, 0);
+        TestSupport.driveAlembic(h, player, com.otectus.immersivebrewing.testing.AlembicTender.sloppy());
+        h.succeedWhen(() -> {
+            h.assertTrue(careful.ledger() == null, "still distilling");
+            int d = careful.lastResult().control();
+            h.assertTrue(d < 80, "collecting cloudy and hazy condensate lowers the purification: D " + d);
+            h.assertTrue(count(outputs(careful, Items.POTION)) == 2, "the yield is the recipe's, whatever the routing");
+        });
     }
 
     @GameTest(template = "empty", timeoutTicks = 1800)
@@ -218,14 +249,14 @@ public final class AlembicGameTests {
         AlembicBlockEntity alembic = load(h, 1, copies(graded(Potions.STRENGTH, 40, 0), 3));
         FakePlayer player = purify(h, alembic, "Paused");
         h.runAfterDelay(140, () -> {
-            SessionManager.leave(player, TestSupport.session(player).orElseThrow().id(), "session.immersive_brewing.end.closed");
+            TestSupport.seal(player);
             h.assertTrue(alembic.ledger() != null && alembic.ledger().state() == JobState.SEALED, "sealed");
             h.assertTrue(count(outputs(alembic, Items.POTION)) == 0 && alembic.ledger().inputs().size() == 3, "nothing issued, all three held");
             alembic.handleAction(player, StationActionC2S.Action.START_RECLAMATION, 0);
             h.assertTrue(alembic.ledger().operation() == Operation.PURIFY, "no other job can start on a sealed Alembic");
             TestSupport.openAlembic(player, alembic);
             alembic.resume(player);
-            h.assertTrue(TestSupport.session(player).isPresent(), "resumed");
+            h.assertTrue(TestSupport.working(player), "resumed");
         });
         h.succeedWhen(() -> {
             h.assertTrue(alembic.ledger() == null, "still distilling");
@@ -252,7 +283,7 @@ public final class AlembicGameTests {
             h.assertTrue(TestSupport.use(player, fresh, batches.get(0).copy()).isEmpty(), "installed");
             TestSupport.openAlembic(player, fresh);
             fresh.resume(player);
-            h.assertTrue(TestSupport.session(player).isPresent(), "resumed at the new Alembic");
+            h.assertTrue(TestSupport.working(player), "resumed at the new Alembic");
         });
         h.succeedWhen(() -> {
             AlembicBlockEntity fresh = (AlembicBlockEntity) h.getLevel().getBlockEntity(h.absolutePos(STATION));

@@ -45,6 +45,16 @@ import com.otectus.immersivebrewing.session.SessionKind;
 import com.otectus.immersivebrewing.session.SessionManager;
 import com.otectus.immersivebrewing.session.SimHandle;
 import com.otectus.immersivebrewing.session.SimHandles;
+import com.otectus.immersivebrewing.interaction.WorkshopIntent;
+import com.otectus.immersivebrewing.interaction.WorkshopResult;
+import com.otectus.immersivebrewing.workshop.FinishingProcess;
+import com.otectus.immersivebrewing.workshop.KettleProcess;
+import com.otectus.immersivebrewing.workshop.ToolTrack;
+import com.otectus.immersivebrewing.workshop.WorkshopKind;
+import com.otectus.immersivebrewing.workshop.WorkshopPart;
+import com.otectus.immersivebrewing.workshop.WorkshopParts;
+import com.otectus.immersivebrewing.workshop.WorkshopProfile;
+import com.otectus.immersivebrewing.workshop.WorkshopProfiles;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -118,6 +128,18 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     private LazyOptional<IFluidHandler> fluid = LazyOptional.of(WaterHandler::new);
     private long lastLineage;
 
+    // ---- hands-on workshop (server transient; the ledger's process payload is authoritative when saved) ----
+    @Nullable
+    private KettleProcess process;
+    @Nullable
+    private FinishingProcess finishingProcess;
+    private final ToolTrack paddleTrack = new ToolTrack(WorkshopParts.KETTLE_HX, WorkshopParts.KETTLE_HZ);
+    private int pourQueue;
+    private int fillQueue;
+    private int queueCooldown;
+    @Nullable
+    private java.util.UUID lastActor;
+
     public BrewersKettleBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.BREWERS_KETTLE.get(), pos, state, SLOTS);
     }
@@ -173,7 +195,8 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         if (level != null && level.isClientSide) {
             return view.controller() != null || view.state() == JobState.RESERVED || view.state() == JobState.RUNNING;
         }
-        // A resumed count-in still has a SEALED ledger, but already owns the paddle through its controller lock.
+        // A resumed count-in still has a SEALED ledger, but already owns the paddle through its controller lock. A running
+        // hands-on batch reserves its paddle too (a sealed one allows maintenance, as before).
         return ledger != null && (ledger.state() == JobState.RESERVED || ledger.state() == JobState.RUNNING
                 || SessionManager.stationBusy(this));
     }
@@ -190,7 +213,7 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     protected boolean automationExtract(@Nullable Direction side, int slot) {
         if (side != null && side != Direction.DOWN) return false;
         if (isByproduct(slot)) return true;
-        return isRack(slot) && ledger == null && finished[slot];
+        return isRack(slot) && finished[slot] && (ledger == null || !reservedRackSlot(slot - RACK));
     }
 
     @Override
@@ -304,12 +327,11 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         List<PlanListS2C.Step> steps=new ArrayList<>();
         for(BrewPlan.Step s:plan.steps()) steps.add(new PlanListS2C.Step(s.reagent(),s.spec().phase(),s.spec().role(),s.after().copy()));
         KettleSetup.Plan setup=setupPlan(plan,servings,BrewingDefinitions.server());
-        KettleParams params=KettleSetup.build(setup,0,ServerConfig.get(ServerConfig.MAX_BREW_DURATION_SECONDS),KettleSetup.Assist.NONE);
         boolean ready=check.missing()==null && hasPaddle() && rack().problem()==null && rack().servings()==servings;
         boolean finishReady = finishing && check.missing()==null && rack(true).problem()==null && rack(true).servings()==servings;
         return new PlanListS2C.Entry(plan.key(),plan.output().copy(),steps,check.costs(),check.fuelNeeded(),check.fuelAvailable(),
                 check.remainders(),ready,check.missing(),plan.contextual(),KettleSetup.tier(setup),
-                Math.round(params.totalSteps()/20F),PotionContentsService.durationCanScale(plan.output(),BrewingDefinitions.server()),plan.servingLimit(),expectedExtraction(plan,servings),
+                estimateSeconds(plan,BrewingDefinitions.server()),PotionContentsService.durationCanScale(plan.output(),BrewingDefinitions.server()),plan.servingLimit(),expectedExtraction(plan,servings),
                 finishing ? ServerConfig.get(ServerConfig.FINISHING_SECONDS) : 0, finishReady);
     }
 
@@ -381,7 +403,7 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         return choice != null && choice.value().preparation() != null;
     }
 
-    private boolean hasPaddle() {
+    public boolean hasPaddle() {
         ItemStack paddle = inventory.getStackInSlot(PADDLE);
         return paddle.is(ModTags.BREWING_PADDLES) && (!paddle.isDamageableItem() || paddle.getDamageValue() < paddle.getMaxDamage());
     }
@@ -431,12 +453,11 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
                 for (BrewPlan.Step s : plan.steps()) steps.add(new PlanListS2C.Step(s.reagent(), s.spec().phase(), s.spec().role(), s.after().copy()));
                 KettleSetup.Plan setup = setupPlan(plan, rack.servings(), BrewingDefinitions.server());
                 int tier = KettleSetup.tier(setup);
-                KettleParams params = KettleSetup.build(setup, 0, ServerConfig.get(ServerConfig.MAX_BREW_DURATION_SECONDS), KettleSetup.Assist.NONE);
                 boolean effects = AdapterRegistry.getAny(plan.steps().get(plan.steps().size() - 1).adapter()) != null
                         && AdapterRegistry.getAny(plan.steps().get(plan.steps().size() - 1).adapter()).contentsPolicy(plan.output()) == BrewingAdapter.ContentsPolicy.EFFECTS;
                 entries.add(new PlanListS2C.Entry(plan.key(), plan.output().copy(), steps, check.costs(), check.fuelNeeded(), check.fuelAvailable(),
                         check.remainders(), check.missing() == null, check.missing(), plan.contextual(), tier,
-                        Math.round(params.totalSteps() / 20F), effects, plan.servingLimit(), expectedExtraction(plan, rack.servings())));
+                        estimateSeconds(plan, BrewingDefinitions.server()), effects, plan.servingLimit(), expectedExtraction(plan, rack.servings())));
             }
         }
         ModNetwork.sendTo(player, new PlanListS2C(worldPosition, rack.input(), rack.servings(), rack.problem(), entries));
@@ -610,14 +631,15 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         KettleSetup.Assist approved = assist ? new KettleSetup.Assist(Math.min(assistTime, ServerConfig.get(ServerConfig.MAX_ASSIST_TIME_MULTIPLIER)),
                 Math.min(assistBand, ServerConfig.get(ServerConfig.MAX_ASSIST_BAND_MULTIPLIER))) : KettleSetup.Assist.NONE;
         long seed = ((ServerLevel) level).getRandom().nextLong();
-        KettleParams params = KettleSetup.build(setupPlan(plan, rack.servings(), defs), seed, ServerConfig.get(ServerConfig.MAX_BREW_DURATION_SECONDS), approved);
 
         // ---- reserve: every owned stack moves into the ledger in this one transition ----
         List<ItemStack> bottles = new ArrayList<>();
+        List<Integer> rackSlots = new ArrayList<>();
         for (int i = 0; i < RACK_SIZE; i++) {
             ItemStack s = inventory.getStackInSlot(RACK + i);
             if (s.isEmpty()) continue;
             bottles.add(s.copy());
+            rackSlots.add(i);
             putDirect(RACK + i, ItemStack.EMPTY);
         }
         List<SlotStack> reserved = new ArrayList<>();
@@ -663,17 +685,62 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
 
         BrewingMetadata inputMeta = BrewingMetadata.read(bottles.get(0)).orElse(null);
         if (inputMeta != null) snapshot.put("inputMeta", inputMeta.toTag());
-        if(finishing) snapshot.putInt("duration",20*ServerConfig.get(ServerConfig.FINISHING_SECONDS));
-        ledger = new JobLedger(java.util.UUID.randomUUID(), finishing?Operation.FINISH:Operation.BREW, finishing?JobState.RUNNING:JobState.RESERVED, bottles, reserved, needed, snapshot,
-                plan.output().copy(), params.encode(), new long[0], seed, selection.extraction(), player.getUUID(),
+        int[] slots = rackSlots.stream().mapToInt(Integer::intValue).toArray();
+        CompoundTag process;
+        if (finishing) {
+            process = FinishingProcess.begin(plan.steps().size(), slots, ServerConfig.get(ServerConfig.FINISHING_SECONDS)).save();
+        } else {
+            var resolved = WorkshopProfiles.brewing(plan.brewProfile(), defs);
+            snapshot.putString("workshopProfile", resolved.source());
+            snapshot.putBoolean("workshopFallback", resolved.fallback());
+            process = KettleProcess.begin(kettleSetup(plan, resolved.value(), defs, approved.band()), slots, player.getUUID()).save();
+        }
+        ledger = new JobLedger(java.util.UUID.randomUUID(), finishing ? Operation.FINISH : Operation.BREW, JobState.RUNNING, bottles, reserved, needed,
+                snapshot, plan.output().copy(), new long[0], new long[0], seed, selection.extraction(), player.getUUID(),
                 player.getGameProfile().getName(), List.of(), null, 0, defs.generation(), newLineage());
+        ledger.setProcess(process);
+        this.process = null;
+        this.finishingProcess = null;
+        paddleTrack.reset();
+        leases.clear();
         changed();
-
-        if(finishing) { notice(player,Component.translatable("finishing.immersive_brewing.started"),false); return; }
-
-        SimHandle sim = SimHandles.create(SessionKind.BREWING, ledger.params(), null);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, ledger.jobId(), 0, 0, 0);
+        notice(player, Component.translatable(finishing ? "finishing.immersive_brewing.started" : "workshop.immersive_brewing.kettle.set_out",
+                bottles.size(), plan.output().getHoverName()), false);
+        // The book closes; the player works at the apparatus. Their working view (re)opens on this kettle.
         player.closeContainer();
-        SessionManager.begin(player, this, sim, false, display(plan.output(), plan, approved));
+        openWorkingView(player);
+    }
+
+    /**
+     * The physical setup for a plan (handoff 13): the reaction family and temperature bands from the workshop profile
+     * (or the translated brew profile), each step's cooling and trouble from its reagent profile. An approved
+     * assistance request only widens the temperature tolerances around the same centre; the attainable score is the
+     * same with or without it.
+     */
+    public static KettleProcess.Setup kettleSetup(BrewPlan plan, WorkshopProfile.Brewing brewing, BrewingDefinitions defs, double assistBand) {
+        int n = Math.min(KettleProcess.MAX_STEPS, plan.steps().size());
+        double[] cooling = new double[n];
+        double[] kick = new double[n];
+        for (int i = 0; i < n; i++) {
+            BrewPlan.Step s = plan.steps().get(i);
+            ProfileSelector.Choice<ReagentProfile> choice = defs.reagentProfile(s.reagent(), s.source(), s.spec().preparationProfile());
+            ReagentProfile.Reaction reaction = choice != null ? choice.value().reaction() : ReagentProfile.Reaction.DEFAULT;
+            cooling[i] = reaction.additionCooling();
+            kick[i] = Math.min(1, brewing.family().kick * reaction.sensitivity());
+        }
+        double widen = Math.max(1.0, Math.min(1.25, assistBand));
+        double centre = (brewing.idealLow() + brewing.idealHigh()) / 2;
+        double half = (brewing.idealHigh() - brewing.idealLow()) / 2 * widen;
+        double workHalfLow = (centre - brewing.workLow()) * widen, workHalfHigh = (brewing.workHigh() - centre) * widen;
+        return new KettleProcess.Setup(brewing.family(), centre - half, centre + half, centre - workHalfLow, centre + workHalfHigh,
+                brewing.inertia(), brewing.stepSeconds(), brewing.restSeconds(), cooling, kick, plan.brewProfile().toString(), defs.generation());
+    }
+
+    /** A rough active-work estimate for the plan list, in seconds (a playtest target, never a promise). */
+    public static int estimateSeconds(BrewPlan plan, BrewingDefinitions defs) {
+        var brewing = WorkshopProfiles.brewing(plan.brewProfile(), defs).value();
+        return (int) Math.round(6 + plan.steps().size() * (brewing.stepSeconds() + 2) + brewing.restSeconds() + 3);
     }
 
     private CompoundTag display(ItemStack output, @Nullable BrewPlan plan, KettleSetup.Assist assist) {
@@ -683,6 +750,12 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
             tag.putInt("servings", ledger.inputs().size());
             tag.putInt("extraction", ledger.extraction());
             tag.putString("profile", ledger.snapshot().getString("profile"));
+            tag.putIntArray("stageColors", StationPresentations.stageColors(ledger));
+            ListTag stages = new ListTag();
+            for (var entry : ledger.snapshot().getList("steps", Tag.TAG_COMPOUND)) {
+                if (entry instanceof CompoundTag step) stages.add(step.getCompound("after").copy());
+            }
+            tag.put("stageDisplays", stages);
             if (!ledger.inputs().isEmpty()) tag.put("input", LedgerCodec.saveStack(ledger.inputs().get(0).copyWithCount(1)));
         }
         tag.putFloat("assistTime", (float) assist.time());
@@ -696,9 +769,18 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         switch (action) {
             case REQUEST_PLANS -> com.otectus.immersivebrewing.recipe.CatalogSearch.submit(player,
                     new com.otectus.immersivebrewing.network.packet.CatalogQueryC2S(worldPosition,0,"",List.of(),0,0,false,3));
-            case RESUME -> resume(player);
+            case RESUME -> {
+                if (ledger != null && ledger.physical()) {
+                    WorkshopResult r = unsealPhysical(player);
+                    if (r.reason() != null) notice(player, r.reason(), true);
+                    player.closeContainer();
+                    openWorkingView(player);
+                } else resume(player);
+            }
             case CANCEL_PASSIVE -> {
-                if(ledger!=null&&ledger.operation()==Operation.FINISH) {
+                if (ledger != null && ledger.physical()) {
+                    sealPhysical(player, "workshop.immersive_brewing.seal.manual");
+                } else if(ledger!=null&&ledger.operation()==Operation.FINISH) {
                     ledger.setState(ledger.state()==JobState.RUNNING?JobState.SEALED:ledger.state()); changed();
                 }
             }
@@ -708,6 +790,12 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
 
     /** Resumes a sealed brew with its stored state and seed (spec 20.4: count-in, held input neutral, no reroll). */
     public void resume(ServerPlayer player) {
+        if (ledger != null && ledger.physical()) {
+            // A hands-on batch never enters the legacy session: reopening it is an unseal at the apparatus.
+            WorkshopResult r = unsealPhysical(player);
+            if (r.reason() != null) notice(player, r.reason(), true);
+            return;
+        }
         revalidateRecovery();
         if(ledger!=null&&ledger.operation()==Operation.FINISH&&ledger.state()==JobState.SEALED) {
             String problem=recoveryProblem();
@@ -766,6 +854,18 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     @Override
     public void revalidateRecovery() {
         if (ledger == null || ledger.operation() != Operation.BREW && ledger.operation()!=Operation.FINISH || ledger.unknownSchema() != null) return;
+        if (ledger.physical() && ledger.operation() == Operation.BREW) {
+            KettleProcess live = liveProcess();
+            if (live != null && live.finalized()) {
+                // The outputs are final: only a full rack can hold bottling up, and it never needs the adapters again.
+                if (ledger.state() == JobState.RECOVERY && ledger.recoveryReason() != null && ledger.recoveryReason().startsWith("recovery.immersive_brewing.adapter")) {
+                    ledger.clearRecovery();
+                    ledger.setState(JobState.SEALED);
+                    changed();
+                }
+                return;
+            }
+        }
         String problem = recoveryProblem();
         if(ledger.operation()==Operation.FINISH&&ledger.state()==JobState.RECOVERY
                 &&"recovery.immersive_brewing.output_blocked".equals(ledger.recoveryReason())&&byproductRoom(ledgerRemainders(ledger))) {
@@ -787,6 +887,12 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         if (ledger == null) return;
         JobLedger l = ledger;
         ledger = null;
+        process = null;
+        finishingProcess = null;
+        pourQueue = fillQueue = 0;
+        paddleTrack.reset();
+        leases.clear();
+        markWorkshopDirty(true);
         int slot = RACK;
         for (ItemStack bottle : l.inputs()) {
             while (slot < RACK + RACK_SIZE && !inventory.getStackInSlot(slot).isEmpty()) slot++;
@@ -913,7 +1019,7 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         lastResult = new StationResult(Operation.BREW, shown, servings, meta.quality(), meta.extraction(), score.control(), tip.key(),
                 tip.args(), l.brewerName());
         changed();
-        if (level != null) level.playSound(null, worldPosition, ModSounds.BREW_COMPLETE.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), sim.step(), 0, 0);
 
         MinecraftForge.EVENT_BUS.post(new BrewResultEvent.Post(player, worldPosition, shown, servings, meta.extraction(), score.control(), meta.quality()));
         CompoundTag result = resultTag(score, meta, outcome, shown, servings, l);
@@ -1016,8 +1122,8 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     @Override
     public void serverTick() {
         super.serverTick();
-        if(ledger!=null&&ledger.operation()==Operation.FINISH&&ledger.state()==JobState.RECOVERY&&level!=null&&level.getGameTime()%20==0) revalidateRecovery();
-        if(ledger==null||ledger.operation()!=Operation.FINISH||ledger.state()!=JobState.RUNNING) return;
+        if(ledger!=null&&ledger.state()==JobState.RECOVERY&&level!=null&&level.getGameTime()%20==0) revalidateRecovery();
+        if(ledger==null||ledger.operation()!=Operation.FINISH||ledger.state()!=JobState.RUNNING||ledger.physical()) return;
         long done=ledger.simState().length==0?1:ledger.simState()[0]+1;
         ledger.setSimState(new long[]{done}); setChanged();
         int duration=Math.max(1,ledger.snapshot().getInt("duration"));
@@ -1057,7 +1163,7 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         for(int i=0;i<outputs.size();i++) { putDirect(RACK+i,outputs.get(i)); finished[RACK+i]=true; }
         for(ItemStack remainder:returns) addByproduct(remainder);
         setVisual(StationVisual.IDLE); changed();
-        if(level!=null) level.playSound(null,worldPosition,ModSounds.BREW_COMPLETE.get(),SoundSource.BLOCKS,.8F,1F);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), 0, 0, 0);
         // Finishing grants no brewing score, milestone, XP, or replayable completion event.
     }
 
@@ -1097,7 +1203,7 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
                 return InteractionResult.CONSUME;
             }
             if (!player.getAbilities().instabuild) player.setItemInHand(hand, new ItemStack(Items.BUCKET));
-            level.playSound(null, worldPosition, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.WATER, StationVisual.NONE, 0, 0, 0);
             return InteractionResult.CONSUME;
         }
         if (held.getItem() instanceof BatchCarrierItem) {
@@ -1146,6 +1252,12 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
         if (ledger != null) {
             if(ledger.operation()==Operation.FINISH&&ledger.state()==JobState.RUNNING) return Component.translatable("finishing.immersive_brewing.progress",
                     ledger.simState().length==0?0:Math.min(100,100*ledger.simState()[0]/Math.max(1,ledger.snapshot().getInt("duration"))));
+            if (ledger.physical() && ledger.state() == JobState.RUNNING) {
+                if (ledger.operation() == Operation.FINISH) return Component.translatable("status.immersive_brewing.kettle.finishing_physical");
+                KettleProcess live = liveProcess();
+                if (live != null) return Component.translatable("status.immersive_brewing.kettle.stage." + live.stage().name().toLowerCase(java.util.Locale.ROOT),
+                        Component.translatable("heat.immersive_brewing.band." + KettleProcess.heatBand(live.temperature())));
+            }
             return switch (ledger.state()) {
                 case RESERVED -> Component.translatable("status.immersive_brewing.kettle.reserved");
                 case RUNNING -> Component.translatable("status.immersive_brewing.kettle.running");
@@ -1178,6 +1290,10 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
 
     @Override
     protected boolean litNow() {
+        if (ledger != null && ledger.physical()) {
+            KettleProcess live = ledger.operation() == Operation.BREW ? liveProcess() : null;
+            return ledger.state() == JobState.RUNNING && live != null && live.burner() > 0;
+        }
         return ledger != null && (ledger.state() == JobState.RUNNING || ledger.state() == JobState.RESERVED);
     }
 
@@ -1192,6 +1308,808 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     @Override
     public AbstractContainerMenu createMenu(int id, Inventory inventory, Player player) {
         return new KettleMenu(id, inventory, worldPosition);
+    }
+
+    // ---- hands-on workshop ----
+
+    @Override
+    public WorkshopKind workshopKind() {
+        return WorkshopKind.KETTLE;
+    }
+
+    /** The live brewing process, decoded on first use; null (and the job held) when its payload can not be read. */
+    @Nullable
+    public KettleProcess liveProcess() {
+        if (ledger == null || !ledger.physical() || ledger.operation() != Operation.BREW) return null;
+        if (process == null) {
+            try {
+                process = KettleProcess.load(ledger.process());
+            } catch (RuntimeException e) {
+                // Never overwrite a payload we can not read: hold it as it is.
+                if (ledger.state() != JobState.RECOVERY) {
+                    ledger.hold("recovery.immersive_brewing.process_unreadable");
+                    changed();
+                }
+                return null;
+            }
+        }
+        return process;
+    }
+
+    @Nullable
+    private FinishingProcess liveFinishing() {
+        if (ledger == null || !ledger.physical() || ledger.operation() != Operation.FINISH) return null;
+        if (finishingProcess == null) {
+            try {
+                finishingProcess = FinishingProcess.load(ledger.process());
+            } catch (RuntimeException e) {
+                if (ledger.state() != JobState.RECOVERY) {
+                    ledger.hold("recovery.immersive_brewing.process_unreadable");
+                    changed();
+                }
+                return null;
+            }
+        }
+        return finishingProcess;
+    }
+
+    @Override
+    protected void flushProcess() {
+        if (ledger == null || !ledger.physical()) return;
+        if (process != null && ledger.operation() == Operation.BREW) ledger.setProcess(process.save());
+        if (finishingProcess != null && ledger.operation() == Operation.FINISH) ledger.setProcess(finishingProcess.save());
+    }
+
+    private boolean reservedRackSlot(int rackIndex) {
+        KettleProcess live = liveProcess();
+        if (live != null) return live.portionAtSlot(rackIndex) >= 0;
+        FinishingProcess f = liveFinishing();
+        if (f != null) for (int s : f.slots()) if (s == rackIndex) return true;
+        return false;
+    }
+
+    @Override
+    protected List<java.util.UUID> workshopParticipants() {
+        KettleProcess live = liveProcess();
+        if (live != null) return live.participants();
+        if (ledger != null && ledger.brewerId() != null) {
+            List<java.util.UUID> ids = new ArrayList<>();
+            ids.add(ledger.brewerId());
+            if (lastActor != null && !lastActor.equals(ledger.brewerId())) ids.add(lastActor);
+            return ids;
+        }
+        return List.of();
+    }
+
+    @Override
+    protected void participate(ServerPlayer player) {
+        lastActor = player.getUUID();
+        KettleProcess live = liveProcess();
+        if (live != null) live.participate(player.getUUID());
+        if (ledger != null && !player.getUUID().equals(ledger.brewerId())) ledger.addAssistant(player.getGameProfile().getName());
+    }
+
+    @Override
+    protected void onPhysicalSealed() {
+        KettleProcess live = liveProcess();
+        if (live != null) live.seal();
+        paddleTrack.reset();
+        pourQueue = fillQueue = 0;
+    }
+
+    @Override
+    protected void onLeasesLapsed() {
+        if (level != null && leases.holder(WorkshopParts.K_PADDLE, level.getGameTime()) == null) paddleTrack.reset();
+    }
+
+    @Override
+    @Nullable
+    protected String physicalResumeProblem() {
+        if (ledger != null && ledger.operation() == Operation.BREW) {
+            KettleProcess live = liveProcess();
+            if (live == null) return "recovery.immersive_brewing.process_unreadable";
+            if (!live.finalized()) {
+                String problem = recoveryProblem();
+                if (problem != null) return problem;
+                if (!hasPaddle()) return "plan.immersive_brewing.missing.paddle";
+            }
+        }
+        return null;
+    }
+
+    @Override
+    protected void resumeLegacy(ServerPlayer player) {
+        resume(player);
+    }
+
+    @Override
+    protected void physicalStep(long now) {
+        if (ledger == null) return;
+        if (ledger.operation() == Operation.FINISH) {
+            FinishingProcess f = liveFinishing();
+            if (f == null) return;
+            f.tick();
+            if (f.done()) completeFinishingPhysical(f);
+            markWorkshopDirty(false);
+            return;
+        }
+        KettleProcess p = liveProcess();
+        if (p == null) return;
+        if (queueCooldown > 0) {
+            queueCooldown--;
+        } else if (pourQueue > 0) {
+            int next = -1;
+            for (int i = 0; i < p.portions() && next < 0; i++) if (p.portion(i) == KettleProcess.Portion.STAGED) next = i;
+            if (next >= 0 && p.pour(next)) {
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.POUR, ledger.jobId(), (int) p.ticks(), p.slotOf(next), 0);
+                markWorkshopDirty(true);
+            }
+            pourQueue = next < 0 ? 0 : pourQueue - 1;
+            queueCooldown = 6;
+        } else if (fillQueue > 0) {
+            int next = -1;
+            for (int i = 0; i < p.portions() && next < 0; i++) if (p.portion(i) == KettleProcess.Portion.READY) next = i;
+            if (next < 0 || fill(null, next) != WorkshopResult.ACCEPTED) fillQueue = 0;
+            else fillQueue--;
+            queueCooldown = 8;
+            if (ledger == null) return;
+        }
+        boolean paddleHeld = leases.holder(WorkshopParts.K_PADDLE, now) != null;
+        double stir = paddleHeld ? paddleTrack.take(now) : 0;
+        p.tick(stir, paddleTrack.broadness());
+        if (p.readyToFinalize()) finalizeBrew(p);
+        markWorkshopDirty(false);
+    }
+
+    /**
+     * Chemical completion (handoff 14): replays every committed step through its adapter for every serving, checks the
+     * results against the plan snapshot, freezes quality, fires the result events and awards completion once, and only
+     * then exposes ready servings for bottling. A veto or a changed recipe holds the batch without debiting anything.
+     */
+    private void finalizeBrew(KettleProcess p) {
+        JobLedger l = ledger;
+        if (l == null || p.finalized()) return;
+        String problem = recoveryProblem();
+        if (problem != null) {
+            holdPhysical(problem);
+            return;
+        }
+        ListTag steps = l.snapshot().getList("steps", Tag.TAG_COMPOUND);
+        List<ItemStack> ingredients = new ArrayList<>();
+        int cursor = 0;
+        for (int i = 0; i < steps.size(); i++) {
+            int units = steps.getCompound(i).getInt("units");
+            if (units <= 0 || cursor >= l.reserved().size()) {
+                holdPhysical("recovery.immersive_brewing.reagents_missing");
+                return;
+            }
+            ItemStack reagent = l.reserved().get(cursor).stack();
+            ingredients.add(KitData.read(reagent).map(KitData::source).orElse(reagent).copyWithCount(1));
+            cursor += units;
+        }
+        List<ItemStack> outputs = new ArrayList<>();
+        for (ItemStack bottle : l.inputs()) {
+            ItemStack state = PotionContentsService.canonical(bottle).copyWithCount(1);
+            for (int i = 0; i < steps.size(); i++) {
+                CompoundTag st = steps.getCompound(i);
+                BrewingAdapter adapter = AdapterRegistry.get(new ResourceLocation(st.getString("adapter")), BrewingDefinitions.server());
+                ItemStack expected = LedgerCodec.loadStack(st.getCompound("after"));
+                ItemStack result = adapter == null ? ItemStack.EMPTY : adapter.commit(state, ingredients.get(i));
+                if (!result.isEmpty()) result = preserveContainerStep(st, state, ingredients.get(i), result);
+                if (result.isEmpty() || !PotionContentsService.sameCanonical(result, expected)) {
+                    holdPhysical("recovery.immersive_brewing.source_changed");
+                    return;
+                }
+                state = result;
+            }
+            outputs.add(state);
+        }
+        if (outputs.size() != p.portions()) {
+            holdPhysical("recovery.immersive_brewing.state_unreadable");
+            return;
+        }
+        boolean createsEffect = false;
+        for (int i = 0; i < steps.size(); i++) createsEffect |= steps.getCompound(i).getBoolean("effect");
+        BrewingMetadata inputMeta = l.snapshot().contains("inputMeta", Tag.TAG_COMPOUND)
+                ? BrewingMetadata.fromTag(l.snapshot().getCompound("inputMeta")).orElse(null) : null;
+        ItemStack canonicalInput = PotionContentsService.canonical(l.inputs().get(0));
+        int control = p.finalizeControl();
+        QualityInheritance.Outcome outcome = QualityInheritance.brew(canonicalInput, inputMeta, createsEffect, l.extraction(), control,
+                l.lineage(), l.brewerId(), l.brewerName());
+        int servings = outputs.size();
+        ServerPlayer actor = actingPlayer(l);
+        BrewResultEvent.Pre pre = new BrewResultEvent.Pre(actor, worldPosition, outputs.get(0), servings, outcome.metadata().extraction(),
+                control, outcome.metadata().quality());
+        if (MinecraftForge.EVENT_BUS.post(pre)) {
+            holdPhysical("recovery.immersive_brewing.vetoed");
+            return;
+        }
+        BrewingMetadata meta = outcome.metadata();
+        if (pre.quality() < meta.quality()) meta = meta.withScores(meta.extraction(), meta.control(), pre.quality());
+
+        // ---- the transition: the servings become their finished stacks, still owned by the batch until bottled ----
+        List<ItemStack> remainders = ledgerRemainders(l);
+        for (int i = 0; i < outputs.size(); i++) {
+            ItemStack out = outputs.get(i);
+            BrewingMetadata.write(out, meta);
+            l.inputs().set(i, out);
+        }
+        l.reserved().clear(); // consumed by the reaction; their containers are paid below, exactly once
+        p.markFinalized();
+        for (ItemStack remainder : remainders) addByproduct(remainder);
+        wearPaddle();
+        lastLineage = meta.lineage();
+        ItemStack shown = outputs.get(0).copyWithCount(1);
+        String tip = p.tipKey();
+        lastResult = new StationResult(Operation.BREW, shown, servings, meta.quality(), meta.extraction(), control, tip, List.of(), l.brewerName());
+        flushProcess();
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), (int) p.ticks(), 0, 0);
+        markWorkshopDirty(true);
+
+        MinecraftForge.EVENT_BUS.post(new BrewResultEvent.Post(actor, worldPosition, shown, servings, meta.extraction(), control, meta.quality()));
+        CompoundTag result = physicalResultTag(p, meta, outcome, shown, servings, l, control, tip);
+        if (actor != null) {
+            ModAdvancements.milestone(actor, Milestone.FIRST_BREW);
+            if (meta.grade().ordinal() >= Grade.FINE.ordinal()) ModAdvancements.milestone(actor, Milestone.FINE_BATCH);
+            if (meta.grade() == Grade.MASTERWORK) ModAdvancements.milestone(actor, Milestone.MASTERWORK_BATCH);
+            if (servings >= 6) ModAdvancements.milestone(actor, Milestone.SIX_SERVINGS);
+            PlayerGuide.recordResult(actor, result);
+            int xp = ServerConfig.get(ServerConfig.COMPLETION_EXPERIENCE);
+            if (xp > 0 && level instanceof ServerLevel sl) ExperienceOrb.award(sl, actor.position(), xp);
+            notice(actor, Component.translatable("workshop.immersive_brewing.kettle.ready", servings, shown.getHoverName(),
+                    Component.translatable(meta.grade().key()), Component.translatable(tip)), false);
+        }
+    }
+
+    /** The player credited with completing this step of work: the last productive actor nearby, else the brewer. */
+    @Nullable
+    private ServerPlayer actingPlayer(JobLedger l) {
+        if (level == null || level.getServer() == null) return null;
+        if (lastActor != null) {
+            ServerPlayer p = com.otectus.immersivebrewing.interaction.WorkshopPresence.player(level.getServer(), lastActor);
+            if (p != null && p.level() == level) return p;
+        }
+        return l.brewerId() == null ? null : com.otectus.immersivebrewing.interaction.WorkshopPresence.player(level.getServer(), l.brewerId());
+    }
+
+    private void holdPhysical(String reason) {
+        if (ledger == null) return;
+        flushProcess();
+        leases.clear();
+        ledger.hold(reason);
+        changed();
+        markWorkshopDirty(true);
+    }
+
+    private CompoundTag physicalResultTag(KettleProcess p, BrewingMetadata meta, QualityInheritance.Outcome outcome, ItemStack output, int servings,
+                                          JobLedger l, int control, String tip) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("kind", "brewing");
+        tag.putString("plan", l.snapshot().getString("plan"));
+        tag.putString("profile", l.snapshot().getString("profile"));
+        tag.putString("workshopProfile", l.snapshot().getString("workshopProfile"));
+        tag.put("input", l.snapshot().getList("steps", Tag.TAG_COMPOUND).getCompound(0).getCompound("before").copy());
+        tag.put("output", LedgerCodec.saveStack(output));
+        tag.putInt("count", servings);
+        tag.putInt("E", meta.extraction());
+        tag.putInt("C", control);
+        tag.putInt("Q", meta.quality());
+        tag.putInt("candidate", outcome.candidate());
+        tag.putBoolean("capped", outcome.capped());
+        tag.putDouble("thermal", p.thermal());
+        tag.putDouble("circulation", p.incorporation());
+        tag.putDouble("dosing", p.dosing());
+        tag.putString("tip", tip);
+        tag.put("tipArgs", new ListTag());
+        tag.putInt("resumes", l.resumes());
+        tag.putBoolean("physical", true);
+        ListTag assistants = new ListTag();
+        for (String a : l.assistants()) assistants.add(StringTag.valueOf(a));
+        tag.put("assistants", assistants);
+        return tag;
+    }
+
+    /**
+     * Fills one reserved bottle from a ready serving (handoff 7, 14): the finished stack moves into its own rack
+     * position, the rest stay owned by the batch. An occupied position refuses without debiting anything; the last fill
+     * closes the batch.
+     */
+    private WorkshopResult fill(@Nullable ServerPlayer player, int portion) {
+        KettleProcess p = liveProcess();
+        if (p == null || ledger == null || !p.finalized()) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.not_ready");
+        if (portion < 0 || portion >= p.portions() || p.portion(portion) != KettleProcess.Portion.READY) return WorkshopResult.IGNORED;
+        int slot = RACK + p.slotOf(portion);
+        if (!inventory.getStackInSlot(slot).isEmpty()) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.slot_occupied");
+        if (portion >= ledger.inputs().size()) return WorkshopResult.IGNORED;
+        ItemStack out = ledger.inputs().remove(portion);
+        p.removePortion(portion);
+        putDirect(slot, out);
+        finished[slot] = true;
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.FILL, ledger.jobId(), (int) p.ticks(), slot - RACK, 0);
+        if (p.portions() == 0) {
+            closePhysical();
+        } else {
+            flushProcess();
+            changed();
+        }
+        markWorkshopDirty(true);
+        return WorkshopResult.ACCEPTED;
+    }
+
+    /** Ends a job whose every serving was bottled: the ledger closes, the rack holds ordinary finished stacks. */
+    private void closePhysical() {
+        ledger = null;
+        process = null;
+        finishingProcess = null;
+        pourQueue = fillQueue = 0;
+        paddleTrack.reset();
+        leases.clear();
+        setVisual(StationVisual.IDLE);
+        changed();
+        markWorkshopDirty(true);
+    }
+
+    /** Container finishing commit: QuickFinishing's proof per bottle, each back to its own rack position. */
+    private void completeFinishingPhysical(FinishingProcess f) {
+        JobLedger l = ledger;
+        if (l == null) return;
+        String problem = recoveryProblem();
+        if (problem != null) {
+            holdPhysical(problem);
+            return;
+        }
+        ListTag steps = l.snapshot().getList("steps", Tag.TAG_COMPOUND);
+        List<ItemStack> outputs = new ArrayList<>();
+        for (ItemStack original : l.inputs()) {
+            ItemStack state = original.copyWithCount(1);
+            int cursor = 0;
+            for (int i = 0; i < steps.size(); i++) {
+                CompoundTag step = steps.getCompound(i);
+                if (cursor >= l.reserved().size()) {
+                    holdPhysical("recovery.immersive_brewing.reagents_missing");
+                    return;
+                }
+                ItemStack held = l.reserved().get(cursor).stack();
+                cursor += step.getInt("units");
+                ItemStack reagent = KitData.read(held).map(KitData::source).orElse(held).copyWithCount(1);
+                BrewingAdapter adapter = AdapterRegistry.get(new ResourceLocation(step.getString("adapter")), BrewingDefinitions.server());
+                ItemStack actual = adapter == null ? ItemStack.EMPTY : adapter.commit(PotionContentsService.canonical(state), reagent);
+                if (actual.isEmpty()) {
+                    holdPhysical("recovery.immersive_brewing.source_changed");
+                    return;
+                }
+                actual = com.otectus.immersivebrewing.recipe.QuickFinishing.preserve(state, reagent, actual);
+                if (!PotionContentsService.sameCanonical(actual, LedgerCodec.loadStack(step.getCompound("after")))
+                        || !java.util.Objects.equals(PotionContentsService.canonicalTag(state), PotionContentsService.canonicalTag(actual))) {
+                    holdPhysical("recovery.immersive_brewing.source_changed");
+                    return;
+                }
+                state = actual;
+            }
+            outputs.add(state);
+        }
+        List<ItemStack> returns = ledgerRemainders(l);
+        if (!byproductRoom(returns)) {
+            holdPhysical("recovery.immersive_brewing.output_blocked");
+            return;
+        }
+        int[] slots = f.slots();
+        for (int i = 0; i < outputs.size(); i++) {
+            int slot = RACK + (i < slots.length ? slots[i] : i);
+            if (!inventory.getStackInSlot(slot).isEmpty()) {
+                holdPhysical("recovery.immersive_brewing.output_blocked");
+                return;
+            }
+        }
+        ledger = null;
+        finishingProcess = null;
+        for (int i = 0; i < outputs.size(); i++) {
+            int slot = RACK + (i < slots.length ? slots[i] : i);
+            putDirect(slot, outputs.get(i));
+            finished[slot] = true;
+        }
+        for (ItemStack remainder : returns) addByproduct(remainder);
+        leases.clear();
+        setVisual(StationVisual.IDLE);
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), 0, 0, 0);
+        markWorkshopDirty(true);
+        // Finishing grants no brewing score, milestone, XP, or replayable completion event.
+    }
+
+    @Override
+    @Nullable
+    protected StationVisual physicalVisual() {
+        KettleProcess p = liveProcess();
+        if (p == null) return null;
+        int[] colors = ledger == null ? new int[] {0x385DC6} : StationPresentations.stageColors(ledger);
+        int current = colors[Math.max(0, Math.min(colors.length - 1, Math.max(0, p.doses() - 1)))];
+        int next = colors[Math.max(0, Math.min(colors.length - 1, p.doses()))];
+        int signature = switch (p.setup().family()) {
+            case GENERIC -> 0;
+            case LIGHT_FOAM -> 3;
+            case DENSE_SEDIMENT -> 4;
+            case DELICATE_SHIMMER -> 5;
+            case MAGMA_STREAKS -> 6;
+            case SUSPENDED_BUBBLES -> 7;
+            case DARK_WHORLS -> 8;
+            case ALIGNING_GLINTS -> 9;
+            case FLOATING_MOTES -> 10;
+        };
+        StationVisual base = new StationVisual(Math.min(2, p.doses()), signature, (float) p.temperature(), (float) p.circulation(), (float) p.trouble(),
+                (float) p.progress(), true);
+        return base.details(StationVisual.Mortar.EMPTY, new StationVisual.Kettle(p.burner(), (float) p.flame(), p.doses(), 0, current, next, (float) p.progress()),
+                StationVisual.Alembic.EMPTY, (int) p.ticks(), Operation.BREW);
+    }
+
+    @Override
+    protected int physicalComparator() {
+        KettleProcess live = liveProcess();
+        if (live == null) return 8;
+        return switch (live.stage()) {
+            case READY -> 14;
+            case CHARGING, HEATING, WAITING_DOSE, RESTING -> 9;
+            case REACTING -> 8;
+        };
+    }
+
+    @Override
+    protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part) {
+        boolean client = level == null || level.isClientSide;
+        if (isBottle(held) && !held.is(ModTags.CARRIER_EXCLUDED)) {
+            if (client) return InteractionResult.SUCCESS;
+            if (ledger != null) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.rack_reserved"), true);
+                return InteractionResult.CONSUME;
+            }
+            int target = part != null && part.id() >= WorkshopParts.K_RACK && part.id() < WorkshopParts.K_RACK + RACK_SIZE
+                    && inventory.getStackInSlot(RACK + part.id() - WorkshopParts.K_RACK).isEmpty() ? RACK + part.id() - WorkshopParts.K_RACK : -1;
+            for (int i = 0; i < RACK_SIZE && target < 0; i++) if (inventory.getStackInSlot(RACK + i).isEmpty()) target = RACK + i;
+            if (target < 0) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.rack_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            putDirect(target, held.copyWithCount(1));
+            finished[target] = false;
+            if (!player.getAbilities().instabuild) held.shrink(1);
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, target - RACK, 0);
+            changed();
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        if (held.is(ModTags.BURNER_FUEL)) {
+            if (client) return InteractionResult.SUCCESS;
+            ItemStack fuel = inventory.getStackInSlot(FUEL);
+            if (!fuel.isEmpty() && !ItemStack.isSameItemSameTags(fuel, held) || fuel.getCount() >= fuel.getMaxStackSize()) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.burner_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            int move = Math.min(held.getCount(), held.getMaxStackSize() - fuel.getCount());
+            putDirect(FUEL, held.copyWithCount(fuel.getCount() + move));
+            if (!player.getAbilities().instabuild) held.shrink(move);
+            changed();
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        if (held.is(ModTags.BREWING_PADDLES)) {
+            if (client) return InteractionResult.SUCCESS;
+            if (!inventory.getStackInSlot(PADDLE).isEmpty() || paddleInUse()) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.paddle_present"), true);
+                return InteractionResult.CONSUME;
+            }
+            putDirect(PADDLE, held.copyWithCount(1));
+            if (!player.getAbilities().instabuild) held.shrink(1);
+            changed();
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        if (isIngredient(held)) {
+            if (client) return InteractionResult.SUCCESS;
+            if (ledger != null) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.tray_reserved"), true);
+                return InteractionResult.CONSUME;
+            }
+            int preferred = part != null && part.id() >= WorkshopParts.K_TRAY && part.id() < WorkshopParts.K_TRAY + TRAY_SIZE ? TRAY + part.id() - WorkshopParts.K_TRAY : -1;
+            ItemStack left = held.copy();
+            if (preferred >= 0) left = inventory.insertItem(preferred, left, false);
+            for (int i = 0; i < TRAY_SIZE && !left.isEmpty(); i++) left = inventory.insertItem(TRAY + i, left, false);
+            if (left.getCount() == held.getCount()) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.tray_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            if (!player.getAbilities().instabuild) player.setItemInHand(hand, left);
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, 0, 0);
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        return InteractionResult.PASS;
+    }
+
+    /** An item the tray takes directly: a registered brewing ingredient, a prepared kit, or a profiled reagent. */
+    public static boolean isIngredient(ItemStack stack) {
+        if (stack.isEmpty() || stack.getItem() instanceof PotionItem || stack.is(ModTags.BREWING_PADDLES) || stack.is(ModTags.CARRIER_EXCLUDED)) return false;
+        if (KitData.read(stack).isPresent()) return true;
+        if (BrewingRecipeRegistry.isValidIngredient(stack.copyWithCount(1))) return true;
+        return BrewingDefinitions.server().reagentProfile(stack.getItem(), null, null) != null;
+    }
+
+    @Override
+    protected WorkshopResult act(ServerPlayer player, WorkshopIntent intent, long now) {
+        int part = intent.part();
+        boolean physical = ledger != null && ledger.physical();
+        boolean running = physical && ledger.state() == JobState.RUNNING;
+        switch (intent.action()) {
+            case BOOK -> {
+                if (ledger != null && ledger.legacy()) return WorkshopResult.refuse("workshop.immersive_brewing.legacy.finish_first");
+                com.otectus.immersivebrewing.recipe.CatalogSearch.submit(player,
+                        new com.otectus.immersivebrewing.network.packet.CatalogQueryC2S(worldPosition, 0, "", List.of(), 0, 0, false, 3));
+                return WorkshopResult.ACCEPTED;
+            }
+            case SEAL -> {
+                if (!running) return WorkshopResult.IGNORED;
+                sealPhysical(player, "workshop.immersive_brewing.seal.manual");
+                return WorkshopResult.ACCEPTED;
+            }
+            case UNSEAL -> {
+                return physical ? unsealPhysical(player) : WorkshopResult.IGNORED;
+            }
+            case CANCEL -> {
+                return cancelPhysical(player);
+            }
+            case INSERT -> {
+                ItemStack held = player.getItemInHand(intent.hand());
+                if (held.isEmpty()) return WorkshopResult.IGNORED;
+                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.KETTLE, part));
+                return r == InteractionResult.PASS ? WorkshopResult.refuse("workshop.immersive_brewing.refuse.not_here") : WorkshopResult.ACCEPTED;
+            }
+            case TAKE -> {
+                return take(player, part, intent.batch());
+            }
+            case STOP -> {
+                pourQueue = fillQueue = 0;
+                return WorkshopResult.ACCEPTED;
+            }
+            default -> { }
+        }
+        if (ledger != null && ledger.physical() && ledger.state() == JobState.SEALED) return WorkshopResult.refuse("workshop.immersive_brewing.sealed.open_lid");
+        if (ledger != null && ledger.state() == JobState.RECOVERY) {
+            return WorkshopResult.refuse("notice.immersive_brewing.held", Component.translatable(ledger.recoveryReason() == null
+                    ? "recovery.immersive_brewing.unknown" : ledger.recoveryReason()));
+        }
+        if (!running) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.no_batch");
+        if (ledger.operation() == Operation.FINISH) return finishingAct(player, intent);
+        KettleProcess p = liveProcess();
+        if (p == null) return WorkshopResult.refuse("recovery.immersive_brewing.process_unreadable");
+        switch (intent.action()) {
+            case POUR -> {
+                if (intent.batch() || intent.argument() < 0) {
+                    pourQueue = p.count(KettleProcess.Portion.STAGED);
+                    queueCooldown = 0;
+                    participate(player);
+                    return pourQueue > 0 ? WorkshopResult.ACCEPTED : WorkshopResult.IGNORED;
+                }
+                int index = part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + RACK_SIZE ? p.portionAtSlot(part - WorkshopParts.K_RACK) : intent.argument();
+                if (index < 0 || index >= p.portions() || p.portion(index) != KettleProcess.Portion.STAGED) return WorkshopResult.IGNORED;
+                p.pour(index);
+                participate(player);
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.POUR, ledger.jobId(), (int) p.ticks(), p.slotOf(index), 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case DOSE -> {
+                int step = part >= WorkshopParts.K_CUP && part < WorkshopParts.K_CUP + WorkshopParts.MAX_CUPS ? part - WorkshopParts.K_CUP : intent.argument();
+                String problem = p.doseProblem(step);
+                if (problem != null) return WorkshopResult.refuse(problem);
+                p.dose(step);
+                participate(player);
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.ADDITION, ledger.jobId(), (int) p.ticks(), step, 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case SET_CONTROL -> {
+                if (part != WorkshopParts.K_BURNER) return WorkshopResult.IGNORED;
+                if (leases.heldByOther(WorkshopParts.K_BURNER, player.getUUID(), now)) return heldBy(WorkshopParts.K_BURNER, now);
+                if (!p.setBurner(intent.argument())) return WorkshopResult.IGNORED;
+                participate(player);
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.VALVE, ledger.jobId(), (int) p.ticks(), p.burner(), 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case GRAB -> {
+                if (part == WorkshopParts.K_BURNER) {
+                    var other = leases.acquire(WorkshopParts.K_BURNER, player.getUUID(), player.getGameProfile().getName(), now);
+                    return other == null ? WorkshopResult.ACCEPTED : heldBy(WorkshopParts.K_BURNER, now);
+                }
+                if (part != WorkshopParts.K_PADDLE) return WorkshopResult.IGNORED;
+                if (!hasPaddle()) return WorkshopResult.refuse("plan.immersive_brewing.missing.paddle");
+                var other = leases.acquire(WorkshopParts.K_PADDLE, player.getUUID(), player.getGameProfile().getName(), now);
+                if (other != null) return heldBy(WorkshopParts.K_PADDLE, now);
+                paddleTrack.reset();
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.GRAB, ledger.jobId(), 0, part, 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case RELEASE -> {
+                if (!leases.release(part, player.getUUID())) return WorkshopResult.IGNORED;
+                if (part == WorkshopParts.K_PADDLE) {
+                    paddleTrack.reset();
+                    effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.DROP, ledger.jobId(), 0, part, 0);
+                }
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case SAMPLE -> {
+                if (part != WorkshopParts.K_PADDLE || !leases.holds(WorkshopParts.K_PADDLE, player.getUUID(), now)) return WorkshopResult.IGNORED;
+                paddleTrack.sample(intent.x(), intent.z(), intent.contact(), now);
+                if (intent.contact()) participate(player);
+                markWorkshopDirty(false);
+                return WorkshopResult.ACCEPTED;
+            }
+            case FILL -> {
+                if (!p.finalized()) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.not_ready");
+                // The batch action fills every ready bottle in turn; the spout alone opens over the next one.
+                if (intent.batch()) {
+                    fillQueue = p.count(KettleProcess.Portion.READY);
+                    queueCooldown = 0;
+                    return fillQueue > 0 ? WorkshopResult.ACCEPTED : WorkshopResult.IGNORED;
+                }
+                int index = part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + RACK_SIZE ? p.portionAtSlot(part - WorkshopParts.K_RACK) : intent.argument();
+                if (index < 0) {
+                    // The next bottle that can take it; an occupied one is only chosen (and refused, with the reason) if no other is free.
+                    int firstReady = -1;
+                    for (int i = 0; i < p.portions() && index < 0; i++) {
+                        if (p.portion(i) != KettleProcess.Portion.READY) continue;
+                        if (firstReady < 0) firstReady = i;
+                        if (inventory.getStackInSlot(RACK + p.slotOf(i)).isEmpty()) index = i;
+                    }
+                    if (index < 0) index = firstReady;
+                }
+                return fill(player, index);
+            }
+            default -> {
+                return WorkshopResult.IGNORED;
+            }
+        }
+    }
+
+    private WorkshopResult heldBy(int part, long now) {
+        var lease = leases.holder(part, now);
+        return WorkshopResult.refuse("workshop.immersive_brewing.refuse.held_by", lease == null ? "?" : lease.name());
+    }
+
+    private WorkshopResult finishingAct(ServerPlayer player, WorkshopIntent intent) {
+        FinishingProcess f = liveFinishing();
+        if (f == null) return WorkshopResult.refuse("recovery.immersive_brewing.process_unreadable");
+        int part = intent.part();
+        switch (intent.action()) {
+            case DOSE -> {
+                int step = part >= WorkshopParts.K_CUP && part < WorkshopParts.K_CUP + WorkshopParts.MAX_CUPS ? part - WorkshopParts.K_CUP : intent.argument();
+                String problem = f.doseProblem(step);
+                if (problem != null) return WorkshopResult.refuse(problem);
+                f.dose(step);
+                participate(player);
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.ADDITION, ledger.jobId(), 0, step, 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            case SET_CONTROL -> {
+                if (part != WorkshopParts.K_LID) return WorkshopResult.IGNORED;
+                boolean close = intent.argument() != 0;
+                if (close && f.doses() < f.steps()) return WorkshopResult.refuse("workshop.immersive_brewing.finishing.dose_first");
+                if (!f.setClosed(close)) return WorkshopResult.IGNORED;
+                participate(player);
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.SEAL, ledger.jobId(), 0, close ? 1 : 0, 0);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            default -> {
+                return WorkshopResult.IGNORED;
+            }
+        }
+    }
+
+    /** Releases a batch before any irreversible step (no dose tipped): every staged resource returns exactly. */
+    private WorkshopResult cancelPhysical(ServerPlayer player) {
+        if (ledger == null || !ledger.physical() || ledger.state() == JobState.RECOVERY) return WorkshopResult.IGNORED;
+        if (ledger.operation() == Operation.BREW) {
+            KettleProcess p = liveProcess();
+            if (p == null || p.doses() > 0 || p.finalized()) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.cancel_too_late");
+        } else {
+            FinishingProcess f = liveFinishing();
+            if (f == null || f.doses() > 0) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.cancel_too_late");
+        }
+        cancelReservation();
+        notice(player, Component.translatable("notice.immersive_brewing.workshop.released"), false);
+        return WorkshopResult.ACCEPTED;
+    }
+
+    /** Takes a public stack shown on a part into the player's inventory (exact stack, nothing dropped). */
+    private WorkshopResult take(ServerPlayer player, int part, boolean batch) {
+        List<Integer> slots = new ArrayList<>();
+        if (part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + RACK_SIZE) {
+            int slot = RACK + part - WorkshopParts.K_RACK;
+            if (batch) {
+                ItemStack template = inventory.getStackInSlot(slot);
+                for (int i = 0; i < RACK_SIZE; i++) {
+                    ItemStack s = inventory.getStackInSlot(RACK + i);
+                    if (!s.isEmpty() && finished[RACK + i] == finished[slot] && ItemStack.isSameItemSameTags(s, template)) slots.add(RACK + i);
+                }
+            } else slots.add(slot);
+        } else if (part >= WorkshopParts.K_TRAY && part < WorkshopParts.K_TRAY + TRAY_SIZE) {
+            if (ledger != null) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.tray_reserved");
+            slots.add(TRAY + part - WorkshopParts.K_TRAY);
+        } else if (part == WorkshopParts.K_BYPRODUCTS) {
+            for (int i = 0; i < BYPRODUCT_SIZE; i++) slots.add(BYPRODUCT + i);
+        } else if (part == WorkshopParts.K_PADDLE) {
+            if (paddleInUse()) return WorkshopResult.refuse("workshop.immersive_brewing.kettle.paddle_in_use");
+            slots.add(PADDLE);
+        } else if (part == WorkshopParts.K_FUEL) {
+            slots.add(FUEL);
+        } else {
+            return WorkshopResult.IGNORED;
+        }
+        int moved = 0;
+        for (int slot : slots) {
+            ItemStack s = inventory.getStackInSlot(slot);
+            if (s.isEmpty() || !canTake(slot)) continue;
+            if (!com.otectus.immersivebrewing.interaction.RackWorkshop.fits(player.getInventory(), s)) {
+                if (moved == 0) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.inventory_full");
+                break;
+            }
+            ItemStack taken = s.copy();
+            putDirect(slot, ItemStack.EMPTY);
+            finished[slot] = false;
+            moved += com.otectus.immersivebrewing.interaction.RackWorkshop.give(player, taken);
+        }
+        if (moved == 0) return WorkshopResult.IGNORED;
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COLLECT, StationVisual.NONE, 0, 0, 0);
+        markWorkshopDirty(true);
+        return WorkshopResult.ACCEPTED;
+    }
+
+    @Override
+    protected void writeToolPose(int part, CompoundTag tag) {
+        if (part == WorkshopParts.K_PADDLE) {
+            tag.putFloat("x", (float) paddleTrack.u());
+            tag.putFloat("z", (float) paddleTrack.v());
+            tag.putBoolean("contact", paddleTrack.contact());
+        }
+    }
+
+    @Override
+    protected void writeWorkshopSnapshot(CompoundTag t) {
+        t.putBoolean("paddle", hasPaddle());
+        t.putInt("fuel", fuelCharges + inventory.getStackInSlot(FUEL).getCount() * ServerConfig.fuelChargesPerBlazePowder());
+        if (ledger == null) return;
+        ListTag steps = ledger.snapshot().getList("steps", Tag.TAG_COMPOUND);
+        ListTag doseItems = new ListTag();
+        for (int i = 0; i < Math.min(WorkshopParts.MAX_CUPS, steps.size()); i++) doseItems.add(StringTag.valueOf(steps.getCompound(i).getString("reagent")));
+        t.put("doseItems", doseItems);
+        t.putIntArray("stageColors", StationPresentations.stageColors(ledger));
+        ListTag portions = new ListTag();
+        for (int i = 0; i < Math.min(RACK_SIZE, ledger.inputs().size()); i++) {
+            CompoundTag stack = LedgerCodec.saveStack(ledger.inputs().get(i).copyWithCount(1));
+            stack.remove("FullCount");
+            portions.add(stack);
+        }
+        t.put("portionItems", portions);
+        if (ledger.operation() == Operation.BREW) {
+            KettleProcess p = liveProcess();
+            if (p != null) {
+                CompoundTag k = new CompoundTag();
+                p.writeSnapshot(k);
+                t.put("kettle", k);
+            }
+        } else if (ledger.operation() == Operation.FINISH) {
+            FinishingProcess f = liveFinishing();
+            if (f != null) {
+                CompoundTag k = new CompoundTag();
+                f.writeSnapshot(k);
+                t.put("finishing", k);
+            }
+        }
     }
 
     // ---- fluid capability ----
@@ -1274,5 +2192,20 @@ public class BrewersKettleBlockEntity extends StationBlockEntity {
     public void load(CompoundTag tag) {
         super.load(tag);
         if (tag.contains("LastLineage", Tag.TAG_LONG)) lastLineage = tag.getLong("LastLineage");
+        if (tag.contains("Ledger", Tag.TAG_COMPOUND) || tag.contains("Inventory", Tag.TAG_COMPOUND) && level != null && !level.isClientSide) {
+            process = null;
+            finishingProcess = null;
+            paddleTrack.reset();
+        }
+    }
+
+    @Override
+    protected void afterRecoveryInstalled() {
+        process = null;
+        finishingProcess = null;
+        paddleTrack.reset();
+        leases.clear();
+        super.afterRecoveryInstalled();
+        markWorkshopDirty(true);
     }
 }

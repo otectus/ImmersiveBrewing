@@ -28,6 +28,22 @@ import com.otectus.immersivebrewing.session.SessionKind;
 import com.otectus.immersivebrewing.session.SessionManager;
 import com.otectus.immersivebrewing.session.SimHandle;
 import com.otectus.immersivebrewing.session.SimHandles;
+import com.otectus.immersivebrewing.interaction.WorkshopIntent;
+import com.otectus.immersivebrewing.interaction.WorkshopResult;
+import com.otectus.immersivebrewing.workshop.AlembicProcess;
+import com.otectus.immersivebrewing.workshop.WorkshopKind;
+import com.otectus.immersivebrewing.workshop.WorkshopPart;
+import com.otectus.immersivebrewing.workshop.WorkshopParts;
+import com.otectus.immersivebrewing.workshop.WorkshopProfiles;
+import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionUtils;
+import net.minecraft.world.item.alchemy.Potions;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import net.minecraftforge.common.util.LazyOptional;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -75,6 +91,14 @@ public class AlembicBlockEntity extends StationBlockEntity {
     public static final int OUTPUT = 7;
     public static final int OUTPUT_SIZE = 6;
     public static final int SLOTS = 13;
+
+    /** Water in the coolant jacket, in millibuckets (handoff 9: a real water-only tank, separate from any potion). */
+    private int coolantMb;
+    @Nullable
+    private AlembicProcess process;
+    @Nullable
+    private UUID lastActor;
+    private LazyOptional<IFluidHandler> coolantCap = LazyOptional.of(CoolantHandler::new);
 
     public AlembicBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.ALEMBIC.get(), pos, state, SLOTS);
@@ -366,44 +390,59 @@ public class AlembicBlockEntity extends StationBlockEntity {
     }
 
     public void startPurification(ServerPlayer player, int argument) {
-        if (level == null) return;
-        if (ServerConfig.disabled()) {
-            notice(player, Component.translatable("notice.immersive_brewing.disabled"), true);
-            return;
+        WorkshopResult r = charge(player);
+        if (r.reason() != null) notice(player, r.reason(), !r.accepted());
+        if (r.accepted()) {
+            player.closeContainer();
+            openWorkingView(player);
         }
-        if (ledger != null || SessionManager.stationBusy(this) || SessionManager.playerBusy(player)) {
-            notice(player, Component.translatable("notice.immersive_brewing.busy"), true);
-            return;
-        }
+    }
+
+    /**
+     * Pours the charge (handoff 9): validates the homogeneous group exactly as before, then reserves the potions, the
+     * fuel charges and the full coolant cost at once. Yield, returned containers and the quality cap are those the
+     * preview showed.
+     */
+    public WorkshopResult charge(ServerPlayer player) {
+        if (level == null) return WorkshopResult.IGNORED;
+        if (ServerConfig.disabled()) return WorkshopResult.refuse("notice.immersive_brewing.disabled");
+        if (ledger != null || SessionManager.stationBusy(this)) return WorkshopResult.refuse("notice.immersive_brewing.busy");
         PurifyPlan plan = purifyPlan();
         if (plan.problem() != null || plan.recipe() == null) {
-            notice(player, plan.problem() == null ? Component.translatable("alembic.immersive_brewing.purify.unsupported") : plan.problem(), true);
-            return;
+            return plan.problem() == null ? WorkshopResult.refuse("alembic.immersive_brewing.purify.unsupported") : WorkshopResult.refuse(plan.problem());
         }
         DistillationRecipe recipe = plan.recipe();
+        int coolant = ServerConfig.coolantFor(plan.groups());
+        if (coolantMb < coolant) return WorkshopResult.refuse("workshop.immersive_brewing.alembic.coolant_needed", coolant, coolantMb);
         int fuel = recipe.fuelCharges() * plan.groups();
         spendFuel(fuel);
+        coolantMb -= coolant;
         List<ItemStack> taken = takeInputs();
         long seed = ((ServerLevel) level).getRandom().nextLong();
-        double[] assist = approvedAssist(argument);
-        long[] params = DistillationParams.create(seed, assist[0], assist[1]).encode();
         CompoundTag snapshot = new CompoundTag();
         snapshot.putString("recipe", recipe.getId().toString());
         snapshot.putInt("groups", plan.groups());
         snapshot.putInt("groupSize", recipe.groupSize());
         snapshot.putInt("yield", recipe.yield());
-        snapshot.putInt("cap", Math.min(recipe.qualityCap(), ServerConfig.get(ServerConfig.PURIFICATION_QUALITY_CAP)));
+        int cap = Math.min(recipe.qualityCap(), ServerConfig.get(ServerConfig.PURIFICATION_QUALITY_CAP));
+        snapshot.putInt("cap", cap);
         snapshot.putString("container", String.valueOf(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(recipe.container())));
         snapshot.putInt("qualityIn", plan.qualityIn());
-        snapshot.putDouble("assistTime", assist[0]);
-        snapshot.putDouble("assistBand", assist[1]);
-        ledger = new JobLedger(UUID.randomUUID(), Operation.PURIFY, JobState.RESERVED, taken, List.of(), fuel, snapshot,
-                plan.sample().copyWithCount(1), params, new long[0], seed, 0, player.getUUID(), player.getGameProfile().getName(),
+        snapshot.putInt("coolant", coolant);
+        var profile = WorkshopProfiles.distillation(recipe.getId());
+        snapshot.putString("workshopProfile", profile.source());
+        AlembicProcess p = AlembicProcess.begin(new AlembicProcess.Setup(plan.groups(), recipe.groupSize(), recipe.yield(), cap, plan.qualityIn(),
+                coolant, profile.value().headsEnd(), profile.value().tailsStart(), profile.value().runSeconds(), profile.source()), player.getUUID());
+        ledger = new JobLedger(UUID.randomUUID(), Operation.PURIFY, JobState.RUNNING, taken, List.of(), fuel, snapshot,
+                plan.sample().copyWithCount(1), new long[0], new long[0], seed, 0, player.getUUID(), player.getGameProfile().getName(),
                 List.of(), null, 0, BrewingDefinitions.server().generation(), 0);
+        ledger.setProcess(p.save());
+        process = p;
+        lastActor = player.getUUID();
         changed();
-        SimHandle sim = SimHandles.create(SessionKind.DISTILLATION, params, null);
-        player.closeContainer();
-        SessionManager.begin(player, this, sim, false, display(plan.sample(), plan.groups(), plan.qualityIn(), assist[0], assist[1]));
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.POUR, ledger.jobId(), 0, 0, 0);
+        markWorkshopDirty(true);
+        return WorkshopResult.ACCEPTED;
     }
 
     private CompoundTag display(ItemStack sample, int groups, int qualityIn, double assistTime, double assistBand) {
@@ -417,6 +456,13 @@ public class AlembicBlockEntity extends StationBlockEntity {
     }
 
     public void resume(ServerPlayer player) {
+        if (ledger != null && ledger.physical()) {
+            WorkshopResult r = unsealPhysical(player);
+            if (r.reason() != null) notice(player, r.reason(), true);
+            player.closeContainer();
+            openWorkingView(player);
+            return;
+        }
         if (ledger == null || ledger.state() != JobState.SEALED || ledger.operation() != Operation.PURIFY) {
             notice(player, Component.translatable("notice.immersive_brewing.nothing_to_resume"), true);
             return;
@@ -483,7 +529,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
         if (sacrificed > 0) placeOutput(new ItemStack(container, sacrificed));
         lastResult = new StationResult(Operation.PURIFY, shown, placed, qualityOut, 0, score.distillation(), score.tipKey(), List.of(), refiner);
         changed();
-        if (level != null) level.playSound(null, worldPosition, ModSounds.BOTTLE_CLINK.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), sim.step(), 0, 0);
         MinecraftForge.EVENT_BUS.post(new BatchRefinedEvent(player, worldPosition, shown, placed, true, qualityIn, qualityOut));
         if (player != null && qualityOut > qualityIn) ModAdvancements.milestone(player, Milestone.PURIFY);
         CompoundTag result = new CompoundTag();
@@ -522,6 +568,510 @@ public class AlembicBlockEntity extends StationBlockEntity {
             ImmersiveBrewing.LOGGER.warn("Immersive Brewing: Alembic output full at {}; dropped {}", worldPosition, left);
             Containers.dropItemStack(level, worldPosition.getX() + 0.5, worldPosition.getY() + 1, worldPosition.getZ() + 0.5, left);
         }
+    }
+
+    // ---- hands-on workshop ----
+
+    @Override
+    public WorkshopKind workshopKind() {
+        return WorkshopKind.ALEMBIC;
+    }
+
+    @Nullable
+    public AlembicProcess liveProcess() {
+        if (ledger == null || !ledger.physical() || ledger.operation() != Operation.PURIFY) return null;
+        if (process == null) {
+            try {
+                process = AlembicProcess.load(ledger.process());
+            } catch (RuntimeException e) {
+                if (ledger.state() != JobState.RECOVERY) {
+                    ledger.hold("recovery.immersive_brewing.process_unreadable");
+                    changed();
+                }
+                return null;
+            }
+        }
+        return process;
+    }
+
+    public int coolantMb() {
+        return coolantMb;
+    }
+
+    /** Coolant still reserved by a purification that has not completed (it returns on a cancel). */
+    private int reservedCoolant() {
+        AlembicProcess p = liveProcess();
+        return p == null ? 0 : p.setup().coolantMb();
+    }
+
+    /** Room left in the jacket: a running purification's reservation still counts against the capacity. */
+    private int coolantRoom() {
+        return Math.max(0, ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB) - coolantMb - reservedCoolant());
+    }
+
+    @Override
+    protected void flushProcess() {
+        if (ledger != null && ledger.physical() && process != null) ledger.setProcess(process.save());
+    }
+
+    @Override
+    protected java.util.List<UUID> workshopParticipants() {
+        AlembicProcess p = liveProcess();
+        return p == null ? java.util.List.of() : p.participants();
+    }
+
+    @Override
+    protected void participate(ServerPlayer player) {
+        lastActor = player.getUUID();
+        AlembicProcess p = liveProcess();
+        if (p != null) p.participate(player.getUUID());
+        if (ledger != null && !player.getUUID().equals(ledger.brewerId())) ledger.addAssistant(player.getGameProfile().getName());
+    }
+
+    @Override
+    protected void onPhysicalSealed() {
+        AlembicProcess p = liveProcess();
+        if (p != null) p.seal();
+    }
+
+    @Override
+    @Nullable
+    protected String physicalResumeProblem() {
+        return liveProcess() == null ? "recovery.immersive_brewing.process_unreadable" : null;
+    }
+
+    @Override
+    protected void resumeLegacy(ServerPlayer player) {
+        resume(player);
+    }
+
+    @Override
+    protected void physicalStep(long now) {
+        AlembicProcess p = liveProcess();
+        if (p == null) return;
+        p.tick();
+        if (p.finished()) completePurificationPhysical(p);
+        markWorkshopDirty(false);
+    }
+
+    /** The run has passed through the condenser: commit the previewed yield once, with the earned purification. */
+    private void completePurificationPhysical(AlembicProcess p) {
+        JobLedger l = ledger;
+        if (l == null) return;
+        CompoundTag snap = l.snapshot();
+        int groups = snap.getInt("groups");
+        int groupSize = snap.getInt("groupSize");
+        int yield = snap.getInt("yield");
+        int cap = snap.getInt("cap");
+        int qualityIn = snap.getInt("qualityIn");
+        ResourceLocation containerId = ResourceLocation.tryParse(snap.getString("container"));
+        net.minecraft.world.item.Item container = containerId == null ? null : net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(containerId);
+        if (container == null || freeOutputs() < yield * groups + 1 || l.inputs().size() != groups * groupSize) {
+            flushProcess();
+            leases.clear();
+            l.hold(container == null ? "recovery.immersive_brewing.missing_item" : "recovery.immersive_brewing.no_room");
+            changed();
+            markWorkshopDirty(true);
+            return;
+        }
+        int d = p.distillation();
+        int qualityOut = QualityMath.purified(qualityIn, d, cap);
+        ServerPlayer actor = null;
+        if (level != null && level.getServer() != null) {
+            UUID who = lastActor != null ? lastActor : l.brewerId();
+            if (who != null) actor = com.otectus.immersivebrewing.interaction.WorkshopPresence.player(level.getServer(), who);
+        }
+        String refiner = actor != null ? actor.getGameProfile().getName() : l.brewerName();
+        ledger = null;
+        process = null;
+        leases.clear();
+        int placed = 0;
+        ItemStack shown = ItemStack.EMPTY;
+        BrewingMetadata refined = BrewingMetadata.read(l.inputs().get(0)).orElseGet(() -> BrewingMetadata.brewed(
+                QualityMath.RAW_EXTRACTION, QualityMath.BASELINE, QualityMath.BASELINE, newLineage(), null, null))
+                .withPurification(qualityOut, refiner);
+        for (int g = 0; g < groups; g++) {
+            for (int y = 0; y < yield; y++) {
+                ItemStack out = l.inputs().get(g * groupSize + y).copy();
+                BrewingMetadata.write(out, refined);
+                placeOutput(out);
+                if (shown.isEmpty()) shown = out.copyWithCount(1);
+                placed++;
+            }
+        }
+        int sacrificed = groups * (groupSize - yield);
+        if (sacrificed > 0) placeOutput(new ItemStack(container, sacrificed));
+        String tip = p.tipKey();
+        lastResult = new StationResult(Operation.PURIFY, shown, placed, qualityOut, 0, d, tip, List.of(), refiner);
+        setVisual(StationVisual.IDLE);
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), 0, 0, 0);
+        markWorkshopDirty(true);
+        MinecraftForge.EVENT_BUS.post(new BatchRefinedEvent(actor, worldPosition, shown, placed, true, qualityIn, qualityOut));
+        if (actor != null) {
+            if (qualityOut > qualityIn) ModAdvancements.milestone(actor, Milestone.PURIFY);
+            CompoundTag result = new CompoundTag();
+            result.putString("kind", "distillation");
+            result.put("output", LedgerCodec.saveStack(shown));
+            result.putInt("count", placed);
+            result.putInt("sacrificed", sacrificed);
+            result.putInt("D", d);
+            result.putInt("Qin", qualityIn);
+            result.putInt("Q", qualityOut);
+            result.putDouble("collection", p.collection());
+            result.putDouble("thermal", p.thermal());
+            result.putDouble("cooling", p.cooling());
+            result.putBoolean("improved", qualityOut > qualityIn);
+            result.putString("tip", tip);
+            result.putBoolean("physical", true);
+            com.otectus.immersivebrewing.guide.PlayerGuide.recordResult(actor, result);
+            notice(actor, Component.translatable("workshop.immersive_brewing.alembic.done", placed, shown.getHoverName(), qualityOut,
+                    Component.translatable(tip)), false);
+        }
+    }
+
+    @Override
+    protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part) {
+        boolean client = level == null || level.isClientSide;
+        boolean water = held.is(Items.POTION) && PotionUtils.getPotion(held) == Potions.WATER && PotionUtils.getCustomEffects(held).isEmpty();
+        if (water && part != null && part.id() == WorkshopParts.A_COOLANT) {
+            if (client) return InteractionResult.SUCCESS;
+            if (coolantRoom() < BrewersKettleBlockEntity.MB_PER_BOTTLE) {
+                notice(player, Component.translatable("workshop.immersive_brewing.alembic.coolant_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            coolantMb += BrewersKettleBlockEntity.MB_PER_BOTTLE;
+            if (!player.getAbilities().instabuild) {
+                held.shrink(1);
+                ItemStack bottle = new ItemStack(Items.GLASS_BOTTLE);
+                if (held.isEmpty()) player.setItemInHand(hand, bottle);
+                else if (!player.getInventory().add(bottle)) player.drop(bottle, false);
+            }
+            changed();
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.WATER, StationVisual.NONE, 0, 0, 0);
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        if (held.getItem() instanceof PotionItem && !held.is(ModTags.CARRIER_EXCLUDED)) {
+            if (client) return InteractionResult.SUCCESS;
+            if (ledger != null) {
+                notice(player, Component.translatable("workshop.immersive_brewing.alembic.busy"), true);
+                return InteractionResult.CONSUME;
+            }
+            int target = -1;
+            for (int i = 0; i < INPUT_SIZE && target < 0; i++) if (inventory.getStackInSlot(INPUT + i).isEmpty()) target = INPUT + i;
+            if (target < 0) {
+                notice(player, Component.translatable("workshop.immersive_brewing.alembic.charge_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            putDirect(target, held.copyWithCount(1));
+            if (!player.getAbilities().instabuild) held.shrink(1);
+            changed();
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, 0, 0);
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        if (held.is(ModTags.BURNER_FUEL)) {
+            if (client) return InteractionResult.SUCCESS;
+            ItemStack fuel = inventory.getStackInSlot(FUEL);
+            if (!fuel.isEmpty() && !ItemStack.isSameItemSameTags(fuel, held) || fuel.getCount() >= fuel.getMaxStackSize()) {
+                notice(player, Component.translatable("workshop.immersive_brewing.kettle.burner_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            int move = Math.min(held.getCount(), held.getMaxStackSize() - fuel.getCount());
+            putDirect(FUEL, held.copyWithCount(fuel.getCount() + move));
+            if (!player.getAbilities().instabuild) held.shrink(move);
+            changed();
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
+        return InteractionResult.PASS;
+    }
+
+    @Override
+    protected WorkshopResult act(ServerPlayer player, WorkshopIntent intent, long now) {
+        int part = intent.part();
+        switch (intent.action()) {
+            case FINISH -> {
+                if (part != WorkshopParts.A_CHARGE) return WorkshopResult.IGNORED;
+                WorkshopResult r = charge(player);
+                if (r.accepted()) participate(player);
+                return r;
+            }
+            case INSERT -> {
+                ItemStack held = player.getItemInHand(intent.hand());
+                if (held.isEmpty()) return WorkshopResult.IGNORED;
+                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.ALEMBIC, part));
+                return r == InteractionResult.PASS ? WorkshopResult.refuse("workshop.immersive_brewing.refuse.not_here") : WorkshopResult.ACCEPTED;
+            }
+            case TAKE -> {
+                return take(player, part, intent.batch());
+            }
+            case SEAL -> {
+                if (ledger == null || !ledger.physical() || ledger.state() != JobState.RUNNING) return WorkshopResult.IGNORED;
+                sealPhysical(player, "workshop.immersive_brewing.seal.manual");
+                return WorkshopResult.ACCEPTED;
+            }
+            case UNSEAL -> {
+                return unsealPhysical(player);
+            }
+            case CANCEL -> {
+                AlembicProcess p = liveProcess();
+                if (p == null || ledger == null || ledger.state() == JobState.RECOVERY) return WorkshopResult.IGNORED;
+                if (!p.untouched()) return WorkshopResult.refuse("workshop.immersive_brewing.alembic.cancel_too_late");
+                int coolant = p.setup().coolantMb();
+                cancelReservation();
+                coolantMb = Math.min(ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB) + coolant, coolantMb + coolant);
+                notice(player, Component.translatable("notice.immersive_brewing.workshop.released"), false);
+                return WorkshopResult.ACCEPTED;
+            }
+            default -> { }
+        }
+        if (ledger == null) return WorkshopResult.refuse("workshop.immersive_brewing.alembic.no_charge");
+        if (ledger.state() == JobState.SEALED) {
+            return ledger.physical() ? WorkshopResult.refuse("workshop.immersive_brewing.sealed.open_clamp") : WorkshopResult.refuse("workshop.immersive_brewing.legacy.finish_first");
+        }
+        if (ledger.state() == JobState.RECOVERY) {
+            return WorkshopResult.refuse("notice.immersive_brewing.held", Component.translatable(ledger.recoveryReason() == null
+                    ? "recovery.immersive_brewing.unknown" : ledger.recoveryReason()));
+        }
+        AlembicProcess p = liveProcess();
+        if (p == null || ledger.state() != JobState.RUNNING) return WorkshopResult.refuse("workshop.immersive_brewing.alembic.no_charge");
+        switch (intent.action()) {
+            case GRAB -> {
+                if (part != WorkshopParts.A_BURNER && part != WorkshopParts.A_VALVE && part != WorkshopParts.A_DIVERTER) return WorkshopResult.IGNORED;
+                var other = leases.acquire(part, player.getUUID(), player.getGameProfile().getName(), now);
+                return other == null ? WorkshopResult.ACCEPTED : WorkshopResult.refuse("workshop.immersive_brewing.refuse.held_by", other.name());
+            }
+            case RELEASE -> {
+                return leases.release(part, player.getUUID()) ? WorkshopResult.ACCEPTED : WorkshopResult.IGNORED;
+            }
+            case SET_CONTROL -> {
+                if (leases.heldByOther(part, player.getUUID(), now)) {
+                    var lease = leases.holder(part, now);
+                    return WorkshopResult.refuse("workshop.immersive_brewing.refuse.held_by", lease == null ? "?" : lease.name());
+                }
+                boolean changed;
+                if (part == WorkshopParts.A_CLAMP) changed = p.clamped() != (intent.argument() != 0) && setClamp(p, intent.argument() != 0);
+                else if (part == WorkshopParts.A_BURNER) changed = p.setBurner(intent.argument());
+                else if (part == WorkshopParts.A_VALVE) changed = p.setValve(intent.argument());
+                else if (part == WorkshopParts.A_DIVERTER) changed = p.setDiverter(intent.argument() != 0);
+                else return WorkshopResult.IGNORED;
+                if (!changed) return WorkshopResult.IGNORED;
+                participate(player);
+                effect(part == WorkshopParts.A_DIVERTER ? com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.RECEIVER
+                        : com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.VALVE, ledger.jobId(), 0, intent.argument(), part);
+                markWorkshopDirty(true);
+                return WorkshopResult.ACCEPTED;
+            }
+            default -> {
+                return WorkshopResult.IGNORED;
+            }
+        }
+    }
+
+    private static boolean setClamp(AlembicProcess p, boolean value) {
+        p.setClamped(value);
+        return true;
+    }
+
+    private WorkshopResult take(ServerPlayer player, int part, boolean batch) {
+        List<Integer> slots = new java.util.ArrayList<>();
+        if (part == WorkshopParts.A_RECEIVER || part == WorkshopParts.A_WASTE) {
+            for (int i = 0; i < OUTPUT_SIZE; i++) if (!inventory.getStackInSlot(OUTPUT + i).isEmpty()) {
+                slots.add(OUTPUT + i);
+                if (!batch) break;
+            }
+        } else if (part == WorkshopParts.A_INPUT && ledger == null) {
+            for (int i = INPUT_SIZE - 1; i >= 0; i--) if (!inventory.getStackInSlot(INPUT + i).isEmpty()) {
+                slots.add(INPUT + i);
+                if (!batch) break;
+            }
+        } else if (part == WorkshopParts.A_FUEL) {
+            slots.add(FUEL);
+        } else return WorkshopResult.IGNORED;
+        int moved = 0;
+        for (int slot : slots) {
+            ItemStack s = inventory.getStackInSlot(slot);
+            if (s.isEmpty()) continue;
+            if (!com.otectus.immersivebrewing.interaction.RackWorkshop.fits(player.getInventory(), s)) {
+                if (moved == 0) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.inventory_full");
+                break;
+            }
+            ItemStack taken = s.copy();
+            putDirect(slot, ItemStack.EMPTY);
+            finished[slot] = false;
+            moved += com.otectus.immersivebrewing.interaction.RackWorkshop.give(player, taken);
+        }
+        if (moved == 0) return WorkshopResult.IGNORED;
+        changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COLLECT, StationVisual.NONE, 0, 0, 0);
+        markWorkshopDirty(true);
+        return WorkshopResult.ACCEPTED;
+    }
+
+    private double lastFraction;
+
+    @Override
+    @Nullable
+    protected StationVisual physicalVisual() {
+        AlembicProcess p = liveProcess();
+        if (p == null) return null;
+        double rate = Math.max(0, p.fraction() - lastFraction) / 10.0;
+        lastFraction = p.fraction();
+        return new StationVisual(0, p.condensate().ordinal(), (float) p.temperature(), (float) p.coolant(), 0, (float) p.fraction(), true)
+                .details(StationVisual.Mortar.EMPTY, StationVisual.Kettle.EMPTY,
+                        new StationVisual.Alembic(p.burner(), p.valve(), (float) p.receiverFill(), p.toReceiver(), (float) rate),
+                        (int) (level == null ? 0 : level.getGameTime() / 10), Operation.PURIFY);
+    }
+
+    @Override
+    protected int physicalComparator() {
+        AlembicProcess p = liveProcess();
+        if (p == null) return 8;
+        return !p.clamped() || p.burner() == 0 ? 9 : 8;
+    }
+
+    @Override
+    protected void writeWorkshopSnapshot(CompoundTag t) {
+        t.putInt("coolantMb", coolantMb);
+        t.putInt("coolantCapacity", ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB));
+        t.putInt("coolantNeed", ServerConfig.coolantFor(Math.max(1, purifyGroupsForView())));
+        if (ledger != null && !ledger.inputs().isEmpty()) {
+            CompoundTag item = LedgerCodec.saveStack(ledger.inputs().get(0).copyWithCount(1));
+            item.remove("FullCount");
+            t.put("charge", item);
+            t.putInt("chargeCount", ledger.inputs().size());
+        }
+        AlembicProcess p = liveProcess();
+        if (p != null) {
+            CompoundTag a = new CompoundTag();
+            p.writeSnapshot(a);
+            t.put("alembic", a);
+        } else if (ledger == null && loaded()) {
+            // What a charge would do, before anything is consumed (handoff 9): yield, returned containers, or why not.
+            PurifyPlan plan = purifyPlan();
+            Component problem = plan.problem();
+            int coolant = ServerConfig.coolantFor(Math.max(1, plan.groups()));
+            if (problem == null && coolantMb < coolant) problem = Component.translatable("workshop.immersive_brewing.alembic.coolant_needed", coolant, coolantMb);
+            if (problem != null) {
+                t.putString("previewProblem", Component.Serializer.toJson(problem));
+            } else if (plan.recipe() != null) {
+                t.putInt("previewIn", plan.groups() * plan.recipe().groupSize());
+                t.putInt("previewOut", plan.groups() * plan.recipe().yield());
+                t.putInt("previewReturned", plan.groups() * (plan.recipe().groupSize() - plan.recipe().yield()));
+                t.putInt("previewCoolant", coolant);
+            }
+        }
+    }
+
+    private int purifyGroupsForView() {
+        int n = inputs().size();
+        return n >= 6 ? 2 : 1;
+    }
+
+    // ---- coolant capability (water only, conserved through simulation and partial fills) ----
+
+    @Override
+    public <T> @org.jetbrains.annotations.NotNull LazyOptional<T> getCapability(@org.jetbrains.annotations.NotNull Capability<T> cap, @Nullable Direction side) {
+        if (cap == ForgeCapabilities.FLUID_HANDLER && !remove && side != Direction.DOWN) return coolantCap.cast();
+        return super.getCapability(cap, side);
+    }
+
+    @Override
+    public void invalidateCaps() {
+        super.invalidateCaps();
+        coolantCap.invalidate();
+    }
+
+    @Override
+    public void reviveCaps() {
+        super.reviveCaps();
+        coolantCap = LazyOptional.of(CoolantHandler::new);
+    }
+
+    private static boolean isWater(FluidStack stack) {
+        return stack.getFluid().isSame(net.minecraft.world.level.material.Fluids.WATER) && !stack.hasTag();
+    }
+
+    private final class CoolantHandler implements IFluidHandler {
+        @Override
+        public int getTanks() {
+            return 1;
+        }
+
+        @Override
+        public @org.jetbrains.annotations.NotNull FluidStack getFluidInTank(int tank) {
+            return coolantMb <= 0 ? FluidStack.EMPTY : new FluidStack(net.minecraft.world.level.material.Fluids.WATER, coolantMb);
+        }
+
+        @Override
+        public int getTankCapacity(int tank) {
+            return Math.max(0, ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB) - reservedCoolant());
+        }
+
+        @Override
+        public boolean isFluidValid(int tank, @org.jetbrains.annotations.NotNull FluidStack stack) {
+            return isWater(stack);
+        }
+
+        @Override
+        public int fill(FluidStack resource, FluidAction action) {
+            if (resource.isEmpty() || !isWater(resource)) return 0;
+            int accepted = Math.min(resource.getAmount(), coolantRoom());
+            if (accepted > 0 && action.execute()) {
+                coolantMb += accepted;
+                changed();
+                markWorkshopDirty(true);
+            }
+            return accepted;
+        }
+
+        @Override
+        public @org.jetbrains.annotations.NotNull FluidStack drain(FluidStack resource, FluidAction action) {
+            if (resource.isEmpty() || !isWater(resource)) return FluidStack.EMPTY;
+            return drain(resource.getAmount(), action);
+        }
+
+        @Override
+        public @org.jetbrains.annotations.NotNull FluidStack drain(int maxDrain, FluidAction action) {
+            int drained = Math.min(Math.max(0, maxDrain), coolantMb);
+            if (drained <= 0) return FluidStack.EMPTY;
+            if (action.execute()) {
+                coolantMb -= drained;
+                changed();
+                markWorkshopDirty(true);
+            }
+            return new FluidStack(net.minecraft.world.level.material.Fluids.WATER, drained);
+        }
+    }
+
+    @Override
+    protected void saveAdditional(CompoundTag tag) {
+        super.saveAdditional(tag);
+        tag.putInt("Coolant", coolantMb);
+    }
+
+    @Override
+    public void load(CompoundTag tag) {
+        super.load(tag);
+        if (tag.contains("Coolant", Tag.TAG_ANY_NUMERIC)) coolantMb = Math.max(0, tag.getInt("Coolant"));
+        if (level == null || !level.isClientSide) process = null;
+    }
+
+    @Override
+    public CompoundTag getUpdateTag() {
+        CompoundTag tag = super.getUpdateTag();
+        tag.putInt("Coolant", coolantMb);
+        return tag;
+    }
+
+    @Override
+    protected void afterRecoveryInstalled() {
+        process = null;
+        leases.clear();
+        super.afterRecoveryInstalled();
+        markWorkshopDirty(true);
     }
 
     // ---- reclamation (passive) ----
@@ -628,7 +1178,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 "tip.immersive_brewing.reclaim.done", List.of(), l.brewerName());
         setVisual(StationVisual.IDLE);
         changed();
-        if (level != null) level.playSound(null, worldPosition, ModSounds.CONDENSATE_DROP.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.COMPLETE, l.jobId(), 0, 0, 0);
         ServerPlayer player = level != null && level.getServer() != null && l.brewerId() != null ? level.getServer().getPlayerList().getPlayer(l.brewerId()) : null;
         MinecraftForge.EVENT_BUS.post(new BatchRefinedEvent(player, worldPosition, result, result.getCount() * groups, false, 0, 0));
         if (player != null) ModAdvancements.milestone(player, Milestone.RECLAIM);
@@ -639,6 +1189,9 @@ public class AlembicBlockEntity extends StationBlockEntity {
         if (ledger == null) return;
         JobLedger l = ledger;
         ledger = null;
+        process = null;
+        leases.clear();
+        markWorkshopDirty(true);
         int slot = INPUT;
         for (ItemStack s : l.inputs()) {
             while (slot < INPUT + INPUT_SIZE && !inventory.getStackInSlot(slot).isEmpty()) slot++;
@@ -654,6 +1207,28 @@ public class AlembicBlockEntity extends StationBlockEntity {
 
     @Override
     protected InteractionResult useWith(Player player, InteractionHand hand, ItemStack held) {
+        if (held.is(Items.WATER_BUCKET) || held.is(Items.BUCKET) && coolantMb >= 1000) {
+            if (level == null || level.isClientSide) return InteractionResult.SUCCESS;
+            boolean filling = held.is(Items.WATER_BUCKET);
+            if (filling && coolantRoom() < 1000) {
+                notice(player, Component.translatable(ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB) <= 0
+                        ? "workshop.immersive_brewing.alembic.no_jacket" : "workshop.immersive_brewing.alembic.coolant_full"), true);
+                return InteractionResult.CONSUME;
+            }
+            coolantMb += filling ? 1000 : -1000;
+            if (!player.getAbilities().instabuild) {
+                ItemStack result = new ItemStack(filling ? Items.BUCKET : Items.WATER_BUCKET);
+                if (held.getCount() == 1) player.setItemInHand(hand, result);
+                else {
+                    held.shrink(1);
+                    if (!player.getInventory().add(result)) player.drop(result, false);
+                }
+            }
+            changed();
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.WATER, StationVisual.NONE, 0, 0, 0);
+            markWorkshopDirty(true);
+            return InteractionResult.CONSUME;
+        }
         if (!(held.getItem() instanceof BatchCarrierItem)) return InteractionResult.PASS;
         if (level == null || level.isClientSide) return InteractionResult.SUCCESS;
         carrierExchange(player, held);
@@ -686,6 +1261,11 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 int duration = Math.max(1, ledger.snapshot().getInt("duration"));
                 return Component.translatable("status.immersive_brewing.alembic.reclaiming", Math.round(100F * done / duration));
             }
+            if (ledger.physical() && ledger.state() == JobState.RUNNING) {
+                AlembicProcess p = liveProcess();
+                if (p != null) return Component.translatable("status.immersive_brewing.alembic.working", Component.translatable(p.cueKey()),
+                        Math.round(p.fraction() * 100));
+            }
             return switch (ledger.state()) {
                 case RESERVED, RUNNING -> Component.translatable("status.immersive_brewing.alembic.running");
                 case SEALED -> Component.translatable("status.immersive_brewing.alembic.sealed");
@@ -700,6 +1280,10 @@ public class AlembicBlockEntity extends StationBlockEntity {
 
     @Override
     protected boolean litNow() {
+        if (ledger != null && ledger.physical()) {
+            AlembicProcess p = liveProcess();
+            return ledger.state() == JobState.RUNNING && p != null && p.clamped() && p.burner() > 0;
+        }
         return ledger != null && ledger.state() == JobState.RUNNING;
     }
 

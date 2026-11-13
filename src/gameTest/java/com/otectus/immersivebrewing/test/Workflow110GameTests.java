@@ -207,6 +207,7 @@ public final class Workflow110GameTests {
         kettle.startFinishing(player, lingering.key());
         h.assertTrue(kettle.ledger() != null && kettle.ledger().reserved().size() == 1,
                 "finishing owns the one indivisible groups-4 kit");
+        TestSupport.finishByHand(player, kettle);
 
         for (int i = 0; i < 3; i++) kettle.inventory().setStackInSlot(BrewersKettleBlockEntity.BYPRODUCT + i,
                 new ItemStack(Items.DIAMOND_SWORD));
@@ -244,7 +245,7 @@ public final class Workflow110GameTests {
         kettle.startBrew(player, lingering.key(), 1, 1);
         h.assertTrue(kettle.ledger() != null && kettle.ledger().reserved().size() == 1,
                 "manual brew reserves the one indivisible kit");
-        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleBot.competent());
+        TestSupport.driveKettle(h, player, com.otectus.immersivebrewing.testing.KettleTender.competent());
         h.succeedWhen(() -> {
             h.assertTrue(kettle.ledger() == null, "manual grouped-kit brew still running");
             h.assertTrue(kettle.inventory().getStackInSlot(RACK).is(Items.LINGERING_POTION),
@@ -269,42 +270,29 @@ public final class Workflow110GameTests {
         kettle.inventory().setStackInSlot(FUEL, new ItemStack(Items.BLAZE_POWDER));
         kettle.inventory().setStackInSlot(PADDLE, new ItemStack(ModItems.WOODEN_BREWING_PADDLE.get()));
         BrewPlan lingering = catalogPlan(h, splash, p -> samePotion(p.output(), Items.LINGERING_POTION, Potions.SWIFTNESS));
-        TestSupport.openKettle(player, kettle);
-        kettle.startBrew(player, lingering.key(), 1, 1);
-
+        // A batch saved by 1.1 mid-reaction (legacy simulation arrays), then rewritten as a schema-1 ledger without the
+        // container-role marker, exactly as the oldest saves hold it.
+        BrewersKettleBlockEntity legacy = LegacyFixtures.sealedBrew(h, kettle, player, lingering, 100);
+        long[] progress = legacy.ledger().simState().clone();
+        h.assertTrue(progress.length > 0 && legacy.ledger().legacy(), "legacy fixture has real saved simulation progress");
+        CompoundTag saved = legacy.saveWithFullMetadata();
+        saved.getCompound("Ledger").putInt("schema", 1);
+        saved.getCompound("Ledger").getCompound("snapshot").getList("steps", Tag.TAG_COMPOUND).getCompound(0).remove("container");
+        BlockPos pos = legacy.getBlockPos();
+        h.getLevel().setBlockEntity(BlockEntity.loadStatic(pos, legacy.getBlockState(), saved));
+        BrewersKettleBlockEntity loaded0 = (BrewersKettleBlockEntity) h.getLevel().getBlockEntity(pos);
+        h.assertTrue(loaded0 != null && loaded0.ledger() != null && loaded0.ledger().state() == JobState.SEALED,
+                "schema-1 step without the role marker reloads sealed");
+        h.assertTrue(java.util.Arrays.equals(progress, loaded0.ledger().simState()),
+                "migration does not reroll or alter saved simulation state");
         BrewersKettleBlockEntity[] resumed = {null};
-        h.runAfterDelay(100, () -> {
-            var active = TestSupport.session(player).orElseThrow();
-            h.assertTrue(active.sim().step() > 0, "legacy fixture has real saved simulation progress");
-            long[] progress = active.sim().saveState();
-            SessionManager.leave(player, active.id(), "session.immersive_brewing.end.closed");
-            h.assertTrue(kettle.ledger() != null && kettle.ledger().state() == JobState.SEALED,
-                    "running container job seals before migration reload");
-            CompoundTag step = kettle.ledger().snapshot().getList("steps", Tag.TAG_COMPOUND).getCompound(0);
-            step.remove("container");
-            CompoundTag saved = kettle.saveWithFullMetadata();
-            saved.getCompound("Ledger").putInt("schema", 1);
-            BlockPos pos = kettle.getBlockPos();
-            h.getLevel().setBlockEntity(BlockEntity.loadStatic(pos, kettle.getBlockState(), saved));
-            BrewersKettleBlockEntity loaded = (BrewersKettleBlockEntity) h.getLevel().getBlockEntity(pos);
-            h.assertTrue(loaded != null && loaded.ledger() != null && loaded.ledger().state() == JobState.SEALED,
-                    "schema-1 step without the role marker reloads sealed");
-            h.assertTrue(java.util.Arrays.equals(progress, loaded.ledger().simState()),
-                    "migration does not reroll or alter saved simulation state");
-            TestSupport.openKettle(player, loaded);
-            loaded.resume(player);
-            resumed[0] = loaded;
+        h.runAfterDelay(5, () -> {
+            TestSupport.openKettle(player, loaded0);
+            loaded0.resume(player);
+            h.assertTrue(TestSupport.session(player).isPresent(), "the legacy batch resumes through its original interface");
+            resumed[0] = loaded0;
         });
-        int[] sequence = {0};
-        var bot = com.otectus.immersivebrewing.testing.KettleBot.competent();
-        h.onEachTick(() -> {
-            if (resumed[0] == null) return;
-            TestSupport.session(player).ifPresent(session -> {
-                var sim = ((com.otectus.immersivebrewing.session.SimHandles.Brewing) session.sim()).sim();
-                SessionManager.receive(player, new com.otectus.immersivebrewing.network.packet.InputFramesC2S(
-                        session.id(), sequence[0]++, sim.step() + session.bufferTicks(), new int[]{bot.decide(sim).pack()}));
-            });
-        });
+        TestSupport.driveLegacyKettle(h, player, com.otectus.immersivebrewing.testing.KettleBot.competent());
         h.succeedWhen(() -> {
                 BrewersKettleBlockEntity loaded = resumed[0];
                 h.assertTrue(loaded != null, "legacy container job has not resumed yet");
@@ -344,6 +332,7 @@ public final class Workflow110GameTests {
         h.assertTrue(kettle.ledger() != null && kettle.ledger().operation() == Operation.FINISH
                         && kettle.ledger().reserved().size() == 1 && kettle.ledger().fuelCharges() == 1,
                 "splash finishing owns one reagent and one fuel charge");
+        TestSupport.finishByHand(player, kettle);
         runPassive(kettle, 2_000);
         ItemStack splashed = kettle.inventory().getStackInSlot(RACK);
         h.assertTrue(splashed.is(Items.SPLASH_POTION) && expectedTag.equals(splashed.getTag()),
@@ -356,12 +345,14 @@ public final class Workflow110GameTests {
         kettle.startFinishing(player, lingering.key());
         h.assertTrue(kettle.ledger() != null && kettle.ledger().reserved().size() == 1 && kettle.ledger().fuelCharges() == 1,
                 "lingering finishing owns one reagent and one fuel charge");
+        TestSupport.finishByHand(player, kettle);
         for (int i = 0; i < 4; i++) kettle.serverTick();
-        long progress = kettle.ledger().simState()[0];
         kettle.handleAction(player, StationActionC2S.Action.CANCEL_PASSIVE, 0);
-        h.assertTrue(kettle.ledger().state() == JobState.SEALED, "passive work seals on request");
+        h.assertTrue(kettle.ledger().state() == JobState.SEALED, "finishing seals on request");
+        CompoundTag progress = kettle.ledger().process().copy();
+        h.assertTrue(progress.getDouble("settle") > 0 && progress.getDouble("settle") < 1, "with its settle part-way: " + progress);
         kettle.serverTick();
-        h.assertTrue(kettle.ledger().simState()[0] == progress, "sealed finishing does not advance");
+        h.assertTrue(kettle.ledger().process().equals(progress), "sealed finishing does not advance");
 
         BlockPos absolute = h.absolutePos(STATION);
         CompoundTag saved = kettle.saveWithFullMetadata();
@@ -369,8 +360,9 @@ public final class Workflow110GameTests {
         BrewersKettleBlockEntity loaded = (BrewersKettleBlockEntity) h.getLevel().getBlockEntity(absolute);
         h.assertTrue(loaded != kettle && loaded.ledger() != null && loaded.ledger().state() == JobState.SEALED,
                 "sealed finishing reloads with its exact ledger");
+        loaded.openWorkingView(player);
         loaded.resume(player);
-        h.assertTrue(loaded.ledger().state() == JobState.RUNNING, "reloaded passive work resumes");
+        h.assertTrue(loaded.ledger().state() == JobState.RUNNING, "reloaded finishing resumes");
         for (int i = 0; i < 3; i++) loaded.serverTick();
 
         h.getLevel().destroyBlock(absolute, true);
@@ -382,8 +374,10 @@ public final class Workflow110GameTests {
         BrewersKettleBlockEntity recovered = TestSupport.kettle(h);
         h.assertTrue(TestSupport.use(player, recovered, recovery).isEmpty(), "the recovery batch installs once");
         h.assertTrue(recovered.ledger() != null && recovered.ledger().operation() == Operation.FINISH
-                        && recovered.ledger().state() == JobState.RUNNING,
-                "passive finishing continues after recovery without an interactive session");
+                        && recovered.ledger().state() == JobState.SEALED,
+                "installed finishing waits sealed with its fitting state, never progressing on its own");
+        TestSupport.unseal(player, recovered);
+        h.assertTrue(recovered.ledger().state() == JobState.RUNNING, "reopened, the closed fitting carries on settling");
         runPassive(recovered, 2_000);
 
         ItemStack result = recovered.inventory().getStackInSlot(RACK);

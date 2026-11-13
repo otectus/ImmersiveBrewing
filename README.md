@@ -1,7 +1,8 @@
 # Immersive Brewing
 
-Brew by hand. Prepare reagents in the Apothecary's Mortar, tend a living reaction in the Brewer's Kettle and catch the
-heart of a batch in the Alembic. The recipe decides the magic; your craftsmanship decides the quality.
+Brew by hand. Grind reagents with pestle and scraper at the Apothecary's Mortar, tend the reaction with burner and paddle
+at the Brewer's Kettle and divert the clear heart of a run at the Alembic. The recipe decides the magic; your
+craftsmanship decides the quality.
 
 Immersive Brewing adds a workshop beside the brewing stand rather than a new potion system. Every potion it makes is
 exactly the potion the game's own brewing would make, plus a small record of how well it was made. A score of 50 is
@@ -9,16 +10,24 @@ the ordinary potion; better work lasts a little longer and drinks a little faste
 
 Minecraft 1.20.1, Forge 47 or later, Java 17. Install on both the client and the server.
 
-Development version: **1.1.0**. This branch is in development; this document does not announce a release.
+This branch is in development (the version it builds is set in `gradle.properties`); this document does not announce a
+release. The hands-on workshop and its validation status are described in
+[`docs/reports/1.2.0-hands-on-overhaul.md`](docs/reports/1.2.0-hands-on-overhaul.md).
 
 ## The workshop
 
 | Station | What it does |
 | --- | --- |
-| **Apothecary's Mortar** | Grinds a reagent into up to four Prepared Reagent Kits in one short session. Each reagent has its own texture to reach (crystalline, fibrous, soft, brittle, liquid). The kits carry an *extraction* score. |
-| **Brewer's Kettle** | Brews one to six bottles of one kind in one hands-on reaction: set the burner draft, stir to keep the circulation where the brew wants it, and add each reagent when the tray says so. Each reaction shows its own surface (foam, sediment, shimmer, streaks, bubbles, whorls, glints, motes) and seeded disturbances (cold drafts, burner flares, surges) arrive with a warning. Its *control* score and the reagents' extraction make the quality. |
-| **Alembic** | Purifies three identical potions into two better ones (or six into four), once per potion line, up to quality 70. Reclaims unwanted potions into Spent Alchemical Salt and their glass bottles, on its own, without a player. |
-| **Apothecary Rack** | Stores six exact potion stacks with reservation ghosts and short shelf labels. It can pack matching stacks into a Batch Carrier or restock an empty rack from the carrier without merging unlike metadata. |
+| **Apothecary's Mortar** | Prepares one to four units of a reagent at once in the bowl: press and grind with the pestle until the texture is even, fold uneven spots with the scraper, then scrape it into the dose cup. Each material behaves differently (crystalline, fibrous, soft, brittle, liquid); working past the endpoint only makes fines. Each unit becomes a Prepared Reagent Kit carrying an *extraction* score. |
+| **Brewer's Kettle** | Brews one to six bottles of one kind as one batch: tip the bottles in, set the burner, tip each dose in from its cup when the liquid is warm, stir with the paddle while anything is undissolved, let the surface settle and fill each bottle from the spout. Each reaction family (foam, sediment, shimmer, streaks, bubbles, whorls, glints, motes) wants its own balance of heat and agitation and shows on the surface what it needs. Its *control* score and the reagents' extraction make the quality. |
+| **Alembic** | Purifies three identical potions into two better ones (or six into four), once per potion line, up to quality 70: fill the coolant jacket with water, pour the charge, close the clamp, set the burner and coolant valves and move the diverter so the cloudy heads and hazy tails go to waste and only the clear heart reaches the receiver. Reclaims unwanted potions into Spent Alchemical Salt and their glass bottles on its own, without a player. |
+| **Apothecary Rack** | Stores six exact potion stacks with reservation ghosts and short shelf labels. Take, place, pack and unpack directly at its positions and carrier cradle; it packs matching stacks into a Batch Carrier or restocks from the carrier without merging unlike metadata. |
+
+Every station is worked in place. An ordinary right-click with an empty hand opens its *working view*: the world keeps
+drawing, nothing hides the apparatus, and the cursor (or `Tab`) picks its parts. Right-clicking while holding something
+puts it where it belongs (bottles in the rack, reagents on the tray or in the bowl, fuel in the burner, a paddle on its
+rest, water in the jacket). Every action is a request the server checks against the station's own part volumes, your
+reach and line of sight; a refused action changes nothing and says why.
 
 Also: wooden and iron brewing paddles; the Batch Carrier (six exact stacks, a selected slot and named loadout); the
 Brewer's Notebook (guided onboarding, server-backed recipe support, favourites, a 32-batch journal, pinned checklist
@@ -28,27 +37,35 @@ pane: its light-gray stained counterpart).
 ## Your first batch
 
 1. Craft a Brewer's Kettle and a brewing paddle. Holding the Kettle or an Apothecary's Mortar for the first time also
-   grants the Brewer's Notebook. Choose **First brew** for a short heat lesson, or use the Practice page; practice never
-   consumes ingredients, creates output or awards productive milestones.
-2. Fill the Kettle's rack with water bottles (or put empty glass bottles in it and use a water bucket on the Kettle:
-   one bucket fills four). Put raw nether wart and raw sugar in the tray, blaze powder in the burner slot and the paddle
-   in its slot. The Mortar is optional for this first batch: raw preparable reagents contribute extraction 50.
-3. Open the Kettle and choose Potion of Swiftness. The plan screen can stage exact bottles from the open Kettle, your
-   ordinary inventory or an explicitly selected Batch Carrier; reagents, fuel and paddle come from the Kettle/player
-   inventory. Preview is non-mutating; Prepare commits once only if the inventory revision is unchanged.
-4. Pick the raw-kit option, review the exact costs (one reagent per three bottles per step and one fuel charge per
-   application), then start the brew.
-5. Keep the heat marker in the shaded band with the draft keys, stir to hold circulation in its band, and add each
-   reagent while the tray says *Add now*. The written cues on the right say what the brew needs.
-6. The bottles come back in the rack with their grade. Hover one for the effective duration. Prepare sugar in the
-   Mortar on a later batch when you want extraction above the raw baseline and a route toward Masterwork.
+   grants the Brewer's Notebook. Its Practice page starts short lessons at a real, idle station (take up and put down a
+   tool, the burner, a dose, then a whole batch); practice never consumes ingredients, creates output or awards
+   productive milestones.
+2. Load the Kettle by right-clicking it with three water bottles, raw nether wart, raw sugar, blaze powder and the
+   paddle (or with empty bottles and a water bucket: one bucket fills four). The Mortar is optional for this first
+   batch: raw preparable reagents contribute extraction 50.
+3. Right-click the Kettle with an empty hand, click the route book and choose Potion of Swiftness. The plan screen can
+   stage exact bottles from the Kettle, your inventory or a selected Batch Carrier; review the exact costs (one reagent
+   per three bottles per step and one fuel charge per application), then **Set out the batch**. You are back at the
+   apparatus with the bottles in the rack and each dose in its own cup.
+4. Click each bottle to tip it into the kettle (or toggle batch actions with `C` to pour them all in turn). Scroll over
+   the burner control to warm the liquid until small bubbles rise. Click the first dose cup, then the kettle mouth to
+   tip it in. Click the paddle and move it through the liquid while pieces still float; the words at the top of the
+   view always say what the brew needs, and the surface shows it too.
+5. When the reaction settles, tip in the next dose. After the last one, shut the burner, put the paddle down and let
+   the surface calm. When the cue says *Ready*, click the spout once for each bottle (or once, with batch actions on).
+   The bottles in the rack carry their grade; hover one for the effective duration.
+6. Prepare sugar at the Mortar on a later batch when you want extraction above the raw baseline and a route toward
+   Masterwork: put up to four units in the bowl, take up the pestle, press and grind until the texture is even, fold
+   with the scraper where it is uneven and scrape it into the dose cup.
 
 Plans chain: from water the Kettle offers Awkward, Swiftness through Awkward, splash and lingering versions, and so
 on. Starting from a potion you already have charges only the remaining steps.
 
-Practising a favourite is route-specific: the server re-resolves that exact stable plan against current recipes and
-builds fresh parameters/profile data with a fresh seed, then sends only the practice description to a client-only
-session. It does not reserve a station, consume ingredients, create output or fire productive milestones.
+Practice runs on your own client at an idle station of the right kind, with the same tools, heat and timing as a real
+batch. Practising a favourite is route-specific: the server re-resolves that exact plan against current recipes and
+sends only its description; press `P` in any idle station's working view for a default practice. Practice never
+reserves a station, sends work to the server, consumes ingredients, creates output or fires productive milestones, and
+the real drawer and route book stay closed while it runs.
 
 ## Quality
 
@@ -60,32 +77,52 @@ session. It does not reserve a station, consume ingredients, create output or fi
 * Quality cannot be raised by brewing a finished potion further (a modifier keeps the lower of the two scores); only
   the Alembic can raise it, once.
 
-## Controls (defaults; all rebindable under Controls > Immersive Brewing)
+## Controls (defaults; all rebindable under Controls > Immersive Brewing: Workshop)
 
-| Station | Keys |
-| --- | --- |
-| Kettle | `W` `S` raise/lower the draft (more or less heat), `A` `D` stir (hold), `Left Shift` vigorous stir, `Space` add, or circle the mouse over the liquid |
-| Mortar | mouse or `W` `A` `S` `D` steer the pestle, left button or `Space` press, right button or `F` fold, `Enter` finish |
-| Alembic | `Q` `E` heat, `Z` `C` coolant, `R` switch the receiver between waste and collect |
-| All | `H` help overlay (pauses the game while open, practice too; `←` `→` turn its pages), `Esc` or *Seal* stores the batch exactly as it is |
+| Action | Mouse | Keyboard |
+| --- | --- | --- |
+| Pick a part | point at it | `Tab` / `Backspace` cycle the parts in a fixed order |
+| Use the picked part (take a tool, lift a dose or bottle, tip it, open the spout, close a clamp) | left click | `Enter` |
+| Work a held tool (stir, grind, fold) | move it over the liquid or the bowl | hold `Space` (or toggle it), move it with the arrow keys, `Page Up`, `Page Down` |
+| Press with the pestle | click the bowl where you want to press | select the bowl, `Enter` (it presses where the pestle is) |
+| Put a tool down, or return a carried dose or bottle | right click, or click its rest | `X` |
+| Turn a burner, valve or diverter | scroll over it, or drag it | select it, `Up` / `Down` |
+| Effort (gentle, normal, firm) | | `F` |
+| Batch action (pour, fill or take all in turn) | | `C` toggles |
+| Seal the batch | the Kettle's lid | `L` (any station) |
+| Reopen a sealed batch | the lid, clamp or bowl | select it, `Enter` |
+| Drawer, route book, turn to the next station, withdraw an untouched batch, practise | | `I`, `K`, `N`, `Delete`, `P` |
+| Leave | | `Esc` (or the inventory key, or a movement key with empty hands) |
 
-Client options (`config/immersive_brewing-client.toml`) include hold/toggle stirring and pressure, no-chord reduced
-input, mouse stirring, standard/high-contrast/colour-blind palettes, large markers, reduced motion, particle and
-animation intensity, an optional small screen shake (off by default), written cues, numeric display, narration through
-Minecraft's narrator, sound volumes and a request for slower timing and wider bands. The server displays the factors it
-actually approved; assistance does not lower the available score. The same options are available from **Access** during
-a game, which pauses and neutralises held input while open.
+No action needs two keys at once. Taking damage, dying, changing dimension, walking out of reach or disconnecting
+closes the working view and puts every tool down; losing window focus releases any held key or button. Nothing is
+resumed automatically.
+
+Client options (`config/immersive_brewing-client.toml`) include the focus camera (turns your view toward the apparatus,
+or keep your own view), hold-to-grab, toggle work, keyboard-only tool movement, tool sensitivity, dead zone and visual
+smoothing, a left-handed (mirrored) presentation, part labels, standard/high-contrast/colour-blind palettes, reduced
+motion, particle and animation intensity, an optional small screen shake (off by default), written cues, numeric
+readings, narration through Minecraft's narrator and sound volumes. None of them changes what the server accepts or how
+work is scored. See `docs/CONFIGURATION.md`.
 
 ## Interruptions and recovery
 
-Closing the screen, logging out, dying, changing dimension, walking away, an unloading chunk, a server stop or a
-`/reload` seals a running batch: everything stays in the station, nothing rerolls, and *Resume* continues where it
-stopped after a short count-in. Another player may resume it; the original brewer stays credited. A batch that was
-still counting in is simply released.
+A running batch is attended: it advances while its brewer or a helper who has done productive work stays within the
+server's participant range (8 blocks by default). When nobody does for two seconds it seals itself, and a batch that
+was running when its chunk unloaded or the server stopped comes back sealed: nothing progresses offline. Close the lid
+(or press `L` at any station) to seal it yourself at any time. Sealing shuts the burner and rests the tools; nothing
+else changes until the lid (or the clamp, or the bowl) is used again, and the batch carries on exactly where it
+stopped. Another player may reopen it; the original brewer stays credited.
+Leaving the working view does not stop a batch you are still standing next to. A Kettle batch whose first dose is not
+yet in, or an Alembic charge that has not begun to condense, can be withdrawn with everything returned.
 
-Breaking a station with a job inside drops one Recovery Batch holding the whole job. Install it at an idle station of
-the same kind to continue (or, if it never started, to get everything back). If a mod or datapack the batch needs is
-missing, the batch is held instead of deleted and comes back when the data does.
+A datapack `/reload` does not interrupt a hands-on batch: its setup was fixed when it was set out, and finishing checks
+the recipe again. Work that can no longer be validated is held with a reason instead of being changed into something
+else. (A batch from 1.1 that is open in its original interface is sealed by a reload, as before.)
+
+Breaking a station with a job inside drops one Recovery Batch holding the whole job, including any portions not yet
+bottled. Install it at an idle station of the same kind to continue. If a mod or datapack the batch needs is missing,
+the batch is held instead of deleted and comes back when the data does.
 
 ## The brewing stand
 
@@ -157,12 +194,28 @@ underlying recipe unsupported.
 ## Datapacks and API
 
 * `docs/DATAPACKS.md`: infusion plans, purification and reclamation recipes, reagent and brew profiles, effect
-  policies, exclusions, precedence and reload rules.
+  policies, workshop profiles for the hands-on work, exclusions, precedence and reload rules.
 * `docs/CONFIGURATION.md`: server/client/common fields, reload behavior, active-job snapshots and named examples.
 * `docs/API.md`: brewing adapters, effect-quality handlers, metadata and plan queries, events.
 * `docs/ARCHITECTURE.md`: design decisions and every deviation from the specification.
 
-## Development migration notes: 1.0.x to 1.1.0
+## Migrating worlds from 1.1 to 1.2
+
+Back up a world before trying a development build.
+
+- New batches are worked by hand at the apparatus; the 1.1 minigame screens no longer start new work. A batch that a
+  1.1 world saved mid-way (running or sealed) is kept exactly as it was and finishes through its original interface:
+  open the station's working view and use the route book stand (*Finish the existing batch*). Its outputs, quality
+  rules, remainders and Recovery Batches are unchanged.
+- Job ledgers of new batches save as schema 3 with a versioned hands-on process payload; batches from 1.1 stay schema
+  2. A process payload this version can not read is held for recovery (`process_unreadable`) instead of being reset.
+- A hands-on batch that was running when the world saved loads sealed: there is no offline progress.
+- Recipes, reagent and brew profiles, potion data, item and block IDs, carrier and rack payloads and the quality
+  formula are unchanged. Datapacks may add `workshop_profiles` to tune the hands-on work (`docs/DATAPACKS.md`).
+- Client options: the old stirring, pressure and reduced-input toggles keep their keys and now control the working
+  view's held tools (see `docs/CONFIGURATION.md`). The network protocol changed; client and server need the same build.
+
+## Migration notes: 1.0.x to 1.1.0
 
 Back up a world before trying a development build.
 
@@ -213,7 +266,7 @@ internal mod metadata; keep the download filename shown above.
 ```sh
 ./gradlew build                      # JUnit tests and the mod jar in build/libs
 ./gradlew runGameTestServer          # registered GameTests
-./gradlew runClient -PsmokeTest      # scripted client walkthrough with screenshots
+./gradlew runClient -PsmokeTest      # scripted hands-on client walkthrough with screenshots
 python3 tools/generate_data.py --check
 python3 tools/generate_textures.py --check
 python3 tools/generate_sounds.py --check

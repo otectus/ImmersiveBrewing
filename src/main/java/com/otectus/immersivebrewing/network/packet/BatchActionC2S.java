@@ -18,7 +18,9 @@ public record BatchActionC2S(BlockPos pos,Action action,String plan,int count,Ba
         var player=ctx.get().getSender(); if(player==null||count<1||count>6||carrier< -1||carrier>=36) return;
         if(!(StationMenu.openStation(player,pos) instanceof BrewersKettleBlockEntity kettle))return;
         if(action==Action.COLLECT||action==Action.RETURN) {
+            long before = BatchStaging.revision(kettle, player);
             boolean ok=BatchStaging.collect(kettle,player,action==Action.RETURN);
+            if (before != BatchStaging.revision(kettle, player)) kettle.effect(StationEffectEvent.Kind.COLLECT, StationVisual.NONE, 0, 0, 0);
             ModNetwork.notice(player,Component.translatable(ok?"staging.immersive_brewing.collected":"staging.immersive_brewing.inventory_full"),!ok);return;
         }
         PlanKey key=PlanKey.parse(plan); if(key==null)return;
@@ -34,7 +36,10 @@ public record BatchActionC2S(BlockPos pos,Action action,String plan,int count,Ba
         ModNetwork.sendTo(player,new BatchPreviewS2C(pos,plan,preview.revision(),preview.problem(),preview.extraction(),preview.paddleUses(),preview.remainders()));
         if(action==Action.PREPARE) {
             ModNetwork.notice(player,preview.problem()==null?Component.translatable("staging.immersive_brewing.prepared"):preview.problem(),!preview.ready());
-            if(preview.ready()) CatalogSearch.select(player,kettle,key,resolved.input(),count);
+            if(preview.ready()) {
+                CatalogSearch.select(player,kettle,key,resolved.input(),count);
+                kettle.effect(StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, 0, 0);
+            }
         }
     }
 }
