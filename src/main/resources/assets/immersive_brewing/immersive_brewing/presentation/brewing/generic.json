@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "station": "kettle",
+  "material": "generic",
+  "liquid": {
+    "clarity": 0.75,
+    "foam": "#F4F6FF"
+  },
+  "effects": {
+    "bubbles": 0.5,
+    "steam": 0.5
+  }
+}

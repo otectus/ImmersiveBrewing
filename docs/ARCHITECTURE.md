@@ -1,7 +1,8 @@
 # Immersive Brewing - Architecture
 
 Decisions, their evidence and every deviation from `docs/Immersive_Brewing_Development_Spec.md` (design 1.0) and, for
-the hands-on workshop, from `Immersive_Brewing_Hands_On_Overhaul_Handoff.md` (ADR-5). The
+the hands-on workshop, from `Immersive_Brewing_Hands_On_Overhaul_Handoff.md` (ADR-5) and, for the close-up camera,
+direct setup and continuous transfers, from `Immersive_Brewing_Cinematic_Hands_On_Overhaul_Handoff.md` (ADR-6). The
 dependency-ordered build plan is `docs/IMPLEMENTATION_PLAN.md`; datapack formats are in `docs/DATAPACKS.md`, the Java
 API in `docs/API.md`, configuration scope/snapshots in `docs/CONFIGURATION.md`, and test commands/evidence in
 `docs/TESTING.md`.
@@ -168,11 +169,11 @@ working view lets the player pick the station's parts and sends intents, and the
 quality formula, recipes, adapters, potion data, items, carriers, racks and recovery are unchanged.
 
 **Diegesis.** The pinned Diegesis source (commit `c60c89b`) was evaluated as the handoff asks. It has no keyboard target
-navigation, always moves the camera, ticks station logic only while a station is in use, and has no published artifact
-this toolchain can resolve. Following the handoff's fallback, Brewing owns a small local substitute: server-defined part
-volumes per facing (`WorkshopParts`, `WorkshopGeometry`) and the client picking, keyboard cycling and optional camera
-framing in `client.workshop`. There is no runtime or build dependency. The `presentation` field of workshop profiles
-is reserved for a future presentation layer.
+navigation, always moves the camera, ticks station logic only while a station is in use, and had no published artifact
+this toolchain could resolve. Following the handoff's fallback, Brewing owns a small local substitute: server-defined
+part volumes per facing (`WorkshopParts`, `WorkshopGeometry`) and the client picking, keyboard cycling and camera in
+`client.workshop`. There is no runtime or build dependency. The second evaluation, and the close-up camera that
+replaced the original framing, are ADR-6.
 
 **Single tick owner.** Each process is advanced exactly once per server tick by its block entity
 (`StationBlockEntity.workshopTick`), never by packet arrival. Input only moves a held tool's track or sets a control;
@@ -180,8 +181,9 @@ is reserved for a future presentation layer.
 a 10-tick gap ends a stroke, and the rate is smoothed so 10 Hz and 20 Hz senders earn the same). The Mortar adds a
 token bucket on work per tick, so frantic input is not faster than steady input.
 
-**Intents.** `WorkshopIntentC2S` carries the dimension, position, job id, a sequence number, part, action, argument,
-model-space coordinates and flags (contact, off hand, batch, effort). `WorkshopIntents` checks, in order: alive, same
+**Intents.** `WorkshopIntentC2S` carries the dimension, position, job id, the view epoch, a sequence number, part,
+action, argument, model-space coordinates, flags (contact, off hand, batch, effort, acknowledgement, posture, setup)
+and an expected revision (protocol 6, ADR-6). `WorkshopIntents` checks, in order: alive, same
 dimension, increasing sequence, the token budget (40 actions per second with a refill of 2 per tick; tool samples 25
 with 1.25 per tick), finite and bounded values, presence (a working view opened by a real block use), reach
 (`maxStationDistance` + 1), `mayInteract`, and line of sight to the part's server volume. The station then checks state,
@@ -221,8 +223,9 @@ server's finishing time (`brewing.finishingSeconds`), fixed when the batch is se
 
 **Presentation.** Snapshots go to the players tracking the chunk at most every 3 ticks (immediately for discrete
 changes), quantized to bytes. One apparatus model is drawn from them for idle, focused and spectator views; only the
-local player's own held tool follows the local hand. Left-handed mirroring and the focus camera are presentation only.
-The hotbar, its status bars and the crosshair are hidden while the working view is open.
+local player's own held tool follows the local hand. Left-handed mirroring and the close-up camera are presentation
+only. While the working view is open the crosshair, experience bar and jump bar are hidden; the hotbar (the supply
+strip) and the health and food bars stay visible (ADR-6).
 
 **Practice.** The server resolves a practice setup and sends only its description (`OpenPracticeS2C`); the client runs
 the same domain classes locally at an idle station of that kind (`PracticeBench`). Practice sends no work to the server,
@@ -231,6 +234,103 @@ opens no real drawer or book and changes nothing.
 **Performance.** `PerformanceGameTests` tends 32 kettles with 8 observers for 200 ticks and records the workshop's
 share of the server tick, snapshot counts and sizes and notices per player (`docs/TESTING.md`). The dense client smoke
 (`-Pvariant=dense`) measures frames with 0, 1, 8 and 32 tended kettles.
+
+## ADR-6: The close-up workshop (1.2.0)
+
+**Decision.** The working view looks into the apparatus. The render camera moves to a station-relative close-up, the
+Kettle's routine setup happens at the apparatus without a planner, bottles and dose cups are carried and tipped as
+continuous, replicated transfers, and the material answers the tools. The server stays the only authority: the camera,
+transfers, liquid surface and guidance are client presentation, and every action is still validated from the player's
+eyes, reach and the station's part volumes (ADR-5).
+
+**Camera.** `WorkshopCamera` is a client-only controller with the lifecycle `WORLD -> ENTERING -> WORKING <->
+INSPECTING -> LEAVING -> WORLD`. Forge 1.20.1 has no camera-position event (`ViewportEvent` only turns the camera), so
+`CameraMixin` runs at the end of `Camera.setup` (main camera only, mixin priority 1500, only while the controller frames
+a station): vanilla's or a camera mod's pose for the frame is where the glide starts and ends. The field of view comes
+from `ViewportEvent.ComputeFov`. Each station has an authored working shot and inspect shot (`WorkshopShots`): a target
+inside the apparatus, a pitch, a yaw offset, a preferred vertical field of view and the parts that must be in frame.
+`CameraFit` fits the shot to the window against both the vertical and the horizontal field of view, keeps the bottom
+11 % of the frame for the hotbar and status bars, clamps the distance to 0.75-2.4 blocks and widens the field of view in
+2.5° steps up to 62° before it gives up framing everything. The destination needs 0.16 blocks of clearance, the view to
+the apparatus must be open and the travel path clear (otherwise the move is a cut); when no authored alternative is
+clear the view works from the eyes and says why once. The glide is an eased move on real time (`cameraSeconds`); the
+framing never moves while an action is under way. Any interruption (screen replaced, death, teleport, dimension change,
+disconnect, station removed, resource reload, another camera entity) ends it and leaves no override behind.
+
+**Picking through the rendered camera.** `WorkshopProjector` keeps the projection and view matrices and the camera
+position of the frame that was actually drawn (`RenderLevelStageEvent`, after solid blocks). The cursor's ray, part
+hints and the screen positions of parts all come from those matrices, so what is under the cursor is what is drawn
+there, at any window shape, field of view or camera style.
+
+**Camera styles and migration.** `cameraStyle` is `CLOSE_UP`, `INSTANT` (the same shot as a cut), `EYE` (no camera
+movement) or `AUTO`. `AUTO` reads the 1.2.0-development `cameraMode`: `DIRECT` resolves to `EYE`, so a player who chose
+to keep their own view is never given a moving camera by this update; otherwise reduced motion resolves to `INSTANT`
+and everything else to `CLOSE_UP` (`ClientConfig.cameraStyle()`).
+
+**Diegesis, second evaluation.** Diegesis now publishes 1.0.0-beta.8 for Minecraft 1.20.1 (Forge), so the artifact
+objection of ADR-5 no longer holds. It is still not adopted: it is a complete scene, input and station-authority engine
+of its own, and Brewing already has a server-owned part, intent, lease and process model that every station, test and
+saved job depends on; running both would make two authorities for the same click. It would also be a beta, hard
+client-and-server dependency for a single camera hook. Its camera mechanism (the `Camera.setup` tail injection that
+places the camera after vanilla and camera mods) was adapted for `CameraMixin`; Diegesis is MIT-licensed (Copyright (c)
+2026 Pocky) and the notice ships as `META-INF/licenses/Diegesis-MIT.txt`. Nothing else is taken from it.
+
+**Direct setup.** `KettleSetupService` (server) keeps a pure, bounded, debounced preview of the batch the Kettle's
+staged bottles and tray would make: the supported routes ranked by how much of the staged ingredients they use, the
+servings, steps and exact costs, a revision number, and ghosts (what is missing and the part it belongs on). Several
+equally good routes become pages turned at the book stand (`SETUP_PAGE`); none is chosen by registry order. A route
+picked in the optional planner pins that page. The page is sent in the snapshot; lifting a staged bottle and tipping it
+over the mouth (or the batch shortcut) sends a commit with the `SETUP` flag and the revision the player saw. The server
+recomputes the preview and refuses with a reason, consuming nothing, if it changed; otherwise it sets the batch out
+through the same transaction as the planner (`setOut`) and pours the tipped bottle. The searchable planner stays one
+deliberate step away (the book's secondary action or `K`) and is never needed for a routine batch.
+
+**Transfers.** Lifting a rack bottle or dose cup is a carry lease on that part with a pose (`GRAB` with an
+acknowledgement). The carrier's samples move the pose, which every tracking client receives in the snapshot's `held`
+list (`carry`, `x`, `z`); tipping commits the pour or dose. Ownership moves once, when the server accepts the commit;
+a refused commit is acknowledged with its reason and the object returns. `WorkshopTransfers` plays lift, travel, align,
+tip, flow, return and settle: predicted for the sender, reconstructed from snapshots for observers, and never an
+authority. Batch pours and fills are paced on the server (a pour every 14 ticks after an 11-tick lead, a fill every 16
+after 5) and the snapshot names the next commit's game time, so each bottle's visible lift ends as the server commits
+it.
+
+**Protocol 6.** The intent envelope gains the view epoch (incremented each time a working view opens; an intent from
+an earlier view is ignored), the sequence as the operation id, the expected revision and the flags `ACK`, `DEEP`
+(posture) and `SETUP`. `WorkshopAckS2C` answers each acknowledged commit with ACCEPTED, REFUSED (and the reason) or
+IGNORED. `SETUP_PAGE` turns the recipe page; `SWITCH_STATION` moves the view to a station at most three blocks away,
+validated as an ordinary use there (reach, `mayInteract`, line of sight, Forge's right-click event). Client and server
+need the same build.
+
+**Posture, process version 2.** The paddle can work along the bottom (held left button, or `V`). `ToolTrack` keeps the
+share of credited movement made deep; version 2 Kettle rules feed it to `ReactionFamily.mixRate`, where it matters most
+for dense sediment. A process payload records the rules it was set out under: batches saved before this change keep
+version 1 rules and their original cue wording, and only batches set out now use version 2.
+
+**Material feedback.** The liquid is a client height field (`KettleSurface`): the paddle's wake, rings where a pour or
+dose lands, and fragments of each dose drawn by its arrival family from client presentation profiles (`docs/DATAPACKS.md`). Held tools follow
+`ToolMotion` (a little weight, a lean into the stroke, an eased return to the rest), and the paddle disturbs the
+surface only while its pose reports contact, the same contact flag its samples carry to the server. None of it is sent
+to the server or affects scoring. A kettle more than 10 blocks from the camera that nobody on this client is working
+at simulates its liquid at 20 Hz, draws it flat and leaves its recipe page's icons and print undrawn; its state,
+material accents and transfers are drawn as usual.
+
+**Guidance and HUD.** `guidance` (MINIMAL, GUIDED, DETAILED) decides how much is said in words (`WorkshopGuidance`):
+the hovered part's short label always, the next useful action and first-use demonstrations when guided, numbers and the
+full control help when detailed. Refusals and urgent warnings always show. The hotbar is the supply strip (its keys,
+and the wheel with empty hands, choose what is in hand), and the health and food bars stay visible.
+
+**Stations.** The Kettle was recomposed for the close-up (a wider opening, the bottle rail in front, the dose tray and
+book stand on the left, the paddle rest on the right); the Alembic reads as boiler, vapour path, condenser, diverter,
+receiver and a separate waste crock, and its idle fitting chooses purification or reclamation, showing the other
+operation's outcome before anything is used (`A_MODE`, committed when charged). Block shapes, render bounds, part
+volumes and picking were changed together, and the parts' arms are drawn with the player's skin at the grip
+(`hands`). `WorkshopArmRenderer` uses separately baked vanilla classic/slim arm and sleeve parts, translated and
+rotated without scaling for every tool and transfer. It queues their poses and draws a culled translucent pass after
+the particles, once the station's glass, liquid and reaction effects have been drawn. Dynamic apparatus translucency
+uses `translucentMovingBlock`, and arms use `itemEntityTranslucentCull`, so both enter Fabulous's item/entity target
+before its final composite (the chunk translucent target is cleared after block entity rendering). The default
+`armOpacity` is 0.45, fading toward the shoulder with a lighter sleeve overlay; neither the shared player model nor ordinary player rendering is
+modified. Reload and disconnect clear its queued poses and cached models.
 
 ## Third-party potion mods (spec 18)
 
@@ -279,7 +379,8 @@ changed config or another mod answering first leaves a plan reported and never o
 | 16.1 brew profiles | A profile sets phases, bands, disturbances and inertia; phase timing comes from the plan's difficulty tier (spec 8.3), not the profile. `presentation.accent` and the bounded `steam`/`foam`/`bubble`/`glint`/`mote` vocabulary are synced and rendered | Packs tune a reaction's feel and safe presentation, not its length; accessible palettes and particle/reduced-motion settings remain authoritative | One timing rule for every plan keeps durations within the spec's caps while presentation stays cosmetic |
 | 17 Smithing durability | No durability multiplier of our own: Smithing's `ItemStack.hurt` hook scales paddle wear from its quality data | Tested: a masterwork smithed paddle wears less | The spec forbids a second, conflicting multiplier |
 | Plan file names | `ControllerLock`, `InputValidator`, `GraceWindow` live in `SessionManager`/`ActiveSession`; `StationItemHandler`/`StationFluidHandler` are `AutomationHandler` and the Kettle's `WaterHandler`; `integration/tanning` is data only | None | Fewer, smaller classes with the same responsibilities |
-| Handoff 12 Diegesis | A local part-volume and working-view substitute instead of the Diegesis library | Same interaction model; keyboard navigation and a no-camera mode are available | Diegesis lacks both and has no resolvable artifact (ADR-5) |
+| Handoff 12 Diegesis | A local part-volume and working-view substitute instead of the Diegesis library | Same interaction model; keyboard navigation and a no-camera mode are available | Diegesis lacks both and had no resolvable artifact (ADR-5) |
+| Cinematic handoff, Diegesis | Not adopted although 1.0.0-beta.8 is published for 1.20.1; its camera hook is adapted under MIT | Brewing keeps one authority for parts, intents and jobs | A second scene and authority engine, and a beta hard dependency, for one camera hook (ADR-6) |
 | Handoff, keyboard tool work | Holding the Work key moves the held tool in a steady circle around the work point at a speed set by the effort (gentle, normal, firm); the arrow and page keys move the work point | Keyboard play reaches the same work rates as the mouse with single keys | No key chords, and the server's bounds apply to both |
 | Handoff, datapack reload | `/reload` does not seal hands-on batches; their setup is in the payload and completion revalidates the recipe | A reload mid-batch changes nothing; unresolvable work is held | The handoff's "invalidate only what can no longer be validated" |
 | Assistance | The time multiplier has no hands-on counterpart; the band multiplier widens the Kettle's ideal heat band | Assistance keeps the full scoring range | Hands-on work has no cue clock to slow down |

@@ -96,9 +96,11 @@ public final class WorkshopProtocolGameTests {
         pour.encode(buf);
         h.assertTrue(WorkshopIntentC2S.decode(buf).equals(pour) && buf.readableBytes() == 0, "the envelope round-trips");
         FriendlyByteBuf bad = new FriendlyByteBuf(Unpooled.buffer());
+        // Protocol 6 layout: dimension, position, job, view epoch, sequence, part, action, argument, x, z, flags, expected revision.
         bad.writeUtf("Not A Dimension!", 256);
         bad.writeBlockPos(pos);
         bad.writeUUID(UUID.randomUUID());
+        bad.writeVarInt(0);
         bad.writeVarInt(1);
         bad.writeByte(0);
         bad.writeByte(0);
@@ -106,6 +108,7 @@ public final class WorkshopProtocolGameTests {
         bad.writeFloat(0);
         bad.writeFloat(0);
         bad.writeByte(0);
+        bad.writeVarLong(-1);
         h.assertTrue(WorkshopIntentC2S.decode(bad).dimension().equals(WorkshopIntentC2S.INVALID), "a malformed dimension id is not a real one");
         h.succeed();
     }

@@ -6,7 +6,7 @@
 
 Covers: the vanilla infusion plans (every mix of PotionBrewing.bootStrap in Forge 1.20.1-47.4.23, for drinkable,
 splash and lingering bottles), the generic container conversions, reagent and brew profiles, the hands-on workshop
-profiles that refine them (1.2), Alembic recipes,
+profiles that refine them (1.2) and the client presentation profiles they name (1.2.0 close-up workshop), Alembic recipes,
 crafting recipes, block loot tables, tags, blockstates and block/item models, and the data for the optional potion mods
 under compat/ (plans, reagent profiles, effect policies and Alembic recipes, each conditioned on its mod). Hand-written files (lang, the spec's
 swiftness example, advancements) are not touched.
@@ -193,7 +193,49 @@ def brewing_workshop(name):
     family, ideal, workable, step, rest = BREW_WORKSHOP[name]
     return {'schema_version': 1, 'kind': 'brewing', 'target': f'{MOD}:{name}', 'reaction': family,
             'temperature': {'ideal': ideal, 'workable': workable, 'inertia': 1.0},
-            'treatment': {'step_seconds': step, 'rest_seconds': rest}}
+            'treatment': {'step_seconds': step, 'rest_seconds': rest},
+            'presentation': f'{MOD}:brewing/{name}'}
+
+
+# ---- client presentation profiles (1.2.0 close-up workshop): how a batch looks, never what it costs or makes ----
+# assets/<ns>/immersive_brewing/presentation/<path>.json, named by a workshop profile's `presentation` field.
+PRESENTATION = {
+    'generic': {'material': 'generic', 'liquid': {'clarity': 0.75, 'foam': '#F4F6FF'}, 'effects': {'bubbles': 0.5, 'steam': 0.5}},
+    'light_foam': {'material': 'generic', 'liquid': {'clarity': 0.8, 'foam': '#FBFDFF'}, 'effects': {'bubbles': 0.7, 'steam': 0.4}},
+    'dense_sediment': {'material': 'crystal', 'liquid': {'clarity': 0.45, 'foam': '#E8DCD0'}, 'effects': {'bubbles': 0.4, 'steam': 0.5},
+                       'fragments': {'count': 4, 'scale': 1.2}},
+    'delicate_shimmer': {'material': 'particulate', 'liquid': {'clarity': 0.95, 'foam': '#FFF0F8'}, 'effects': {'glints': 0.8, 'bubbles': 0.3}},
+    'magma_streaks': {'material': 'paste', 'liquid': {'clarity': 0.5, 'foam': '#FFD8B0', 'tint': '#E06A1C'}, 'effects': {'bubbles': 0.6, 'steam': 0.7}},
+    'suspended_bubbles': {'material': 'generic', 'liquid': {'clarity': 0.85, 'foam': '#E8F6FF'}, 'effects': {'bubbles': 1.0, 'steam': 0.3}},
+    'dark_whorls': {'material': 'fibrous', 'liquid': {'clarity': 0.4, 'foam': '#D8D0E0'}, 'effects': {'bubbles': 0.4, 'steam': 0.4}},
+    'aligning_glints': {'material': 'crystal', 'liquid': {'clarity': 0.9, 'foam': '#FFF8E0'}, 'effects': {'glints': 1.0, 'bubbles': 0.3}},
+    'floating_motes': {'material': 'particulate', 'liquid': {'clarity': 0.9, 'foam': '#F0F8E8'}, 'effects': {'motes': 1.0, 'bubbles': 0.3}},
+}
+
+# How each core reagent arrives in the liquid (handoff 8.2): its family, a colour for grains and trails, a size.
+REAGENT_PRESENTATION = {
+    'minecraft:nether_wart': ('fibrous', '#7A1E22', 1.1), 'minecraft:sugar': ('crystal', '#F4F1EA', 0.6),
+    'minecraft:redstone': ('crystal', '#C41E1E', 0.6), 'minecraft:glowstone_dust': ('crystal', '#F2C94C', 0.6),
+    'minecraft:gunpowder': ('crystal', '#5C5C5C', 0.6), 'minecraft:spider_eye': ('fibrous', '#8E1B2B', 1.0),
+    'minecraft:fermented_spider_eye': ('fibrous', '#5A2A3A', 1.0), 'minecraft:magma_cream': ('paste', '#E06A1C', 1.1),
+    'minecraft:blaze_powder': ('crystal', '#F08A24', 0.6), 'minecraft:ghast_tear': ('liquid', '#D8E8F0', 0.8),
+    'minecraft:rabbit_foot': ('fibrous', '#C9A27E', 1.0), 'minecraft:glistering_melon_slice': ('particulate', '#F5D26B', 0.9),
+    'minecraft:golden_carrot': ('fibrous', '#E8A33A', 1.0), 'minecraft:pufferfish': ('fibrous', '#D8B34A', 1.0),
+    'minecraft:turtle_helmet': ('crystal', '#4F8A3C', 1.2), 'minecraft:phantom_membrane': ('particulate', '#B9C4D6', 0.9),
+    'minecraft:dragon_breath': ('liquid', '#B04AD8', 0.8), 'minecraft:honey_bottle': ('paste', '#E8A82A', 1.0),
+    'minecraft:sweet_berries': ('fibrous', '#B02A2A', 0.9), 'minecraft:glow_berries': ('fibrous', '#F0B040', 0.9),
+}
+
+
+def presentation_profile(name):
+    out = {'schema_version': 1, 'station': 'kettle'}
+    out.update(PRESENTATION[name])
+    return out
+
+
+def reagent_presentation():
+    return {'schema_version': 1, 'reagents': {item: {'material': m, 'color': c, 'size': size}
+                                               for item, (m, c, size) in REAGENT_PRESENTATION.items()}}
 
 
 def distillation_workshop(recipe):
@@ -573,30 +615,157 @@ def box(frm, to, tex, faces='all', uv=None):
     return out
 
 
+def _uv_span(a, b):
+    """A face's UV span for model coordinates a..b, kept inside one texture (parts may reach past the block)."""
+    size = b - a
+    if size >= 16:
+        return 0, 16
+    shift = 0
+    while a + shift < 0:
+        shift += 16
+    while b + shift > 16:
+        shift -= 16
+    if a + shift < 0:
+        return 0, size
+    return a + shift, b + shift
+
+
+def part(frm, to, faces, rotation=None, shade=True):
+    """One model element with a texture per face ({'north': '#copper', ...}); UVs follow the coordinates."""
+    out = {'from': [round(v, 4) for v in frm], 'to': [round(v, 4) for v in to], 'faces': {}}
+    for f, tex in faces.items():
+        if f in ('north', 'south'):
+            u0, u1 = _uv_span(frm[0], to[0])
+            v0, v1 = _uv_span(16 - to[1], 16 - frm[1])
+        elif f in ('east', 'west'):
+            u0, u1 = _uv_span(frm[2], to[2])
+            v0, v1 = _uv_span(16 - to[1], 16 - frm[1])
+        else:
+            u0, u1 = _uv_span(frm[0], to[0])
+            v0, v1 = _uv_span(frm[2], to[2])
+        face = {'texture': tex, 'uv': [round(u0, 4), round(v0, 4), round(u1, 4), round(v1, 4)]}
+        if f == 'down' and frm[1] == 0:
+            face['cullface'] = 'down'
+        out['faces'][f] = face
+    if rotation:
+        out['rotation'] = rotation
+    if not shade:
+        out['shade'] = False
+    return out
+
+
+ALL = ('north', 'south', 'east', 'west', 'up', 'down')
+
+
+def solid(frm, to, tex, skip=()):
+    return part(frm, to, {f: tex for f in ALL if f not in skip})
+
+
 def kettle_model(lit=False):
-    t = {'particle': f'{MOD}:block/kettle_iron', 'iron': f'{MOD}:block/kettle_iron', 'copper': f'{MOD}:block/kettle_copper',
-         'burner': f'{MOD}:block/kettle_burner', 'vent': f'{MOD}:block/kettle_vent' if lit else f'{MOD}:block/kettle_vent_cold', 'wood': f'{MOD}:block/kettle_rack'}
+    """The close-up kettle (1.2.0): an open copper pot with a lowered near rim over an iron firebox; the bottle rail in
+    front, the spout carriage's pipe along the near side, the dose tray and book stand on the left, the paddle's handle
+    loop and the by-product basket on the right. Moving parts (paddle, carriage, knob, lid, cups, bottles, book pages)
+    are drawn by the block entity renderer at the same coordinates as WorkshopParts."""
+    t = {'particle': f'{MOD}:block/kettle_iron', 'iron': f'{MOD}:block/kettle_iron', 'copper': f'{MOD}:block/kettle_copper', 'rim': f'{MOD}:block/kettle_rim',
+         'burner': f'{MOD}:block/kettle_burner', 'vent': f'{MOD}:block/kettle_vent' if lit else f'{MOD}:block/kettle_vent_cold',
+         'wood': f'{MOD}:block/kettle_rack'}
+    C, I, W, B, R = '#copper', '#iron', '#wood', '#burner', '#rim'
     els = [
-        box([1, 0, 1], [15, 5, 15], '#burner', ['south', 'east', 'west', 'up', 'down']),
-        box([1, 0, 1], [15, 5, 1.01], '#vent', ['north']),
-        box([2, 5, 2], [14, 13, 3], '#iron'), box([2, 5, 11], [14, 13, 12], '#iron'),
-        box([2, 5, 3], [3, 13, 11], '#iron'), box([13, 5, 3], [14, 13, 11], '#iron'),
-        box([3, 5, 3], [13, 6, 11], '#iron', ['up']),
-        box([1, 13, 1], [15, 14, 3], '#copper'), box([1, 13, 10], [15, 14, 12], '#copper'),
-        box([1, 13, 3], [3, 14, 10], '#copper'), box([13, 13, 3], [15, 14, 10], '#copper'),
-        box([1, 8, 12], [15, 9, 15.5], '#wood'), box([1, 8, 15], [15, 13, 16], '#wood'),
+        # firebox and its draft vent
+        part([0.6, 0, 0.8], [15.4, 4, 15.4], {'south': B, 'east': B, 'west': B, 'up': B, 'down': B}),
+        part([0.6, 0, 0.79], [15.4, 4, 0.8], {'north': '#vent'}),
+        # front deck: fuel hatch (right), flame grate (centre), burner dial plate (left)
+        solid([1.4, 4, 1.0], [4.4, 5.6, 2.8], I),
+        solid([2.4, 5.6, 1.6], [3.4, 5.8, 2.2], C),
+        solid([5.0, 4.0, 1.1], [10.0, 4.15, 2.9], I),
+        solid([4.9, 4.15, 1.1], [5.15, 4.35, 2.9], I),
+        solid([9.85, 4.15, 1.1], [10.1, 4.35, 2.9], I),
+        solid([12.4, 4.0, 0.8], [15.4, 4.3, 3.0], C),
+        # vessel floor and walls: copper outside, dark iron inside; the near wall is lowered and the sides step down to it
+        part([3, 4, 4], [11, 5, 14], {'up': I}),
+        part([2, 4, 14], [12, 12.5, 15], {'north': I, 'south': C, 'east': C, 'west': C, 'up': C}),
+        part([3, 4, 3], [11, 10, 4], {'north': C, 'south': I, 'up': C}),
+        part([2, 4, 3], [3, 10.5, 6], {'west': C, 'east': I, 'north': C, 'up': C}),
+        part([2, 4, 6], [3, 11.25, 9.5], {'west': C, 'east': I, 'up': C}),
+        part([2, 10.7, 6], [3, 11.05, 6], {'north': C}),
+        part([2, 4, 9.5], [3, 12, 14], {'west': C, 'east': I, 'up': C}),
+        part([2, 11.45, 9.5], [3, 11.8, 9.5], {'north': C}),
+        part([11, 4, 3], [12, 10.5, 6], {'east': C, 'west': I, 'north': C, 'up': C}),
+        part([11, 4, 6], [12, 11.25, 9.5], {'east': C, 'west': I, 'up': C}),
+        part([11, 10.7, 6], [12, 11.05, 6], {'north': C}),
+        part([11, 4, 9.5], [12, 12, 14], {'east': C, 'west': I, 'up': C}),
+        part([11, 11.45, 9.5], [12, 11.8, 9.5], {'north': C}),
+        # rims: the near lip curls outward, the back rim stands proud
+        solid([2.6, 9.6, 2.5], [11.4, 10.2, 3.0], R),
+        solid([1.7, 12.2, 13.8], [12.3, 12.8, 15.3], R),
+        # Rolled side lips meet the front/back bands. Every rise has a copper end cap.
+        solid([1.8, 10.3, 2.8], [3.08, 10.7, 6], R),
+        solid([1.8, 11.05, 6], [3.08, 11.45, 9.5], R),
+        solid([1.8, 11.8, 9.5], [3.08, 12.2, 13.8], R),
+        solid([10.92, 10.3, 2.8], [12.2, 10.7, 6], R),
+        solid([10.92, 11.05, 6], [12.2, 11.45, 9.5], R),
+        solid([10.92, 11.8, 9.5], [12.2, 12.2, 13.8], R),
+        # A stepped lower shell gives the vessel weight, below its liquid and clear of every control.
+        solid([2.5, 4.0, 3.5], [11.5, 4.8, 14.5], C),
+        solid([1.75, 5.0, 5.0], [2.0, 9.2, 13.0], C),
+        solid([12.0, 5.0, 5.0], [12.25, 9.2, 13.0], C),
+        # rivet band
+        solid([2.8, 6.2, 2.85], [11.2, 6.7, 3.0], I),
+        part([1.85, 6.2, 3.0], [2.0, 6.7, 15.0], {'west': I, 'north': I, 'up': I, 'down': I}),
+        part([12.0, 6.2, 3.0], [12.15, 6.7, 15.0], {'east': I, 'north': I, 'up': I, 'down': I}),
+        # the right handle loop (the paddle's rest)
+        solid([0.6, 10.4, 6.6], [2.0, 11.0, 10.2], I),
+        solid([0.6, 9.2, 6.6], [1.2, 10.4, 7.2], I),
+        solid([0.6, 9.2, 9.6], [1.2, 10.4, 10.2], I),
+        # spout pipe along the near side on two posts, fed through the near wall; kept forward and low so the close-up
+        # camera sees the dose cups and the tray's first row past it
+        solid([0.6, 4.3, 0.8], [1.2, 9.9, 1.6], I),
+        solid([14.8, 4.3, 0.8], [15.4, 9.9, 1.6], I),
+        solid([1.2, 9.2, 0.8], [14.8, 9.8, 1.6], C),
+        solid([6.6, 8.4, 1.4], [7.4, 9.6, 3.2], C),
+        # the bottle rail: board, front lip and brackets
+        solid([0.6, 3.2, -2.6], [15.4, 3.6, 0.6], W),
+        solid([0.6, 3.6, -2.6], [15.4, 4.0, -2.3], W),
+        solid([1.6, 1.6, -0.6], [2.4, 3.2, 0.8], W),
+        solid([13.6, 1.6, -0.6], [14.4, 3.2, 0.8], W),
+        # dose tray (left), its rim, and the book stand behind it
+        solid([12.2, 4.0, 4.1], [15.8, 4.4, 11.9], W),
+        solid([15.5, 4.4, 4.1], [15.8, 4.9, 11.9], W),
+        solid([13.4, 4.0, 13.1], [14.6, 8.0, 14.3], W),
+        part([12.4, 8.0, 12.1], [15.6, 8.6, 15.9], {f: W for f in ALL}, {'origin': [14, 8.3, 14.0], 'axis': 'x', 'angle': -22.5}),
+        # by-product basket (right, back)
+        solid([0.2, 4.0, 11.4], [2.2, 4.4, 15.4], W),
+        solid([0.2, 4.4, 11.4], [0.5, 6.6, 15.4], W),
+        solid([1.9, 4.4, 11.4], [2.2, 6.6, 15.4], W),
+        solid([0.5, 4.4, 11.4], [1.9, 6.6, 11.7], W),
+        solid([0.5, 4.4, 15.1], [1.9, 6.6, 15.4], W),
     ]
-    return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els}
+    return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els, 'display': {'gui': {'rotation': [30, 225, 0], 'translation': [0, 0, 0], 'scale': [0.76, 0.76, 0.76]}}}
 
 
 def mortar_model():
+    """The close-up mortar: a stone bowl with its near wall lowered so the material and the pestle's contact stay in
+    view, on a wooden base; ledges for the dose cup (front left) and the kit shelf (back right)."""
     t = {'particle': f'{MOD}:block/mortar_stone', 'stone': f'{MOD}:block/mortar_stone', 'wood': f'{MOD}:block/mortar_wood',
-         'pestle': f'{MOD}:block/mortar_pestle'}
+         'pestle': f'{MOD}:block/mortar_pestle', 'inner': f'{MOD}:block/mortar_inner', 'handle': f'{MOD}:block/apparatus_wood'}
+    S, W, D = '#stone', '#wood', '#inner'
     els = [
-        box([3, 0, 3], [13, 3, 13], '#wood'),
-        box([2, 3, 2], [14, 9, 4], '#stone'), box([2, 3, 12], [14, 9, 14], '#stone'),
-        box([2, 3, 4], [4, 9, 12], '#stone'), box([12, 3, 4], [14, 9, 12], '#stone'),
-        box([4, 3, 4], [12, 5, 12], '#stone', ['up']),
+        solid([3, 0, 3], [13, 3, 13], W),
+        solid([3.2, 3, 3.2], [12.8, 4.0, 12.8], S),
+        part([3.5, 4, 3.5], [12.5, 5, 12.5], {'up': D, 'down': S}),
+        part([2.5, 3, 2.5], [13.5, 7.5, 3.5], {f: D if f == 'south' else S for f in ALL}),
+        part([2.5, 3, 12.5], [13.5, 9, 13.5], {f: D if f == 'north' else S for f in ALL}),
+        part([2.5, 3, 3.5], [3.5, 8.2, 8], {f: D if f == 'east' else S for f in ALL}),
+        part([2.5, 3, 8], [3.5, 9, 12.5], {f: D if f == 'east' else S for f in ALL}),
+        part([12.5, 3, 3.5], [13.5, 8.2, 8], {f: D if f == 'west' else S for f in ALL}),
+        part([12.5, 3, 8], [13.5, 9, 12.5], {f: D if f == 'west' else S for f in ALL}),
+        # rim lip and chamfered corners
+        solid([2.3, 7.5, 2.3], [13.7, 7.9, 2.7], S),
+        solid([2.3, 9.0, 13.3], [13.7, 9.4, 13.7], S),
+        # ledges: dose cup (front left), kit shelf (back right), scraper rest peg (front right)
+        solid([11.6, 0, -2.0], [16, 0.8, 2.0], W),
+        solid([0, 0, 11.2], [5.4, 0.8, 16], W),
+        solid([0.8, 3, 1.0], [2.6, 7.2, 2.6], W),
     ]
     return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els}
 
@@ -604,34 +773,101 @@ def mortar_model():
 def mortar_item_model():
     """Inventory silhouette is assembled; only the placed block delegates the pestle to the BER."""
     model = mortar_model()
-    model['elements'].append(box([9, 5, 5], [11, 15, 7], '#pestle'))
+    # The item and live pestle use the same pale head and wooden grip.
+    model['elements'].extend([
+        solid([9.1, 5.2, 5.1], [10.8, 6.6, 6.8], '#pestle'),
+        solid([9.35, 6.6, 5.35], [10.55, 7.2, 6.55], '#pestle'),
+        solid([9.55, 7.2, 5.55], [10.35, 14.6, 6.35], '#handle')])
     return model
 
 
 def alembic_model():
+    """The close-up alembic: boiler with a front sight window -> hood with the charge funnel, clamp and the
+    purify/reclaim fitting -> vapour neck -> raised condenser jacket at the back (glass, in alembic_glass) with the
+    coolant funnel -> diverter -> the receiver flask (glass, front left) or the separate waste crock (front centre), both
+    in view. Burner knob and the bottles to charge stand on the base in front; the fuel hatch is on its front face.
+    Moving parts are drawn by the renderer at WorkshopParts."""
     t = {'particle': f'{MOD}:block/alembic_copper', 'copper': f'{MOD}:block/alembic_copper', 'brick': f'{MOD}:block/alembic_brick',
          'glass': f'{MOD}:block/alembic_glass', 'iron': f'{MOD}:block/kettle_iron'}
+    C, Br, I = '#copper', '#brick', '#iron'
     els = [
-        box([1, 0, 1], [15, 3, 15], '#brick'),
-        box([2, 3, 4], [10, 10, 12], '#copper'),
-        box([4, 10, 6], [8, 15, 10], '#copper'),
-        box([8, 13, 7], [12, 14, 9], '#copper'),
-        box([11, 9, 7], [12, 13, 9], '#copper'),
-        box([3, 3, 1], [5, 6, 3], '#iron'),
+        solid([1, 0, 1], [15, 3, 15], Br),
+        # fuel hatch on the front face
+        solid([10, 0.4, 0.75], [14, 2.8, 1.0], I),
+        solid([11.4, 1.2, 0.5], [12.6, 1.8, 0.75], C),
+        # boiler: walls built around the sight window (x 2.8..6.8, y 4.2..8.4) on its front
+        solid([1.6, 3, 5], [8.0, 3.25, 11.6], I),
+        solid([1.6, 3.25, 5], [2.8, 9.4, 5.6], C),
+        solid([6.8, 3, 5], [8, 9.4, 5.6], C),
+        solid([2.8, 3, 5], [6.8, 4.2, 5.6], C),
+        solid([2.8, 8.4, 5], [6.8, 9.4, 5.6], C),
+        solid([1.6, 3, 11], [8, 9.4, 11.6], C),
+        part([1.6, 3, 5.6], [2.2, 9.4, 11], {'west': C, 'east': I, 'up': C}),
+        part([7.4, 3, 5.6], [8, 9.4, 11], {'east': C, 'west': I, 'up': C}),
+        part([2.2, 3, 5.6], [7.4, 3.6, 11], {'up': I}),
+        solid([1.6, 9.0, 5.6], [8, 9.4, 11], C),
+        # hood and funnel collar
+        solid([2.6, 9.4, 6.0], [7.0, 10.2, 10.6], C),
+        solid([3.0, 10.2, 6.4], [6.6, 11.8, 10.2], C),
+        solid([4.0, 11.8, 7.4], [5.6, 12.4, 9.2], C),
+        # vapour neck: up from the hood, across and back, down into the condenser cap
+        solid([6.2, 11.8, 8.0], [7.0, 13.6, 8.8], C),
+        solid([6.2, 13.6, 8.0], [11.6, 14.4, 8.8], C),
+        solid([10.8, 13.6, 8.8], [11.6, 14.4, 11.0], C),
+        solid([10.8, 12.4, 10.2], [11.6, 13.6, 11.0], C),
+        # condenser at the back: caps, stand, outlet pipe; the jacket itself is glass
+        solid([10.2, 12.0, 9.4], [14.2, 12.4, 15.2], C),
+        solid([10.2, 7.0, 9.4], [14.2, 7.4, 15.2], C),
+        solid([10.6, 3, 9.8], [11.2, 7.0, 10.4], I),
+        solid([13.2, 3, 14.2], [13.8, 7.0, 14.8], I),
+        solid([11.8, 6.4, 8.6], [12.6, 7.0, 9.8], C),
+        # coolant funnel: narrow stem below an open, broad mouth at the existing interaction target
+        solid([12.2, 12.4, 11.4], [13.2, 13.1, 12.6], C),
+        part([11.95, 13.0, 11.15], [13.45, 13.05, 12.85], {'up': I}),
+        solid([11.6, 13.0, 10.8], [13.8, 13.8, 11.15], C),
+        solid([11.6, 13.0, 12.85], [13.8, 13.8, 13.2], C),
+        solid([11.6, 13.0, 11.15], [11.95, 13.8, 12.85], C),
+        solid([13.45, 13.0, 11.15], [13.8, 13.8, 12.85], C),
+        # handwheel spindle (the wheel turns in the renderer)
+        solid([14.0, 8.4, 11.9], [14.8, 9.0, 12.5], I),
+        # diverter body and its two outlets: forward to the receiver flask, right to the waste crock
+        solid([11.2, 6.0, 7.4], [13.2, 7.4, 8.6], C),
+        solid([13.0, 6.6, 5.0], [13.6, 7.0, 7.4], C),
+        solid([10.4, 6.4, 7.6], [11.2, 7.0, 8.2], C),
+        # waste crock (front centre): dark earthenware, open
+        part([8.6, 3, 6.2], [11.0, 3.4, 9.2], {'up': I}),
+        solid([8.6, 3.4, 6.2], [9.0, 5.2, 9.2], Br),
+        solid([10.6, 3.4, 6.2], [11.0, 5.2, 9.2], Br),
+        solid([9.0, 3.4, 6.2], [10.6, 5.2, 6.6], Br),
+        solid([9.0, 3.4, 8.8], [10.6, 5.2, 9.2], Br),
+        # the stand for the bottles to charge (front right)
+        solid([0.6, 3, 0.6], [7.0, 3.4, 4.6], I),
     ]
-    # Only the inspection receiver is glass.  Declaring the complete copper/brick apparatus translucent creates
-    # needless sorting work and produces avoidable ordering artefacts on several renderers.
-    return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els}
+    return {'parent': 'block/block', 'render_type': 'minecraft:cutout', 'textures': t, 'elements': els, 'display': {'gui': {'rotation': [30, 225, 0], 'translation': [0, 0, 0], 'scale': [0.76, 0.76, 0.76]}}}
 
 
 def alembic_glass_model():
+    G = '#glass'
     return {'parent': 'block/block', 'render_type': 'minecraft:translucent',
             'textures': {'particle': f'{MOD}:block/alembic_glass', 'glass': f'{MOD}:block/alembic_glass'},
-            'elements': [box([10, 3, 9], [15, 9, 14], '#glass')]}
+            'elements': [
+                part([2.8, 4.2, 5.05], [6.8, 8.4, 5.15], {'north': G, 'south': G}),
+                part([10.4, 7.4, 9.6], [14.0, 12.0, 15.0], {f: G for f in ('north', 'south', 'east', 'west')}),
+                part([11.8, 3, 3.4], [15.0, 5.8, 7.2], {f: G for f in ('north', 'south', 'east', 'west', 'up')}),
+                part([12.8, 5.8, 4.6], [14.0, 6.6, 5.8], {f: G for f in ('north', 'south', 'east', 'west')}),
+            ]}
 
 
 def rack_model():
-    return {'parent': 'block/block', 'textures': {'particle': 'minecraft:block/spruce_planks', 'wood': 'minecraft:block/spruce_planks', 'edge': 'minecraft:block/dark_oak_planks'}, 'elements': [{'from': [0, 0, 2], 'to': [16, 2, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 7, 2], 'to': [16, 9, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 14, 2], 'to': [16, 16, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [0, 0, 7], 'to': [1, 16, 9], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#wood'}, 'west': {'texture': '#edge'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [15, 0, 7], 'to': [16, 16, 9], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#wood'}, 'up': {'texture': '#wood'}, 'down': {'texture': '#wood'}}}, {'from': [5.2, 2, 6.8], 'to': [5.7, 14, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}}}, {'from': [10.3, 2, 6.8], 'to': [10.8, 14, 8], 'faces': {'north': {'texture': '#edge'}, 'south': {'texture': '#wood'}, 'east': {'texture': '#edge'}, 'west': {'texture': '#edge'}}}]}
+    # Match the station furniture: joined shelf boards, solid timber uprights and darker cut edges.
+    textures = {'particle': f'{MOD}:block/kettle_rack', 'wood': f'{MOD}:block/kettle_rack',
+                'edge': f'{MOD}:block/apparatus_wood'}
+    shelves = [part([0, y, 2], [16, y + 2, 8],
+                    {face: '#edge' if face in ('north', 'east', 'west') else '#wood' for face in ALL})
+               for y in (0, 7, 14)]
+    uprights = [solid([x, 0, 7], [x + 1, 16, 9], '#edge') for x in (0, 15)]
+    dividers = [solid([x, 2, 6.8], [x + .5, 14, 8], '#edge', skip=('up', 'down')) for x in (5.2, 10.3)]
+    return {'parent': 'block/block', 'textures': textures, 'elements': shelves + uprights + dividers}
 
 
 def blockstate(block):
@@ -692,6 +928,9 @@ def files():
     for name in BREW:
         out[DATA / f'{MOD}/workshop_profiles/brewing/{name}.json'] = brewing_workshop(name)
     out[DATA / f'{MOD}/workshop_profiles/distillation/vanilla_potions.json'] = distillation_workshop('distillation/vanilla_potions')
+    for name in PRESENTATION:
+        out[ASSETS / f'{MOD}/presentation/brewing/{name}.json'] = presentation_profile(name)
+    out[ASSETS / f'{MOD}/presentation/reagents.json'] = reagent_presentation()
     for name, recipe in ALEMBIC.items():
         out[DATA / f'recipes/{name}.json'] = recipe
     for name, recipe in CRAFTING.items():
@@ -708,6 +947,11 @@ def files():
     for block in STATIONS:
         out[DATA / f'loot_tables/blocks/{block}.json'] = loot(block)
         out[ASSETS / f'blockstates/{block}.json'] = blockstate(block)
+    # Additional model dependency keeps presentation-only materials and cutout effect masks in the block atlas.
+    presentation = ['apparatus_ceramic', 'apparatus_paper', 'apparatus_neutral', 'apparatus_steel', 'apparatus_wood'] + ['fx_' + n for n in ('bubble','ripple','foam','flame','shard','flake','spark')]
+    out[ASSETS / 'models/block/presentation_assets.json'] = {
+        'textures': {name: f'{MOD}:block/{name}' for name in presentation},
+        'elements': [part([0, 0, 0], [16, 16, 0], {'north': '#' + name}) for name in presentation]}
     out[ASSETS / 'models/block/brewers_kettle.json'] = kettle_model(False)
     out[ASSETS / 'models/block/brewers_kettle_lit.json'] = kettle_model(True)
     out[ASSETS / 'models/block/apothecary_mortar.json'] = mortar_model()

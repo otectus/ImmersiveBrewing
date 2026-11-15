@@ -79,6 +79,7 @@ public class NotebookScreen extends Screen {
     @Nullable private CraftingRecipe alembicRecipe;
     /** The item under the mouse in a crafting grid this frame, for its tooltip; the visible text area bounds it. */
     private ItemStack hovered = ItemStack.EMPTY;
+    @Nullable private Component diagnostic;
     private int clipTop, clipBottom;
     private int selectedFavorite;
     private int selectedHistory;
@@ -237,8 +238,10 @@ public class NotebookScreen extends Screen {
 
     private void favoriteButtons() {
         int x = px + tabW + 6;
-        int y = py + ph - 26;
-        int each = (pw - tabW - 22) / 5;
+        int y = py + ph - 48;
+        int w = pw - tabW - 14;
+        int each = (w - 4) / 3;
+        boolean available=favorite()!=null;
         addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.inspect"), b -> inspectFavorite()).bounds(x, y, each, 20).build());
         boolean pinned = ClientGuide.pinned() != null;
         addRenderableWidget(Button.builder(Component.translatable(pinned ? "notebook.immersive_brewing.action.dismiss_pin" : "notebook.immersive_brewing.action.pin"),
@@ -247,10 +250,13 @@ public class NotebookScreen extends Screen {
             ClientGuide.Favorite f = favorite();
             if (f != null) send(NotebookPrefsC2S.Action.PRACTICE_PLAN, f.key(), ItemStack.EMPTY, ClientGuide.preferredServings());
         }).bounds(x + (each + 2) * 2, y, each, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.select"), b -> selectFavorite()).bounds(x + (each + 2) * 3, y, each, 20).build());
+        int half=(w-2)/2;
+        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.select"), b -> selectFavorite()).bounds(x,y+22,half,20).build());
         boolean replacing = ClientGuide.pendingFavorite() != null;
         addRenderableWidget(Button.builder(Component.translatable(replacing ? "notebook.immersive_brewing.action.replace" : "notebook.immersive_brewing.action.remove"),
-                b -> { if (replacing) replaceFavorite(); else removeFavorite(); }).bounds(x + (each + 2) * 4, y, each, 20).build());
+                b -> { if (replacing) replaceFavorite(); else removeFavorite(); }).bounds(x+half+2,y+22,half,20).build());
+        if(!available) for(var child:children()) if(child instanceof Button button&&button.getY()>=y&&button.getX()>=x)
+            button.active=pinned&&button.getX()==x+each+2&&button.getY()==y;
     }
 
     private ClientGuide.Favorite favorite() {
@@ -295,26 +301,31 @@ public class NotebookScreen extends Screen {
         int x = px + tabW + 6;
         int y = py + ph - 26;
         int each = (pw - tabW - 18) / 3;
-        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.repeat"), b -> repeatSelected())
+        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.repeat_short"), b -> repeatSelected())
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("notebook.immersive_brewing.action.repeat")))
                 .bounds(x, y, each, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.pin"), b -> pinHistory())
                 .bounds(x + each + 2, y, each, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.clear_history"),
-                b -> send(NotebookPrefsC2S.Action.CLEAR_HISTORY, "", ItemStack.EMPTY, 0)).bounds(x + (each + 2) * 2, y, each, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.clear_short"),
+                b -> send(NotebookPrefsC2S.Action.CLEAR_HISTORY, "", ItemStack.EMPTY, 0))
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("notebook.immersive_brewing.action.clear_history")))
+                .bounds(x + (each + 2) * 2, y, each, 20).build());
     }
 
     /** One bounded focus row selects every saved entry without turning scroll-translated rows into overlapping widgets. */
     private void entryNavigationButtons() {
         int x = px + tabW + 6;
         int w = pw - tabW - 14;
-        entryNavY = py + ph - 48;
-        entryNavButtonW = Math.min(56, Math.max(34, (w - 48) / 2));
-        previousEntry = addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.previous_entry"),
-                b -> changeEntry(-1)).bounds(x, entryNavY, entryNavButtonW, 18).build());
-        nextEntry = addRenderableWidget(Button.builder(Component.translatable("notebook.immersive_brewing.action.next_entry"),
-                b -> changeEntry(1)).bounds(x + w - entryNavButtonW, entryNavY, entryNavButtonW, 18).build());
-        previousEntry.setTooltip(net.minecraft.client.gui.components.Tooltip.create(previousEntry.getMessage()));
-        nextEntry.setTooltip(net.minecraft.client.gui.components.Tooltip.create(nextEntry.getMessage()));
+        entryNavY = py + ph - (page==Page.FAVORITES?70:48);
+        entryNavButtonW = 22;
+        previousEntry = addRenderableWidget(Button.builder(Component.literal("<"),
+                b -> changeEntry(-1)).createNarration(ignored->Component.translatable("notebook.immersive_brewing.action.previous_entry"))
+                .bounds(x, entryNavY, entryNavButtonW, 18).build());
+        nextEntry = addRenderableWidget(Button.builder(Component.literal(">"),
+                b -> changeEntry(1)).createNarration(ignored->Component.translatable("notebook.immersive_brewing.action.next_entry"))
+                .bounds(x + w - entryNavButtonW, entryNavY, entryNavButtonW, 18).build());
+        previousEntry.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("notebook.immersive_brewing.action.previous_entry")));
+        nextEntry.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("notebook.immersive_brewing.action.next_entry")));
         updateEntryButtons();
     }
 
@@ -473,17 +484,19 @@ public class NotebookScreen extends Screen {
         this.mouseX = mouseX;
         this.mouseY = mouseY;
         renderBackground(g);
-        Ui.panel(g, px, py, pw, ph);
+        Ui.bookPanel(g, px, py, pw, ph);
         Ui.Palette p = Ui.palette();
         int x = px + tabW + 6;
         int w = pw - tabW - 14;
         g.fill(px + tabW - 2, py + 6, px + tabW - 1, py + ph - 6, p.panelDark());
         g.fill(px + tabW - 1, py + 6, px + tabW, py + ph - 6, p.panelLight());
-        int top = compact ? py + 30 : (page == Page.RECIPES || page == Page.REAGENTS) ? py + 26 : py + 8;
+        boolean searchable = page == Page.RECIPES || page == Page.REAGENTS;
+        int top = searchable ? search.getY() + search.getHeight() + 6 : compact ? py + 30 : py + 8;
         clipTop = top;
-        clipBottom = py + ph - (page == Page.PRACTICE ? 140 : page == Page.FAVORITES || page == Page.JOURNAL ? 52
+        clipBottom = py + ph - (page == Page.PRACTICE ? 140 : page == Page.FAVORITES ? 74 : page == Page.JOURNAL ? 52
                 : page == Page.START || page == Page.RECIPES ? 32 : 6);
         hovered = ItemStack.EMPTY;
+        diagnostic = null;
         favoriteHits.clear();
         historyHits.clear();
         content.bounds(x, top, w, clipBottom - top);
@@ -501,7 +514,12 @@ public class NotebookScreen extends Screen {
         content.end(g, y);
         renderEntrySelection(g, mouseX, mouseY);
         super.render(g, mouseX, mouseY, partialTick);
+        if(!compact) {
+            int tabH=Math.max(14,Math.min(18,(ph-12)/Page.values().length));
+            g.fill(px+4,py+7+page.ordinal()*tabH,px+6,py+5+(page.ordinal()+1)*tabH,p.accent());
+        }
         if (!hovered.isEmpty()) g.renderTooltip(font, hovered, mouseX, mouseY);
+        else if(diagnostic!=null) g.renderTooltip(font,font.split(diagnostic,Math.min(260,width-24)),mouseX,mouseY);
     }
 
     private int text(GuiGraphics g, String key, int x, int y, int w, int mouseX, int mouseY) {
@@ -536,11 +554,11 @@ public class NotebookScreen extends Screen {
     /** Still-first cards reuse live-screen language; they remain useful at zero animation intensity. */
     private int instructionCards(GuiGraphics g, int x, int y, int w) {
         y = card(g, x, y, w, Component.translatable("screen.immersive_brewing.mortar"),
-                Component.translatable("help.immersive_brewing.mortar.goal"));
+                Component.translatable("help.immersive_brewing.mortar.goal"), new ItemStack(ModItems.APOTHECARY_MORTAR.get()));
         y = card(g, x, y, w, Component.translatable("screen.immersive_brewing.kettle"),
-                Component.translatable("help.immersive_brewing.kettle.signature"));
+                Component.translatable("help.immersive_brewing.kettle.signature"), new ItemStack(ModItems.BREWERS_KETTLE.get()));
         return card(g, x, y, w, Component.translatable("screen.immersive_brewing.alembic"),
-                Component.translatable("help.immersive_brewing.alembic.receiver", "[R]"));
+                Component.translatable("help.immersive_brewing.alembic.receiver", "[R]"), new ItemStack(ModItems.ALEMBIC.get()));
     }
 
     private int recoveryCard(GuiGraphics g, int x, int y, int w) {
@@ -549,11 +567,17 @@ public class NotebookScreen extends Screen {
     }
 
     private int card(GuiGraphics g, int x, int y, int w, Component title, Component body) {
+        return card(g,x,y,w,title,body,ItemStack.EMPTY);
+    }
+
+    private int card(GuiGraphics g,int x,int y,int w,Component title,Component body,ItemStack icon) {
         Ui.Palette p = Ui.palette();
-        int h = 26 + Ui.lines(body, w - 12) * 10;
+        int bodyY=icon.isEmpty()?15:25;
+        int h = bodyY + 11 + Ui.lines(body, w - 12) * 10;
         Ui.inset(g, x, y, w, h);
-        Ui.fit(g, title, x + 6, y + 4, w - 12, p.insetText());
-        Ui.wrapped(g, body, x + 6, y + 15, w - 12, p.insetMuted());
+        if(!icon.isEmpty()) g.renderItem(icon,x+6,y+4);
+        Ui.fit(g,title,x+(icon.isEmpty()?6:28),y+7,w-(icon.isEmpty()?12:34),p.insetText());
+        Ui.wrapped(g,body,x+6,y+bodyY,w-12,p.insetMuted());
         return y + h + 5;
     }
 
@@ -637,12 +661,14 @@ public class NotebookScreen extends Screen {
         List<InfusionRecipe> list = knownPaths();
         int servings = ClientGuide.preferredServings();
         y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.recipes.intro", servings), x, y, w, p.muted()) + 4;
+        boolean matched = false;
         for (InfusionRecipe r : list) {
             if (!matchesFilter(r)) continue;
             ItemStack out = r.getResultItem(minecraft.level.registryAccess());
             ItemStack in = r.input().stack(null);
             String name = out.getHoverName().getString().toLowerCase(Locale.ROOT);
             if (!q.isEmpty() && !name.contains(q) && r.steps().stream().noneMatch(s -> stepName(s).toLowerCase(Locale.ROOT).contains(q))) continue;
+            matched = true;
             g.renderItem(out, x, y);
             hover(out, x, y, 16, mouseX, mouseY);
             Component head = r.generic() ? Component.translatable("notebook.immersive_brewing.recipes.container", out.getHoverName())
@@ -657,6 +683,7 @@ public class NotebookScreen extends Screen {
             }
             y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.recipes.fuel", applications * r.steps().size()), x + 18, y, w - 18, p.muted()) + 4;
         }
+        if (!matched) y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.search.empty"), x, y, w, p.text()) + 8;
         y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.recipes.stand"), x, y, w, p.muted());
         return y;
     }
@@ -697,12 +724,14 @@ public class NotebookScreen extends Screen {
     private int reagents(GuiGraphics g, int x, int y, int w) {
         Ui.Palette p = Ui.palette();
         String q = search.getValue().toLowerCase(Locale.ROOT).trim();
+        boolean matched = false;
         for (ReagentProfile r : BrewingDefinitions.client().reagentProfiles()) {
             for (var id : r.selector().ids()) {
                 var item = ForgeRegistries.ITEMS.getValue(id);
                 if (item == null) continue;
                 ItemStack stack = new ItemStack(item);
                 if (!q.isEmpty() && !stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains(q)) continue;
+                matched = true;
                 g.renderItem(stack, x, y);
                 hover(stack, x, y, 16, mouseX, mouseY);
                 Component mode = r.preparation() == null ? Component.translatable("mode.immersive_brewing.none")
@@ -719,6 +748,7 @@ public class NotebookScreen extends Screen {
                 y += 4;
             }
         }
+        if (!matched) y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.search.empty"), x, y, w, p.text());
         return y;
     }
 
@@ -740,16 +770,25 @@ public class NotebookScreen extends Screen {
             y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.compatibility.none"), x, y, w, p.muted()) + 4;
         }
         for (PlanIndex.Entry entry : entries) {
-            String status = entry.status().name().toLowerCase(Locale.ROOT);
-            int color = switch (entry.status()) {
-                case SUPPORTED -> p.good();
-                case METADATA_ONLY -> p.accent();
-                case EXCLUDED -> p.muted();
-                case UNSUPPORTED -> p.bad();
+            String status=entry.status().name().toLowerCase(Locale.ROOT);
+            int color=switch(entry.status()) {
+                case SUPPORTED -> p.good(); case METADATA_ONLY -> p.accent(); case EXCLUDED -> p.muted(); case UNSUPPORTED -> p.bad();
             };
-            y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.compatibility.entry", entry.recipe(),
-                    Component.translatable("notebook.immersive_brewing.compatibility.status." + status)), x, y, w, color);
-            y += Ui.wrapped(g, reportReason(entry.reason()), x + 10, y, w - 10, p.muted()) + 3;
+            ItemStack output=minecraft==null||minecraft.level==null?ItemStack.EMPTY:minecraft.level.getRecipeManager().byKey(entry.recipe())
+                    .map(recipe->recipe.getResultItem(minecraft.level.registryAccess())).orElse(ItemStack.EMPTY);
+            boolean generic=output.getItem() instanceof net.minecraft.world.item.PotionItem
+                    &&net.minecraft.world.item.alchemy.PotionUtils.getPotion(output)==net.minecraft.world.item.alchemy.Potions.EMPTY;
+            Component name=output.isEmpty()?Component.translatable("notebook.immersive_brewing.compatibility.path"):
+                    generic?Component.translatable(output.getItem().getDescriptionId()):output.getHoverName();
+            int rowY=y;
+            if(!output.isEmpty()) { g.renderItem(output,x,y+2);if(!generic) hover(output,x,y+2,16,mouseX,mouseY); }
+            int tx=x+22,tw=w-24;
+            y+=Math.max(18,Ui.wrapped(g,name,tx,y+2,tw,p.text())+3);
+            y+=Ui.wrapped(g,Component.translatable("notebook.immersive_brewing.compatibility.status."+status),tx,y,tw,color)+3;
+            if(entry.status()==PlanIndex.Status.UNSUPPORTED || entry.status()==PlanIndex.Status.EXCLUDED)
+                y+=Ui.wrapped(g,reportReason(entry.reason()),tx,y,tw,p.muted())+3;
+            if(Ui.inside(mouseX,mouseY,tx,rowY,tw,y-rowY)&&mouseY>=clipTop&&mouseY<clipBottom) diagnostic=Component.literal(entry.recipe().toString()).append(" · ").append(reportReason(entry.reason()));
+            g.fill(x,y,x+w-2,y+1,p.panelDark());y+=7;
         }
         y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.compatibility.contextual"), x, y, w, p.muted()) + 4;
         y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.compatibility.budget"), x, y, w, p.muted());
@@ -767,21 +806,25 @@ public class NotebookScreen extends Screen {
     private int favorites(GuiGraphics g, int x, int y, int w) {
         Ui.Palette p = Ui.palette();
         List<ClientGuide.Favorite> favorites = ClientGuide.favorites();
-        y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.favorites.capacity", favorites.size(), PlayerGuide.MAX_FAVORITES), x, y, w, p.muted()) + 4;
-        if (!ClientGuide.favoriteNotice().isEmpty()) {
-            y += Ui.wrapped(g, Component.translatable(ClientGuide.favoriteNotice()), x, y, w, p.warn()) + 4;
-        }
+        y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.favorites.capacity", favorites.size(), PlayerGuide.MAX_FAVORITES), x, y, w, p.muted()) + 6;
+        if (!ClientGuide.favoriteNotice().isEmpty())
+            y += Ui.wrapped(g, Component.translatable(ClientGuide.favoriteNotice()), x, y, w, p.warn()) + 6;
         for (int i = 0; i < favorites.size(); i++) {
             ClientGuide.Favorite f = favorites.get(i);
+            Component problem = favoriteReason(f);
+            Component reason = problem == null ? Component.translatable("notebook.immersive_brewing.favorite.available") : problem;
             int rowY = y;
-            if (i == selectedFavorite) Ui.inset(g, x, y, w - 2, 27);
-            g.renderItem(f.output(), x, y);
-            hover(f.output(), x, y, 16, mouseX, mouseY);
-            y += Math.max(16, Ui.wrapped(g, f.output().getHoverName(), x + 18, y + 2, w - 18, p.text()));
-            Component reason = favoriteReason(f);
-            y += Ui.wrapped(g, reason == null ? Component.translatable("notebook.immersive_brewing.favorite.available") : reason,
-                    x + 18, y, w - 20, reason == null ? p.good() : p.warn()) + 3;
-            favoriteHits.add(new RowHit(i, x, rowY, w - 2, y - rowY));
+            int titleH = Math.max(18, 2 + Ui.lines(f.output().getHoverName(), w - 26) * 10);
+            int rowH = titleH + Ui.lines(reason, w - 26) * 10 + 5;
+            boolean selected = i == selectedFavorite;
+            if (selected) Ui.inset(g, x, y, w - 2, rowH);
+            g.renderItem(f.output(), x + 3, y + 3);
+            hover(f.output(), x + 3, y + 3, 16, mouseX, mouseY);
+            Ui.wrapped(g, f.output().getHoverName(), x + 23, y + 3, w - 26, selected ? p.insetText() : p.text());
+            Ui.wrapped(g, reason, x + 23, y + titleH, w - 26,
+                    selected ? Ui.onDark(problem == null ? p.good() : p.warn()) : problem == null ? p.good() : p.warn());
+            favoriteHits.add(new RowHit(i, x, rowY, w - 2, rowH));
+            y += rowH + 5;
         }
         if (favorites.isEmpty()) y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.favorites.none"), x, y, w, p.muted());
         return y;
@@ -818,36 +861,38 @@ public class NotebookScreen extends Screen {
         Ui.Palette p = Ui.palette();
         List<ClientGuide.History> history = ClientGuide.history();
         if (history.isEmpty()) return y + Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.none"), x, y, w, p.muted());
-        y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.count", history.size(), PlayerGuide.MAX_HISTORY), x, y, w, p.muted()) + 4;
+        y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.count", history.size(), PlayerGuide.MAX_HISTORY), x, y, w, p.muted()) + 6;
         for (int i = 0; i < history.size(); i++) {
             ClientGuide.History entry = history.get(i);
-            int rowY = y;
-            if (i == selectedHistory) Ui.inset(g, x, y, w - 2, 43);
-            g.renderItem(entry.output(), x, y + 1);
-            y += Math.max(17, Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.entry", entry.servings(),
-                    entry.output().getHoverName(), entry.quality()), x + 18, y + 2, w - 20, p.text()));
+            boolean selected = i == selectedHistory;
+            List<Component> lines = new ArrayList<>();
+            lines.add(Component.translatable("notebook.immersive_brewing.journal.entry", entry.servings(), entry.output().getHoverName(), entry.quality()));
             String when = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
                     .format(new java.util.Date(entry.timestamp()));
-            y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.when", when), x + 18, y, w - 20, p.muted());
-            y += Ui.wrapped(g, Component.translatable("notebook.immersive_brewing.journal.metrics", Math.round(entry.thermal() * 100),
-                    Math.round(entry.circulation() * 100), Math.round(entry.dosing() * 100)), x + 18, y, w - 20, p.muted());
-            if (entry.assistTime() > 1F || entry.assistBand() > 1F) {
-                y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.assistance_approved", entry.assistTime(), entry.assistBand()),
-                        x + 18, y, w - 20, p.muted());
-            }
+            lines.add(Component.translatable("notebook.immersive_brewing.journal.when", when));
+            lines.add(Component.translatable("notebook.immersive_brewing.journal.metrics", Math.round(entry.thermal() * 100),
+                    Math.round(entry.circulation() * 100), Math.round(entry.dosing() * 100)));
+            if (entry.assistTime() > 1F || entry.assistBand() > 1F)
+                lines.add(Component.translatable("screen.immersive_brewing.assistance_approved", entry.assistTime(), entry.assistBand()));
+            int contextEnd = lines.size();
             Component observation = observation(entry);
-            if (observation != null && i == selectedHistory) {
-                y += Ui.wrapped(g, observation, x + 18, y, w - 20, p.accent());
-            }
+            if (selected && observation != null) lines.add(observation);
             ClientGuide.History previous = ClientGuide.previousComparable(i);
-            if (previous != null) {
-                String comparison = entry.sameAssistance(previous) ? "notebook.immersive_brewing.journal.compare"
-                        : "notebook.immersive_brewing.journal.compare_assistance_changed";
-                y += Ui.wrapped(g, Component.translatable(comparison, signed(entry.quality() - previous.quality()),
-                        signed(entry.control() - previous.control())), x + 18, y, w - 20, p.accent());
+            if (previous != null) lines.add(Component.translatable(entry.sameAssistance(previous)
+                    ? "notebook.immersive_brewing.journal.compare" : "notebook.immersive_brewing.journal.compare_assistance_changed",
+                    signed(entry.quality() - previous.quality()), signed(entry.control() - previous.control())));
+            int rowH = 6;
+            for (int n = 0; n < lines.size(); n++) rowH += Math.max(n == 0 ? 18 : 0, Ui.lines(lines.get(n), w - 26) * 10);
+            if (selected) Ui.inset(g, x, y, w - 2, rowH);
+            g.renderItem(entry.output(), x + 3, y + 3);
+            int rowY = y, textY = y + 3;
+            for (int n = 0; n < lines.size(); n++) {
+                int color = n == 0 ? selected ? p.insetText() : p.text()
+                        : n < contextEnd ? selected ? p.insetMuted() : p.muted() : selected ? 0xFF99C9EC : p.accent();
+                textY += Math.max(n == 0 ? 18 : 0, Ui.wrapped(g, lines.get(n), x + 23, textY, w - 26, color));
             }
-            y += 4;
-            historyHits.add(new RowHit(i, x, rowY, w - 2, y - rowY));
+            historyHits.add(new RowHit(i, x, rowY, w - 2, rowH));
+            y += rowH + 5;
         }
         return y;
     }

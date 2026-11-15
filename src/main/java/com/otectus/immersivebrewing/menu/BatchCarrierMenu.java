@@ -24,6 +24,7 @@ import org.jetbrains.annotations.NotNull;
  * open (no click, swap or drop can move it), so its contents can not be duplicated or lost.
  */
 public class BatchCarrierMenu extends AbstractContainerMenu {
+    public static final int WIDTH = 248, HEIGHT = 234;
     private final InteractionHand hand;
     private final int lockedSlot;
     private final Player player;
@@ -49,7 +50,7 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
         List<ItemStack> contents = CarrierContents.read(carrier);
         for (int i = 0; i < CarrierContents.SLOTS; i++) handler.setStackInSlot(i, contents.get(i));
         for (int i = 0; i < CarrierContents.SLOTS; i++) {
-            addSlot(new SlotItemHandler(handler, i, 35 + i * 18, 20) {
+            addSlot(new SlotItemHandler(handler, i, 70 + i * 18, 28) {
                 @Override
                 public void setChanged() {
                     super.setChanged();
@@ -59,10 +60,10 @@ public class BatchCarrierMenu extends AbstractContainerMenu {
         }
         int locked = -1;
         for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 106 + row * 18));
+            for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col + row * 9 + 9, 43 + col * 18, 152 + row * 18));
         }
         for (int col = 0; col < 9; col++) {
-            Slot slot = new Slot(inventory, col, 8 + col * 18, 164) {
+            Slot slot = new Slot(inventory, col, 43 + col * 18, 210) {
                 @Override
                 public boolean mayPickup(Player p) {
                     return !(getItem().getItem() instanceof BatchCarrierItem) || hand != InteractionHand.MAIN_HAND || getContainerSlot() != p.getInventory().selected;

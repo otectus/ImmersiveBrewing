@@ -58,11 +58,24 @@ public final class WorkshopIntents {
 
     public static WorkshopResult receive(ServerPlayer player, WorkshopIntentC2S msg) {
         long started = System.nanoTime();
+        WorkshopResult result = WorkshopResult.IGNORED;
         try {
-            return receiveTimed(player, msg);
+            result = receiveTimed(player, msg);
+            return result;
         } finally {
             com.otectus.immersivebrewing.workshop.WorkshopMetrics.intent(System.nanoTime() - started);
+            // The sender's predicted transfer settles on this answer; observers never need it (they read snapshots).
+            if (msg.wantsAck()) acknowledge(player, msg, result);
         }
+    }
+
+    private static void acknowledge(ServerPlayer player, WorkshopIntentC2S msg, WorkshopResult result) {
+        int outcome = switch (result.kind()) {
+            case ACCEPTED -> com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.ACCEPTED;
+            case REFUSED -> com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.REFUSED;
+            case IGNORED -> com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.IGNORED;
+        };
+        ModNetwork.sendTo(player, new com.otectus.immersivebrewing.network.packet.WorkshopAckS2C(msg.pos(), msg.sequence(), outcome, result.reason()));
     }
 
     private static WorkshopResult receiveTimed(ServerPlayer player, WorkshopIntentC2S msg) {
@@ -81,7 +94,8 @@ public final class WorkshopIntents {
         budget.lastSequence = msg.sequence();
         WorkshopAction action = msg.action() < WorkshopAction.values().length ? WorkshopAction.values()[msg.action()] : null;
         if (action == null || msg.part() > 63 || !Float.isFinite(msg.x()) || !Float.isFinite(msg.z())
-                || Math.abs(msg.x()) > MAX_COORDINATE || Math.abs(msg.z()) > MAX_COORDINATE || msg.argument() < -1 || msg.argument() > 4096) {
+                || Math.abs(msg.x()) > MAX_COORDINATE || Math.abs(msg.z()) > MAX_COORDINATE || msg.argument() < -1 || msg.argument() > 4096
+                || msg.epoch() < 0 || msg.expected() < WorkshopIntent.NO_REVISION) {
             violation(player, budget, "malformed");
             return WorkshopResult.IGNORED;
         }
@@ -94,13 +108,19 @@ public final class WorkshopIntents {
             if (budget.samples < 1) return WorkshopResult.IGNORED; // over the sampling rate: dropped, the next one carries the pose
             budget.samples -= 1;
         }
+        // An envelope from an earlier working view of this player (closed and reopened since) is stale, LEAVE included:
+        // a late LEAVE must not close the view that replaced it.
+        int epoch = WorkshopPresence.epoch(player.getUUID());
+        if (msg.epoch() != WorkshopIntent.ANY_EPOCH && epoch != WorkshopIntent.ANY_EPOCH && msg.epoch() != epoch) return WorkshopResult.IGNORED;
         int effort = (msg.flags() >> WorkshopIntentC2S.EFFORT_SHIFT) & 3;
         WorkshopIntent intent = new WorkshopIntent(msg.part(), action, msg.argument(), msg.x(), msg.z(),
                 (msg.flags() & WorkshopIntentC2S.CONTACT) != 0, Effort.byId(effort),
                 (msg.flags() & WorkshopIntentC2S.OFFHAND) != 0 ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND,
-                (msg.flags() & WorkshopIntentC2S.BATCH) != 0, msg.job(), msg.sequence());
+                (msg.flags() & WorkshopIntentC2S.BATCH) != 0, msg.job(), msg.sequence(), msg.epoch(), msg.expected(),
+                (msg.flags() & WorkshopIntentC2S.DEEP) != 0, (msg.flags() & WorkshopIntentC2S.SETUP) != 0);
         WorkshopResult result = act(player, msg.pos(), intent);
-        if (result.kind() == WorkshopResult.Kind.REFUSED && result.reason() != null && now - budget.lastNotice >= 5) {
+        // An acknowledged commit names its own refusal at the object; others get the short notice as before.
+        if (result.kind() == WorkshopResult.Kind.REFUSED && result.reason() != null && !msg.wantsAck() && now - budget.lastNotice >= 5) {
             budget.lastNotice = now;
             ModNetwork.notice(player, result.reason(), true);
         }
@@ -142,13 +162,15 @@ public final class WorkshopIntents {
             WorkshopPresence.enter(player, pos, kind);
             return WorkshopResult.ACCEPTED;
         }
+        if (intent.action() == WorkshopAction.SWITCH_STATION) return switchStation(player, pos, intent.argument());
         double reach = ServerConfig.get(ServerConfig.MAX_STATION_DISTANCE) + 1.0;
         if (player.getEyePosition().distanceTo(Vec3.atCenterOf(pos)) > reach) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.reach");
         if (!level.mayInteract(player, pos)) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.protected");
         WorkshopPart part = WorkshopParts.get(kind, intent.part());
         boolean partless = intent.action() == WorkshopAction.DRAWER || intent.action() == WorkshopAction.BOOK
                 || intent.action() == WorkshopAction.STOP || intent.action() == WorkshopAction.LEGACY_RESUME
-                || intent.action() == WorkshopAction.SEAL || intent.action() == WorkshopAction.BEGIN;
+                || intent.action() == WorkshopAction.SEAL || intent.action() == WorkshopAction.BEGIN
+                || intent.action() == WorkshopAction.SETUP_PAGE || intent.action() == WorkshopAction.SWITCH_STATION;
         if (part == null && !partless) return WorkshopResult.IGNORED;
         // Samples and releases continue a grab that already passed this check; everything else must be in plain sight.
         boolean continuing = intent.action() == WorkshopAction.SAMPLE || intent.action() == WorkshopAction.RELEASE
@@ -165,6 +187,38 @@ public final class WorkshopIntents {
             return WorkshopResult.refuse("workshop.immersive_brewing.refuse.error");
         }
         return result;
+    }
+
+    /**
+     * Moves a working view to a neighbouring station (handoff 9.3): only to a station within the packed offset, in reach,
+     * that the player may interact with and whose ordinary block-use hooks (claims, protection) allow the use. The tools
+     * held here are put down first; no lease ever travels to the other station.
+     */
+    private static WorkshopResult switchStation(ServerPlayer player, BlockPos from, int packed) {
+        BlockPos to = StationOffsets.unpack(from, packed);
+        if (to == null || to.equals(from)) return WorkshopResult.IGNORED;
+        ServerLevel level = player.serverLevel();
+        if (!level.isLoaded(to)) return WorkshopResult.IGNORED;
+        BlockEntity target = level.getBlockEntity(to);
+        WorkshopKind kind;
+        if (target instanceof StationBlockEntity station) kind = station.workshopKind();
+        else if (target instanceof ApothecaryRackBlockEntity) kind = WorkshopKind.RACK;
+        else return WorkshopResult.refuse("workshop.immersive_brewing.next.none");
+        double reach = ServerConfig.get(ServerConfig.MAX_STATION_DISTANCE) + 1.0;
+        if (player.getEyePosition().distanceTo(Vec3.atCenterOf(to)) > reach) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.reach");
+        if (!level.mayInteract(player, to)) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.protected");
+        Direction facing = target.getBlockState().getValue(HorizontalDirectionalBlock.FACING);
+        WorkshopPart centre = WorkshopParts.of(kind).get(0);
+        if (!WorkshopGeometry.visible(level, player, to, facing, centre)) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.obstructed");
+        net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(Vec3.atCenterOf(to), facing, to, false);
+        var use = net.minecraftforge.common.ForgeHooks.onRightClickBlock(player, InteractionHand.MAIN_HAND, to, hit);
+        if (use.isCanceled() || use.getUseBlock() == net.minecraftforge.eventbus.api.Event.Result.DENY) {
+            return WorkshopResult.refuse("workshop.immersive_brewing.refuse.protected");
+        }
+        if (level.getBlockEntity(from) instanceof StationBlockEntity here) here.releaseLeases(player.getUUID());
+        if (target instanceof StationBlockEntity station) station.openWorkingView(player);
+        else WorkshopPresence.enter(player, to, kind);
+        return WorkshopResult.ACCEPTED;
     }
 
     private static void violation(ServerPlayer player, Budget budget, String what) {

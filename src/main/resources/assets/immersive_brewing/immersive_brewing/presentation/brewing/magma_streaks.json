@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "station": "kettle",
+  "material": "paste",
+  "liquid": {
+    "clarity": 0.5,
+    "foam": "#FFD8B0",
+    "tint": "#E06A1C"
+  },
+  "effects": {
+    "bubbles": 0.6,
+    "steam": 0.7
+  }
+}

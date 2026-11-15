@@ -85,18 +85,32 @@ public final class Ui {
         return Minecraft.getInstance().font;
     }
 
-    /** A raised vanilla-style panel. */
+    /** Stepped corners and a two-pixel bevel, matching the depth of vanilla container frames. */
     public static void panel(GuiGraphics g, int x, int y, int w, int h) {
         Palette p = palette();
-        g.fill(x, y, x + w, y + h, p.panel());
-        g.fill(x, y, x + w - 1, y + 1, p.panelLight());
-        g.fill(x, y, x + 1, y + h - 1, p.panelLight());
-        g.fill(x + 1, y + h - 1, x + w, y + h, p.panelDark());
-        g.fill(x + w - 1, y + 1, x + w, y + h, p.panelDark());
-        g.fill(x - 1, y - 1, x + w + 1, y, 0xFF000000);
-        g.fill(x - 1, y + h, x + w + 1, y + h + 1, 0xFF000000);
-        g.fill(x - 1, y, x, y + h, 0xFF000000);
-        g.fill(x + w, y, x + w + 1, y + h, 0xFF000000);
+        // Fill nested silhouettes instead of drawing intersecting border strips at the corners.
+        stepped(g,x-1,y-1,w+2,h+2,3,0xFF101010);
+        stepped(g,x,y,w,h,2,p.panelDark());
+        stepped(g,x,y,w-2,h-2,2,p.panelLight());
+        stepped(g,x+2,y+2,w-4,h-4,1,p.panel());
+    }
+
+    private static void stepped(GuiGraphics g,int x,int y,int w,int h,int corner,int color) {
+        if(w<=corner*2||h<=corner*2) {g.fill(x,y,x+w,y+h,color);return;}
+        g.fill(x+corner,y,x+w-corner,y+h,color);
+        g.fill(x,y+corner,x+w,y+h-corner,color);
+        if(corner>1) g.fill(x+1,y+1,x+w-1,y+h-1,color);
+    }
+
+    /** Quiet paper pages inside a leather cover; accessibility palettes keep their own panel treatment. */
+    public static void bookPanel(GuiGraphics g, int x, int y, int w, int h) {
+        if (palette() == HIGH_CONTRAST) { panel(g, x, y, w, h); return; }
+        g.fill(x, y + 2, x + w, y + h - 2, 0xFF493526);
+        g.fill(x + 2, y, x + w - 2, y + h, 0xFF493526);
+        g.fill(x + 2, y + 2, x + w - 2, y + h - 2, 0xFF8B6843);
+        g.fill(x + 4, y + 3, x + w - 3, y + h - 4, 0xFFEEE6CE);
+        g.fill(x + 4, y + h - 4, x + w - 3, y + h - 3, 0xFFB7AA89);
+        g.fill(x + 4, y + 3, x + 5, y + h - 4, 0xFFC8B997);
     }
 
     /** A sunken area (slot style). */
@@ -285,6 +299,12 @@ public final class Ui {
     public static void centered(GuiGraphics g, Component text, int cx, int y, int color) {
         Font font = font();
         g.drawString(font, text, cx - font.width(text) / 2, y, color, false);
+    }
+
+    /** The same crisp crafting arrow in guides, drawers and JEI. */
+    public static void arrow(GuiGraphics g,int x,int y,int color) {
+        g.fill(x,y+4,x+12,y+7,color);
+        for(int i=0;i<6;i++) g.fill(x+12+i,y+i,x+13+i,y+11-i,color);
     }
 
     /** A filled progress bar 0..1 with an outline. */

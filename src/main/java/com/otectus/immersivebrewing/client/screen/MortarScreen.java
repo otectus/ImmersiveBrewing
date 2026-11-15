@@ -19,18 +19,19 @@ public class MortarScreen extends StationScreen<MortarMenu> {
 
     public MortarScreen(MortarMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title, MortarMenu.WIDTH, MortarMenu.HEIGHT);
+        inventoryLabelX = 23;
     }
 
     @Override
     protected void init() {
         super.init();
-        addRenderableWidget(Button.builder(Component.literal("−"), b -> kits = Math.max(1, kits - 1)).bounds(leftPos + 8, topPos + 60, 14, 16).build());
+        addRenderableWidget(Button.builder(Component.literal("−"), b -> kits = Math.max(1, kits - 1)).bounds(leftPos + 8, topPos + 96, 14, 16).build());
         addRenderableWidget(Button.builder(Component.literal("+"), b -> kits = Math.min(PreparationParams.MAX_KITS, kits + 1))
-                .bounds(leftPos + 50, topPos + 60, 14, 16).build());
+                .bounds(leftPos + 50, topPos + 96, 14, 16).build());
         prepare = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.prepare"), b -> start())
-                .bounds(leftPos + 68, topPos + 60, 70, 16).build());
+                .bounds(leftPos + 80, topPos + 96, 120, 20).build());
         resume = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.resume"),
-                b -> action(StationActionC2S.Action.RESUME, 0)).bounds(leftPos + 68, topPos + 60, 70, 16).build());
+                b -> action(StationActionC2S.Action.RESUME, 0)).bounds(leftPos + 80, topPos + 96, 120, 20).build());
     }
 
     private void start() {
@@ -47,20 +48,21 @@ public class MortarScreen extends StationScreen<MortarMenu> {
         boolean sealed = station != null && station.view().state() == JobState.SEALED;
         resume.visible = sealed;
         prepare.visible = !sealed;
-        prepare.active = station != null && station.view().state() == null;
+        prepare.active = station != null && station.view().state() == null && !menu.slots.get(0).getItem().isEmpty();
     }
 
     @Override
     protected void renderExtras(GuiGraphics g, int mouseX, int mouseY) {
         Ui.Palette p = Ui.palette();
-        Ui.centered(g, Component.literal("×" + kits), leftPos + 36, topPos + 64, p.text());
+        Ui.centered(g, Component.literal("×" + kits), leftPos + 36, topPos + 100, p.text());
+        Ui.arrow(g, leftPos + 82, topPos + 60, p.muted());
     }
 
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
         super.renderLabels(g, mouseX, mouseY);
         StationBlockEntity station = station();
-        if (station != null) label(g, station.view().status(), 8, 16, imageWidth - 16, Ui.palette().muted(), mouseX, mouseY);
-        label(g, Component.translatable("screen.immersive_brewing.kits"), 136, 30, 32, Ui.palette().muted(), mouseX, mouseY);
+        if (station != null) Ui.wrappedMax(g, station.view().status(), 8, 20, imageWidth - 16, 2, Ui.palette().muted());
+        label(g, Component.translatable("screen.immersive_brewing.kits"), 126, 84, 72, Ui.palette().muted(), mouseX, mouseY);
     }
 }

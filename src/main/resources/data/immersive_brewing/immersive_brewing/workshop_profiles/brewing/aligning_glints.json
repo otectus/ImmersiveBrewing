@@ -17,5 +17,6 @@
   "treatment": {
     "step_seconds": 9.0,
     "rest_seconds": 4.0
-  }
+  },
+  "presentation": "immersive_brewing:brewing/aligning_glints"
 }

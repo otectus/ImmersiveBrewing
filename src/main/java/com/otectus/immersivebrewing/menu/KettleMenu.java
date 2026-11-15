@@ -12,17 +12,27 @@ import net.minecraft.world.item.Items;
 
 /** Loading the Kettle: bottle rack, ingredient tray, fuel, paddle and the by-product shelf. Brewing itself is its own screen. */
 public class KettleMenu extends StationMenu {
-    public static final int WIDTH = 176;
-    public static final int HEIGHT = 206;
+    public static final int WIDTH = 266;
+    public static final int HEIGHT = 234;
 
     public KettleMenu(int id, Inventory inventory, BlockPos pos) {
         super(ModMenus.KETTLE.get(), id, inventory, pos, BrewersKettleBlockEntity.SLOTS);
-        for (int i = 0; i < BrewersKettleBlockEntity.RACK_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.RACK + i, 35 + i * 18, 18, false);
-        for (int i = 0; i < BrewersKettleBlockEntity.TRAY_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.TRAY + i, 35 + i * 18, 42, false);
-        addStationSlot(BrewersKettleBlockEntity.FUEL, 8, 42, false);
-        addStationSlot(BrewersKettleBlockEntity.PADDLE, 152, 18, false);
-        for (int i = 0; i < BrewersKettleBlockEntity.BYPRODUCT_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.BYPRODUCT + i, 116 + i * 18, 66, true);
-        addPlayerSlots(inventory, 8, 124);
+        for (int i = 0; i < BrewersKettleBlockEntity.RACK_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.RACK + i, 35 + i * 18, 32, false);
+        for (int i = 0; i < BrewersKettleBlockEntity.TRAY_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.TRAY + i, 35 + i * 18, 66, false);
+        addStationSlot(BrewersKettleBlockEntity.FUEL, 8, 66, false);
+        addStationSlot(BrewersKettleBlockEntity.PADDLE, 152, 32, false);
+        for (int i = 0; i < BrewersKettleBlockEntity.BYPRODUCT_SIZE; i++) addStationSlot(BrewersKettleBlockEntity.BYPRODUCT + i, 116 + i * 18, 94, true);
+        addPlayerSlots(inventory, 8, 152);
+    }
+
+    /** Menu insertion order, shared by slot hints and the real station layout. Player slots have no station role. */
+    public static String slotRole(int index) {
+        if (index < 0) return null;
+        if (index < BrewersKettleBlockEntity.RACK_SIZE) return "bottle";
+        if (index < BrewersKettleBlockEntity.RACK_SIZE + BrewersKettleBlockEntity.TRAY_SIZE) return "reagent";
+        if (index == BrewersKettleBlockEntity.RACK_SIZE + BrewersKettleBlockEntity.TRAY_SIZE) return "fuel";
+        if (index == BrewersKettleBlockEntity.RACK_SIZE + BrewersKettleBlockEntity.TRAY_SIZE + 1) return "paddle";
+        return index < BrewersKettleBlockEntity.SLOTS ? "returns" : null;
     }
 
     public static KettleMenu fromNetwork(int id, Inventory inventory, FriendlyByteBuf buf) {

@@ -1,8 +1,9 @@
 # Testing
 
-This file separates the **current development commands and pending gates** (the hands-on workshop, 1.2.0) from
-historical results. The work-package map, coverage of former features, exact results and limits are in
-[`docs/reports/1.2.0-hands-on-overhaul.md`](reports/1.2.0-hands-on-overhaul.md); the 1.1.0 report remains for its own
+This file separates the **current development commands and pending gates** (the hands-on workshop and its close-up
+camera, 1.2.0) from historical results. The close-up workshop's feature map, exact results and limits are in
+[`docs/reports/1.2.0-close-up-workshop.md`](reports/1.2.0-close-up-workshop.md); the earlier hands-on work is in
+[`docs/reports/1.2.0-hands-on-overhaul.md`](reports/1.2.0-hands-on-overhaul.md) and the 1.1.0 report remains for its own
 revision. A historical pass does not establish that the current tree passed after later fixes. Logs from `gradlew-quiet.sh` are written to
 `/tmp/gradle-ImmersiveBrewing-<task>-<timestamp>.log`; durable current matrix output uses the paths under
 [Artifacts](#artifacts).
@@ -19,6 +20,7 @@ python3 tools/run_compat_matrix.py            # serial provisioned matrix; verif
 python3 tools/run_compat_matrix.py core apothecary_config  # selected cases
 tools/run_smoke_matrix.sh default keyboard accessible colorblind gui1 gui2 gui3 gui4
 tools/run_smoke_matrix.sh visual             # five locales at 320x240; status states, countdowns, lessons and localized carrier labels
+tools/run_smoke_matrix.sh journey            # real mouse/keyboard journeys only, uncut footage in run/footage (needs ffmpeg)
 SMOKE_GRADLE_ARGS=-PwithPotionMods tools/run_smoke_matrix.sh default        # the client with the four potion mods
 $Q $P build                                  # JUnit + mod jar (build/libs)
 python3 -I /home/otectus/Projects/.mcmod-tools/check_mod.py $P
@@ -34,12 +36,50 @@ python3 tools/check_release.py --jar build/libs/immersive-brewing-1.2.0.jar
 `IB_COMPAT_FIXTURES_DIR`; it never downloads or redistributes them. It runs cases serially and restores the changed
 Apothecary configuration byte-for-byte even after failure.
 
+## Arm and station rendering refinement (2026-11-14)
+
+This pass replaces task-dependent, stretched/half-size arms with separately baked vanilla classic/slim geometry.
+The default hand opacity is 0.45 with a shoulder fade and lighter sleeves. Glass, liquid and arms now use the
+item/entity transparency target, fixing the missing apparatus translucency observed in Fabulous mode. Mortar
+particles follow the work contact, grinding tracks cannot carry into another station/job/dimension, and reclamation
+uses restrained sieve/waste flakes. Alembic animation freezes with inactive batches and respects motion intensity;
+missing-supply ghosts also respect reduced motion. Existing pixel-art textures and model materials were inspected
+and retained. This is a presentation change; server process rules are unchanged.
+
+`WorkshopArmChecks` measures actual renderer vertices for both vanilla skin models, both hands and sleeve on/off:
+24 checks cover dimensions, partial alpha, rigid transforms and wrist/grip alignment. The full walkthrough captures
+normal, mirrored, tools-only and Fabulous views. `arms_eye` repeats the affected Mortar/Kettle portion with keyboard
+input at eye level, ending after the render-mode comparison; it does not claim the full brewing/purification journey.
+
+| Command | Observed result | Log or artifact |
+| --- | --- | --- |
+| `/home/otectus/Projects/.mcmod-tools/gradlew-quiet.sh /home/otectus/Projects/ImmersiveBrewing build compileSmokeTestJava` | PASS; 57 JUnit tests, no failures/errors/skips | `/tmp/gradle-ImmersiveBrewing-build-20261114-191832.log` |
+| `SMOKE_WINDOW=1920x1080 bash tools/run_smoke_matrix.sh default` | PASS; 167 boolean assertions, including all 24 arm checks | `/tmp/gradle-ImmersiveBrewing-runClient-20261114-191920.log`; `run/smoketest-matrix/default.json` |
+| `SMOKE_WINDOW=1280x960 SMOKE_GRADLE_ARGS=-PguiScale=4 bash tools/run_smoke_matrix.sh arms_eye` | PASS; 76 assertions; eye-level keyboard input at 320×240 GUI, both graphics modes | `/tmp/gradle-ImmersiveBrewing-runClient-20261114-192337.log`; `run/smoketest-matrix/arms_eye.json` |
+| `SMOKE_WINDOW=1920x1080 bash tools/run_smoke_matrix.sh accessible` | PASS; 167 assertions; high contrast, numeric cues, reduced motion/input and both graphics modes | `/tmp/gradle-ImmersiveBrewing-runClient-20261114-192457.log`; `run/smoketest-matrix/accessible.json` |
+| `python3 tools/generate_textures.py --check` | PASS; 71/71 | Existing generated textures unchanged |
+| `python3 tools/generate_data.py --check` | PASS; 543/543 | Existing generated models/data unchanged |
+| `python3 -I /home/otectus/Projects/.mcmod-tools/check_mod.py /home/otectus/Projects/ImmersiveBrewing` | PASS; 0 errors/warnings; existing strapped-carrier override-model note | Source/content check |
+| `python3 tools/check_release.py --jar build/libs/immersive-brewing-1.2.0.jar` | PASS; 1,281 keys per maintained locale, matching placeholders; no test or bundled third-party code | `build/libs/immersive-brewing-1.2.0.jar` |
+
+Native captures reviewed include `run/screenshots/smoketest_1920x1080_kettle_stirring.png`,
+`smoketest_1920x1080_kettle_left_hand.png`, `smoketest_1920x1080_kettle_translucent_arm_fabulous.png`,
+`smoketest_1920x1080_mortar_working.png` and `smoketest_1920x1080_alembic_reclaiming_detail.png` in the same directory.
+The minimum-GUI eye-level capture is `run/screenshots/smoketest_arms_eye_1280x960_gui4_kettle_translucent_arm_fabulous.png`;
+reduced-motion captures use the `smoketest_accessible_1920x1080_` prefix. `git diff --check` and
+`bash -n tools/run_smoke_matrix.sh` also pass. The rendered player uses a slim skin; classic geometry is covered by the baked-vertex checks. Shader packs, alternate
+renderers and a second real player's body/arm are not validated here. GameTests were not rerun for these client-only
+changes. Earlier visual captures and pass counts remain historical.
+
+Jar SHA-256: `21a7f550b009c7338961988a556dfdf87cf8f0e968e3a8c25107433454c45912`.
+
 ## Suites
 
-### JUnit (44 tests declared in the current source, `src/test`)
+### JUnit (57 tests declared in the current source, `src/test`)
 
 | Class | Covers |
 | --- | --- |
+| `CloseUpWorkshopTest` | The close-up camera's fit: every framed part in the picture at every facing and window aspect, the camera on the player's side above the apparatus, a narrow window widening the field of view instead of cropping or backing off, the inspect shot closer than the working shot, the camera basis matching Minecraft's look convention; every part picked through its centre at every facing; no overlapping parts except the tray and cups that are never shown together; the liquid below the lowered near rim; posture counting only credited movement; sweeping the bottom clearing sediment only under version 2 rules, and a version 1 batch keeping its version and rules; neighbour-station offsets |
 | `WorkshopProcessTest` | The hands-on domain: every reaction family completes with competent tending and also without any stirring (stirring is never mandatory); 10 Hz and 20 Hz tool samples earn the same; stationary, teleporting and in-air tools earn nothing; bursts are capped; no farming after the treatment; save/load round trip; Mortar endpoint and overwork, four units sharing the work, every effort reaching the same ceiling; Alembic routing and an idle still |
 | `StationVisualCacheTest` | Bounded client visual cache |
 | `QualityMathTest` | Grade bands, component scores, the quality formula, the duration multiplier (exact at 50), drinking time, purification |
@@ -48,7 +88,7 @@ Apothecary configuration byte-for-byte even after failure.
 | `DistillationSimulationTest` | (1.1 simulation) Competent routing scores high and finishes in time; sloppy and idle score lower |
 | `GuidedPracticeTest` | (1.1 lessons; the 1.2 Notebook lessons run in the working view) Staged heat/circulation/addition/recovery practice parameters, progression and non-productive result contract |
 
-### GameTests (162 tests declared in the current source, `src/gameTest`)
+### GameTests (176 tests declared in the current source, `src/gameTest`)
 
 Hands-on stations are driven by the reference tenders in `src/testShared` (`KettleTender`, `MortarTender`,
 `AlembicTender`), which act only through `WorkshopHand`, the same intent envelope a client sends.
@@ -59,6 +99,7 @@ Hands-on stations are driven by the reference tenders in `src/testShared` (`Kett
 | `KettleGameTests` | 5 | Three-serving Swiftness by hand with exact reagent and fuel accounting, prepared kits, seal and reopen with the state unchanged, withdrawing an untouched batch, a dose making the batch irreversible |
 | `LifecycleGameTests` | 14 | A running ledger reloads sealed; a reservation that never started reloads released; an untouched batch reloads sealed and can be withdrawn; break while running drops one Recovery Batch that installs once and finishes; a completion issues once; disconnect, death, walking away and dimension change seal after the grace with progress kept; a helper keeps a batch attended, a passer-by does not; six inputs, two bottled, then broken keeps four portions owned once; an occupied position pauses bottling without a debit (handoff 14, 16) |
 | `ContentionGameTests` | 4 | Two players at one Kettle (refused start, leased tools, brewer credited); two players can not both collect one bottle; one player tending two stations; a guessed position does nothing (handoff 16) |
+| `CloseUpWorkshopGameTests` | 14 | Direct setup: the recipe page is a pure preview of the staged batch; tipping a staged bottle starts exactly the shown batch; a changed page refuses and consumes nothing; equal routes are offered as pages, never chosen by registry order; a missing supply shows where it belongs. Transfers: a carry belongs to one hand and moves nothing until tipped; disconnecting while carrying leaves the bottle where it was; commits are acknowledged by their sequence; an intent from an earlier view is stale; an ordinary use loads one unit and the batch action the rest; the batch shortcut sets out and pours at the visible pace. Moving the view to a neighbour only through that station's own checks; the Alembic fitting decides what the charge commits; leaving the still never reclaims a batch |
 | `WorkshopProtocolGameTests` | 4 | Envelopes that must not act change nothing (stale job, duplicate or replayed sequence, non-finite and out-of-range values, wrong dimension); no open view, remote position and obstruction are refused; a sample flood can not buy work; a refused action keeps the held stack (handoff 15) |
 | `Presentation111GameTests` | 3 | Typed snapshots are bounded and do not change the process; frozen material is published truthfully for paused, counting-in and sealed (1.1) batches and for a sealed hands-on batch |
 | `AutomationGameTests` | 7 | Face rules for insertion and extraction, nothing reachable during a job, comparator modes, water filling (simulate equals execute, whole bottles, one bucket fills four), real hoppers, Mortar and Alembic faces (22) |
@@ -100,17 +141,60 @@ Then the operator report, a gallery of station states and facings (stand-ins ten
 block-sync probes (a marker block placed on the server must reach the client). Results go to
 `run/smoketest/smoketest-result.json`, screenshots to `run/screenshots/`.
 
-Variants (`tools/run_smoke_matrix.sh`): `keyboard` works every station through the workshop key bindings only;
+The `journey` variant (handoff 15.3) replaces that walkthrough with journeys played only through the window's own
+input (`RealInput` calls Minecraft's `MouseHandler` and `KeyboardHandler` callbacks in window coordinates; nothing
+calls the client hand, a station or the server). The player stands in front of fresh stations with supplies in the
+hotbar, opens each with an ordinary right-click and points the cursor at what the working view reports under it
+(`RealJourney`; a part that can not be pointed at fails the journey): a Mortar preparation of two sugar, a guided first
+batch of three Swiftness from water bottles, nether wart, sugar, blaze powder and a paddle placed from the hotbar
+(recipe page, lift and tip the first bottle, the batch action for the rest, the burner by the wheel, both doses
+carried and tipped, the paddle circled through the liquid, rest, the batch fill, taking the potions), the same batch
+with guidance minimal, tutorials and part labels off, and an Alembic purification with the fitting turned to
+reclamation and back. Each journey records the number of clicks, keys, wheel turns and pointer moves, every screen
+other than the working view (there must be none), acknowledgements, the camera's offset from the eyes, how much of
+each part was visible when it was pointed at, and how often the desktop's own pointer moved the cursor (the journey
+puts it back before acting). Then a server-side brewer works another kettle while this client only
+watches from the world (the observer view): its carried bottles and cups, paddle, liquid and filled bottles must reach
+the client. Every journey is recorded uncut by piping the rendered frames into ffmpeg (`Footage`, 20 frames a second,
+real time) to `run/footage/journey_<name>.mp4`.
+
+Variants (`tools/run_smoke_matrix.sh`): `keyboard` works every station through the workshop key bindings only, with
+the eye-position camera (`cameraStyle = EYE`; every run checks that the camera style it set is the one in use);
 `accessible` uses the high-contrast palette, reduced motion, numeric readings, large markers and master volume 0;
 `colorblind` the colour-blind palette; `visual` captures every station's working view and the other screens in all
 five languages at GUI scale 4; `gui1`-`gui4` set the GUI scale in a 1280×960 window, giving GUI sizes 1280×960,
 640×480, 427×320 and exactly 320×240, the smallest Minecraft allows.
 
-## Current 1.2.0 validation status
+## Current 1.2.0 validation status (close-up workshop)
+
+Validated on 2026-11-13 against the uncommitted tree recorded in the
+[close-up workshop report](reports/1.2.0-close-up-workshop.md), which also lists the commands, log paths and limits.
+Human gates remain **PENDING**. Code states: **A** is the final code (one later edit changed only the text of one status
+string in five locales, covered by the final build and `check_release.py`); **B** precedes the kettle's distance level
+of detail and the observer's framing; **C** also precedes the paddle-to-cup hand-off and the harness's focus and
+capture-timing fixes. The report says which runs used which.
+
+| Gate | Result | Durable evidence |
+| --- | --- | --- |
+| Build + 56 unit tests | **PASS; 0 failures/errors/skips** (final) | `build/test-results/test/`, quiet-wrapper `build` log |
+| 177 GameTests (core, no optional jars) | **PASS** (final) | quiet-wrapper `runGameTestServer` log, `docs/reports/gametest-coverage-report.txt` |
+| Generated resources, locales, packaged jar, `check_mod` | **PASS; data 542, textures 57, icons 3, sounds 27, 1269 keys in five locales, jar 1.2.0 without test code and with the Diegesis notice; 0 errors/0 warnings (1 note)** (final) | tool output in the report |
+| Dense instrumentation, replaying the default walkthrough first (`dense`) | **PASS; 132/132** (A); before/after figures against `8f1faf7` in the report | `run/smoketest-matrix/dense.json` |
+| Real-input journeys at 1920×1080 (`capture-journey`) | **PASS; 51/51** (A) | `run/smoketest-matrix/capture-journey.json`, `run/footage/` |
+| Real-input journeys at 1280×960 (`journey`) | **PASS; 51/51** (B); an earlier attempt (C) failed when the desktop's pointer moved the cursor mid-action (the journey now puts it back) | `run/smoketest-matrix/journey.json`, `run/footage-1280x960/` |
+| Client smoke: keyboard-only with the eye camera, GUI 427×320, five languages at 320×240, the walkthrough at 1920×1080 | **PASS; 125/125, 122/122, 757/757, 122/122** (B) | `run/smoketest-matrix/{keyboard,gui3,visual,capture-default}.json` |
+| Client smoke: default, accessible, colour-blind, GUI 1280×960, 640×480, 320×240 | **PASS; 121/121, 122/122, 122/122, 122/122, 122/122, 122/122** (C) | `run/smoketest-matrix/{default,accessible,colorblind,gui1,gui2,gui4}.json` |
+| Compatibility matrix (optional jars) | **NOT RUN** in this pass | |
+
+Human formative trials (a new player's guided first batch, an experienced player's repeated batches), a dedicated
+server with two real clients under latency, shader and camera-mod combinations, sound listening, native-language
+review of the new strings and review of the recorded footage remain **PENDING**.
+
+## Validation status of the first 1.2.0 hands-on tree (2026-11-12)
 
 Validated on 2026-11-12 against the uncommitted tree recorded in the
-[1.2.0 report](reports/1.2.0-hands-on-overhaul.md), which also lists every command, log path and limit. Automated gates
-below; human gates remain **PENDING**.
+[1.2.0 hands-on report](reports/1.2.0-hands-on-overhaul.md), before the close-up workshop; kept as history. Automated
+gates below; human gates remain **PENDING**.
 
 | Current-tree gate | Result | Durable evidence |
 | --- | --- | --- |
@@ -289,6 +373,8 @@ the refmap's five mixins with a `searge` block as before. `check_mod.py`: 0 erro
 
 | Path | Content |
 | --- | --- |
+| `docs/reports/1.2.0-close-up-workshop.md` | The close-up workshop: feature map, handoff requirement map, Diegesis decision, commands, results, real-input journeys, footage, fixed defects, performance and pending gates |
+| `run/footage/journey_*.mp4` | Uncut real-input footage of each journey from the `journey` variant, with its ffmpeg log (not committed) |
 | `docs/reports/1.2.0-hands-on-overhaul.md` | The hands-on overhaul: work packages, Diegesis decision, coverage map, conservation examples, commands, results, fixed defects and pending gates |
 | `docs/reports/1.1.0-implementation.md` | Implementation traceability, decisions, automated results, deferred scope and pending human gates for 1.1.0 |
 | `docs/reports/coverage-report.txt` | `/immersivebrewing report` from the clean smoke-test world (no test pack): 168 supported recipes, 251 registry transformations, 0 uncovered |
@@ -313,4 +399,9 @@ These are explicitly **PENDING**, not passed:
 - Native-language, in-context review as appropriate for all five maintained locales, including placeholders, narration,
   long/non-Latin labels and the 320×240 GUI. Key parity is not native-language validation.
 - Moving-video review of apparatus/reaction animation, reduced motion and fast camera movement, plus maintained
-  resource-pack/rendering combinations before any shader-compatibility claim.
+  resource-pack/rendering combinations before any shader-compatibility claim. The recorded journeys in `run/footage`
+  are material for that review; nobody has reviewed them yet.
+- The close-up camera with shader packs and camera mods (first and third person), sound listening review, and the
+  handoff's new-player and experienced-player playtests (a fresh player completing the guided first batch without
+  coaching; an experienced player's repeated batches). The `journey` variant's scripted player proves the path works
+  through real input; it is not a person.

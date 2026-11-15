@@ -45,6 +45,7 @@ public class KettlePlanScreen extends Screen {
     private BatchStaging.Kits kits=BatchStaging.Kits.RAW;
     private int flags, page, request, debounce=-1, quantity, carrier=-1, queriedGeneration=-1;
     private boolean compact, detailPage;
+    private boolean expanded;
     private boolean routeChanged;
     private boolean alternatives;
     private final List<Button> rowButtons=new ArrayList<>();
@@ -102,7 +103,7 @@ public class KettlePlanScreen extends Screen {
         if (compact) addRenderableWidget(Button.builder(Component.translatable(detailPage
                         ? "screen.immersive_brewing.plan.show_results" : "screen.immersive_brewing.plan.show_route"), b -> {
                     detailPage = !detailPage; rebuildWidgets();
-                }).bounds(px + 6, py + ph - 110, listW - 12, 18).build());
+                }).bounds(px + 6, py + ph - (detailPage ? 88 : 110), listW - 12, 18).build());
         int actionW = compact ? (pw - 24) / 2 : (pw - listW - 40) / 2;
         brew = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.brew"), b -> start())
                 .bounds(compact ? px + pw / 2 + 2 : px + pw - actionW - 6, py + ph - 24, compact ? actionW - 22 : actionW, 18).build());
@@ -132,12 +133,15 @@ public class KettlePlanScreen extends Screen {
             preview=null;batch(BatchActionC2S.Action.PREVIEW);
         }).bounds(px+6,compact ? py+ph-88 : py+ph-46,listW-12,18).build());
         detail.bounds(compact ? px + 6 : px + listW + 6, py + 20,
-                compact ? pw - 12 : pw - listW - 12, compact ? ph - 122 : ph - 90);
+                compact ? pw - 12 : pw - listW - 12, compact ? ph - 112 : ph - 90);
         rowButtons.clear();
         for(int i=0;i<rows;i++) { final int row=i;
             rowButtons.add(addRenderableWidget(Button.builder(Component.empty(),b->{if(scroll+row<filtered.size()) { select(scroll+row); if(compact) { detailPage=true; rebuildWidgets(); } }})
                     .bounds(px+6,py+60+i*ROW,listW-12,ROW-2).build()));
         }
+        addRenderableWidget(Button.builder(Component.literal("i"),b->{expanded=!expanded;detail.reset();})
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("screen.immersive_brewing.details")))
+                .bounds(px+pw-23,py+4,17,12).build());
         refilter();
         if (!query.isEmpty() || flags != 0) debounce = 0;
         if (!filtered.isEmpty()) select(Math.max(0,selected));
@@ -146,10 +150,13 @@ public class KettlePlanScreen extends Screen {
             search.visible = false;
             favorite.visible = false;
             brew.visible = false;
+            for(var child:children()) if(child instanceof net.minecraft.client.gui.components.AbstractWidget widget)
+                widget.visible=widget instanceof Button button&&button.getMessage().getString().equals(Component.translatable("gui.back").getString());
         }
     }
 
     private void refilter() {
+        PlanListS2C.Entry previousSelection=current();
         filtered.clear();
         List<PlanListS2C.Entry> favorites = new ArrayList<>();
         for (PlanListS2C.Entry e : plans.entries()) {
@@ -157,8 +164,11 @@ public class KettlePlanScreen extends Screen {
             else filtered.add(e);
         }
         filtered.addAll(0, favorites);
-        scroll = 0;
         selected = filtered.isEmpty() ? -1 : 0;
+        if(previousSelection!=null) for(int i=0;i<filtered.size();i++)
+            if(filtered.get(i).key().serialize().equals(previousSelection.key().serialize())) { selected=i;break; }
+        scroll=Math.max(0,Math.min(scroll,Math.max(0,filtered.size()-rows)));
+        if(selected>=0) scroll=Math.max(Math.min(scroll,selected),selected-rows+1);
         detail.reset();
         updateButtons();
     }
@@ -173,6 +183,7 @@ public class KettlePlanScreen extends Screen {
 
     private void select(int index) {
         selected = index;
+        if(selected>=0) scroll=Math.max(Math.min(scroll,selected),selected-rows+1);
         detail.reset();
         updateButtons();
         preview=null;
@@ -188,7 +199,10 @@ public class KettlePlanScreen extends Screen {
         if (brew == null) return;
         PlanListS2C.Entry e = current();
         brew.active = e != null && e.available();
-        favorite.active = e != null && !e.contextual();
+        boolean tooLong=e!=null&&e.key().serialize().length()>com.otectus.immersivebrewing.guide.PlayerGuide.MAX_KEY;
+        favorite.active = e != null && !e.contextual() && !tooLong;
+        favorite.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable(tooLong
+                ?"notebook.immersive_brewing.favorite.too_long":"notebook.immersive_brewing.tab.favorites")));
         favorite.setMessage(Component.literal(e != null && ClientGuide.isFavorite(e.key().serialize()) ? "★" : "☆"));
         if(prepare!=null) prepare.active=e!=null&&preview!=null&&preview.problem()==null;
         if(finish!=null) finish.active=e!=null&&preview!=null&&e.finishReady();
@@ -204,6 +218,13 @@ public class KettlePlanScreen extends Screen {
             // List pagination shares the kit row only while that row is hidden.
             previous.setY(py + ph - 46); next.setY(py + ph - 46); servingsButton.setY(py + ph - 46);
             previous.setX(px + 6); next.setX(px + listW - 30); servingsButton.setX(px + 30);
+        }
+        if(prepare!=null&&finish!=null&&(!compact||detailPage)) {
+            boolean finishing=e!=null&&e.finishReady();
+            prepare.visible=!finishing;finish.visible=finishing;
+            Button operation=finishing?finish:prepare;
+            operation.setX(compact?px+6:px+listW+8);
+            operation.setWidth(compact?pw-12:pw-listW-16);
         }
         for(int i=0;i<rowButtons.size();i++) {
             Button b=rowButtons.get(i);int index=scroll+i;b.visible=!compact || !detailPage;b.visible &= index<filtered.size();
@@ -224,6 +245,7 @@ public class KettlePlanScreen extends Screen {
         PlanListS2C.Entry e = current();
         if (e == null || e.contextual()) return;
         String key = e.key().serialize();
+        if(key.length()>com.otectus.immersivebrewing.guide.PlayerGuide.MAX_KEY) return;
         NotebookPrefsC2S.Action action = ClientGuide.isFavorite(key) ? NotebookPrefsC2S.Action.REMOVE_FAVORITE : NotebookPrefsC2S.Action.ADD_FAVORITE;
         ModNetwork.sendToServer(new NotebookPrefsC2S(action, key, e.output(), 0));
     }
@@ -351,7 +373,7 @@ public class KettlePlanScreen extends Screen {
         Ui.Palette p = Ui.palette();
         Component title = plans.input().isEmpty() || plans.servings() <= 0 ? Component.translatable("screen.immersive_brewing.plans")
                 : Component.translatable("screen.immersive_brewing.plans_for", plans.servings(), plans.input().getHoverName());
-        Ui.fit(g, title, px + 6, py + 6, pw - 12, p.text());
+        Ui.fit(g, title, px + 6, py + 6, pw - 36, p.text());
         if (plans.problem() != null) {
             detail.bounds(px + 6, py + 30, pw - 12, ph - 62);
             detail.begin(g);
@@ -373,14 +395,16 @@ public class KettlePlanScreen extends Screen {
         }
         }
         if (!compact || detailPage) { detail.begin(g); int bottom = details(g, current()); detail.end(g, bottom); }
-        Ui.fit(g,plans.incomplete() ? Component.translatable("catalog.immersive_brewing.incomplete",plans.total())
+        if(!compact||!detailPage) Ui.fit(g,plans.incomplete() ? Component.translatable("catalog.immersive_brewing.incomplete_short",plans.total())
                 : Component.translatable("catalog.immersive_brewing.page",page+1,plans.total()),
                 px+6,py+ph-60,listW-12,p.muted());
         super.render(g, mouseX, mouseY, partialTick);
+        if((!compact||!detailPage)&&plans.incomplete()&&Ui.inside(mouseX,mouseY,px+6,py+ph-60,listW-12,10))
+            g.renderTooltip(font,font.split(Component.translatable("catalog.immersive_brewing.incomplete",plans.total()),Math.min(240,width-24)),mouseX,mouseY);
         if (Ui.inside(mouseX, mouseY, px + 6, py + 6, pw - 12, 10) && font.width(title) > pw - 12) {
             g.renderTooltip(font, font.split(title, 240), mouseX, mouseY);
         }
-        for (int i = 0; i < rows && scroll + i < filtered.size(); i++) {
+        for (int i = 0; (!compact || !detailPage) && i < rows && scroll + i < filtered.size(); i++) {
             if (Ui.inside(mouseX, mouseY, px + 6, ly + i * ROW, listW - 12, ROW - 2)) {
                 g.renderTooltip(font, filtered.get(scroll + i).output(), mouseX, mouseY);
                 break;
@@ -407,11 +431,14 @@ public class KettlePlanScreen extends Screen {
         y += Math.max(20, Ui.wrapped(g, e.output().getHoverName(), x + 20, y + 4, w - 20, p.text()) + 6);
         Component tier = Component.translatable("tier.immersive_brewing." + e.tier());
         y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.plan.tier_time", tier, e.seconds()), x, y, w, p.muted()) + 1;
-        for (int i = 0; i < e.steps().size(); i++) {
-            PlanListS2C.Step s = e.steps().get(i);
-            Component line = Component.literal((i + 1) + ". ").append(Component.translatable("phase.immersive_brewing." + s.phase().serialized()))
-                    .append(": ").append(new ItemStack(s.reagent()).getHoverName());
-            y += Ui.wrapped(g, line, x, y, w, p.text());
+        y+=4;
+        for(int i=0;i<e.steps().size();i++) {
+            PlanListS2C.Step step=e.steps().get(i);
+            ItemStack reagent=new ItemStack(step.reagent());
+            g.renderItem(reagent,x,y+2);
+            int used=Ui.wrapped(g,Component.literal((i+1)+". ").append(reagent.getHoverName()),x+22,y,w-22,p.text());
+            used+=Ui.wrapped(g,Component.translatable("phase.immersive_brewing."+step.phase().serialized()),x+22,y+used,w-22,p.muted());
+            y+=Math.max(22,used)+4;
         }
         y += Ui.wrapped(g,Component.translatable("staging.immersive_brewing.bottles",quantity,plans.input().getHoverName()),x,y,w,p.text());
         y += 3;
@@ -434,6 +461,7 @@ public class KettlePlanScreen extends Screen {
         y += 2;
         y += Ui.wrapped(g, Component.translatable(e.qualityAffectsEffects() ? "screen.immersive_brewing.plan.quality_effects"
                 : "screen.immersive_brewing.plan.quality_recorded"), x, y, w, p.muted());
+        if(expanded) {
         y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.plan.extraction",
                 preview != null && preview.problem() == null ? preview.extraction() : e.expectedExtraction()), x, y, w, p.muted());
         if (ClientConfig.get(ClientConfig.REQUEST_ASSIST)) {
@@ -444,12 +472,15 @@ public class KettlePlanScreen extends Screen {
                     ? Math.min(ClientConfig.get(ClientConfig.ASSIST_BAND), com.otectus.immersivebrewing.config.ServerConfig.get(com.otectus.immersivebrewing.config.ServerConfig.MAX_ASSIST_BAND_MULTIPLIER)) : 1;
             y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.assistance_policy", time, band), x, y, w, p.muted());
         }
+        }
         if (e.contextual()) y += Ui.wrapped(g, Component.translatable("screen.immersive_brewing.plan.contextual"), x, y, w, p.warn());
         if (e.missing() != null) y += 2 + Ui.wrapped(g, e.missing(), x, y + 2, w, p.bad());
         if(routeChanged) y+=Ui.wrapped(g,Component.translatable("catalog.immersive_brewing.reloaded"),x,y,w,p.warn());
+        if(expanded) {
         y+=Ui.wrapped(g,Component.translatable("staging.immersive_brewing.breakpoint"),x,y,w,p.muted());
         if(plans.omitted()>0) y+=Ui.wrapped(g,Component.translatable("catalog.immersive_brewing.omitted",plans.omitted()),x,y,w,p.warn());
         y+=Ui.wrapped(g,Component.translatable("catalog.immersive_brewing.contextual_unknown"),x,y,w,p.muted());
+        }
         if(preview!=null) y+=Ui.wrapped(g,preview.problem()!=null?preview.problem():Component.translatable("staging.immersive_brewing.preview",preview.extraction(),preview.paddleUses()<0?"—":preview.paddleUses()),x,y,w,preview.problem()!=null?p.bad():p.good());
         if(e.finishingSeconds()>0) y+=Ui.wrapped(g,Component.translatable("finishing.immersive_brewing.explain",e.finishingSeconds()),x,y,w,p.muted());
         return y + 4;

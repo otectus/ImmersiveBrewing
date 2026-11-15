@@ -1,0 +1,51 @@
+Immersive Brewing — CurseForge gallery
+
+11 native 1920 × 1080 PNG screenshots. Suggested order follows the numbered filenames.
+Scenery shots have the HUD hidden; Notebook shots show the real in-game interface.
+Captured in Minecraft 1.20.1 / Forge 47.4.23 using the default resource pack, without shaders.
+PNG files are copied directly from Minecraft’s screenshot output, without crops, resizing, or filters.
+
+01-apothecary-workshop.png
+Title: An apothecary workshop
+Caption: The Brewer’s Kettle, Apothecary’s Mortar, Alembic, and potion rack in a furnished workshop.
+
+02-kettle-flames-and-copper.png
+Title: Copper kettle and burner
+Caption: A closer look at the copper vessel, stepped rim, burner flames, controls, and bottle rail.
+
+03-hands-on-brewing.png
+Title: Brewing by hand
+Caption: Tend the heat, stir the liquid, and work with reagents directly at the kettle.
+
+04-mortar-preparation.png
+Title: Preparing reagents
+Caption: Work ingredients in the stone mortar with a pestle and wooden scraper.
+
+05-alembic-distillation.png
+Title: Purifying potions
+Caption: The copper Alembic’s boiler, coolant jacket, controls, and collection vessels during purification.
+
+06-apothecary-rack.png
+Title: An organised potion shelf
+Caption: Store colourful finished brews with grade markers and individual labels.
+
+07-brewing-tools-and-supplies.png
+Title: Tools of the trade
+Caption: Wooden and iron brewing paddles, the Brewer’s Notebook, prepared reagent kit, batch carrier, and spent alchemical salt.
+
+08-lantern-lit-workshop.png
+Title: Brewing at dusk
+Caption: A lantern-lit apothecary with active brewing and distillation stations.
+
+09-brewers-notebook.png
+Title: Getting started
+Caption: The in-game Brewer’s Notebook explains crafting, setup, and the first batch.
+
+10-recipe-catalog.png
+Title: Find your next brew
+Caption: Search the Notebook’s recipe catalog for potion routes, ingredients, servings, and fuel costs.
+
+11-finished-brew.png
+Title: A finished batch
+Caption: Three completed Swiftness potions waiting on the kettle’s bottle rail.
+

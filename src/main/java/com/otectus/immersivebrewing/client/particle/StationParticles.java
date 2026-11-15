@@ -8,10 +8,11 @@ import com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity;
 import com.otectus.immersivebrewing.blockentity.StationBlockEntity;
 import com.otectus.immersivebrewing.blockentity.StationView;
 import com.otectus.immersivebrewing.blockentity.StationVisual;
-import com.otectus.immersivebrewing.item.KitData;
 import com.otectus.immersivebrewing.client.presentation.PresentationPolicy;
 import com.otectus.immersivebrewing.client.presentation.StationAnchors;
 import com.otectus.immersivebrewing.block.StationBlock;
+import com.otectus.immersivebrewing.registry.ModItems;
+import com.otectus.immersivebrewing.workshop.WorkshopParts;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.ParticleStatus;
 import net.minecraft.client.particle.Particle;
@@ -21,6 +22,7 @@ import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -47,6 +49,7 @@ public final class StationParticles {
     private static final ArrayDeque<Particle> LIVE = new ArrayDeque<>();
     private static final int LIVE_NORMAL = 256, LIVE_REDUCED = 64;
     private static final DustParticleOptions HELD = new DustParticleOptions(new Vector3f(0.75F, 0.25F, 0.2F), 0.7F);
+    private static final Vec3 ALEMBIC_SIEVE = new Vec3(4.9 / 16D, 14.65 / 16D, 8.3 / 16D);
 
     public static void tick(StationBlockEntity station) {
         Level level = station.getLevel();
@@ -84,7 +87,7 @@ public final class StationParticles {
         if (station instanceof BrewersKettleBlockEntity) {
             if (visual.trouble() > 0.6F && random.nextFloat() < 0.25 * rate) {
                 emit(level, ParticleTypes.SPLASH, pos, world(station, StationAnchors.KETTLE_RIM), 0.25, 0.0, random);
-            } else if (random.nextFloat() < (0.08 + 0.22 * visual.heat()) * rate) {
+            } else if (random.nextFloat() < (0.08 + 0.22 * visual.heat()) * rate * steam(pos)) {
                 ParticleOptions particle=switch(visual.particle()) {
                     case "bubble", "foam" -> ParticleTypes.BUBBLE_POP;
                     case "glint" -> ParticleTypes.END_ROD;
@@ -97,16 +100,33 @@ public final class StationParticles {
             if (view.operation() == Operation.PURIFY) {
                 if (visual.alembic().condensedRate() > 0 && random.nextFloat() < .15 * rate * Math.min(1, visual.alembic().condensedRate() * 400))
                     emit(level, ParticleTypes.FALLING_WATER, pos,
-                            world(station, visual.alembic().collecting() ? StationAnchors.ALEMBIC_CONDENSER : StationAnchors.ALEMBIC_WASTE), .03, 0.0, random);
-            } else if (random.nextFloat() < 0.06 * rate) {
-                emit(level, ParticleTypes.WHITE_ASH, pos, 0.3, 0.9, 0.3, 0.15, 0.02, random);
+                            world(station, visual.alembic().collecting() ? StationAnchors.ALEMBIC_OUTPUT : StationAnchors.ALEMBIC_WASTE), .03, 0.0, random);
+            } else if (view.operation() == Operation.RECLAIM) {
+                float progress = visual.progress();
+                if (random.nextFloat() < (0.025 + 0.05 * progress) * rate) {
+                    boolean settledSalt = random.nextFloat() < 0.25 + progress * 0.55;
+                    ParticleOptions particle = settledSalt
+                            ? new ItemParticleOption(ParticleTypes.ITEM, new ItemStack(ModItems.SPENT_ALCHEMICAL_SALT.get()))
+                            : ParticleTypes.WHITE_ASH;
+                    emit(level, particle, pos, world(station, settledSalt ? StationAnchors.ALEMBIC_WASTE : ALEMBIC_SIEVE),
+                            settledSalt ? 0.05 : 0.07, settledSalt ? 0.005 : 0.012, random);
+                }
             }
         } else if (station instanceof ApothecaryMortarBlockEntity) {
             var reagent = view.material();
             if (!reagent.isEmpty() && visual.mortar().pressing() && visual.mortar().workRate() > 0 && random.nextFloat() < .2 * rate * Math.min(1, visual.mortar().workRate() * 200)) {
-                emit(level, new ItemParticleOption(ParticleTypes.ITEM, reagent), pos, 0.5, 0.5, 0.5, 0.15, 0.04, random);
+                double x = (WorkshopParts.MORTAR_CX + visual.mortar().x() * WorkshopParts.MORTAR_R) / 16D;
+                double z = (WorkshopParts.MORTAR_CZ + visual.mortar().z() * WorkshopParts.MORTAR_R) / 16D;
+                Vec3 contact = new Vec3(x, (WorkshopParts.MORTAR_FLOOR + 0.65) / 16D, z);
+                emit(level, new ItemParticleOption(ParticleTypes.ITEM, reagent), pos, world(station, contact), 0.07, 0.025, random);
             }
         }
+    }
+
+    /** A batch's presentation profile scales its vapour (steam 0..1, 0.5 by default keeps the usual amount). */
+    private static double steam(BlockPos pos) {
+        var profile = com.otectus.immersivebrewing.client.presentation.PresentationProfiles.forStation(pos);
+        return profile == null ? 1 : 0.5 + profile.steam();
     }
 
     private static void emit(Level level, ParticleOptions type, BlockPos pos, double x, double y, double z, double spread, double rise,

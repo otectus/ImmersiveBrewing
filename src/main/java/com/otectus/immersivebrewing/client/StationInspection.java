@@ -25,12 +25,12 @@ public final class StationInspection {
             else if (entity instanceof ApothecaryRackBlockEntity rack) {
                 int slot = ApothecaryRackBlock.targetSlot(rack.getBlockState(), hit.getBlockPos(), hit);
                 var stack = rack.inventory().getStackInSlot(slot);
-                lines = List.of(Component.translatable("screen.immersive_brewing.carrier.slot", slot + 1, rack.label(slot)).append(" ").append(rack.label(slot)),
+                lines = List.of(Component.translatable("screen.immersive_brewing.carrier.slot", slot + 1, rack.label(slot)),
                         stack.isEmpty() ? Component.translatable(rack.filter(slot).isEmpty() ? "screen.immersive_brewing.carrier.empty" : "state.immersive_brewing.reserved")
                                 : Component.translatable("screen.immersive_brewing.result.made", stack.getCount(), stack.getHoverName()));
             } else return;
             int panelWidth = Math.min(256, width - 32), y = 38;
-            graphics.fill((width - panelWidth) / 2 - 4, y - 4, (width + panelWidth) / 2 + 4, y + 24, 0xC0101010);
+            graphics.fill((width - panelWidth) / 2 - 4, y - 4, (width + panelWidth) / 2 + 4, y + lines.size() * 12, 0xC0101010);
             for (Component line : lines) {
                 Ui.fit(graphics, line, (width - panelWidth) / 2, y, panelWidth, 0xFFFFFFFF); y += 12;
             }

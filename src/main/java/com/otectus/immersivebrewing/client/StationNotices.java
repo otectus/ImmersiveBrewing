@@ -86,13 +86,19 @@ public final class StationNotices {
         event.registerAbove(VanillaGuiOverlay.HOTBAR.id(), "station_notices", StationNotices::render);
     }
 
+    public static boolean visible() {
+        long now=Util.getMillis(),life=ClientConfig.get(ClientConfig.NOTICE_SECONDS)*1000L;
+        return NOTICES.stream().anyMatch(notice->now-notice.shownMs()<life);
+    }
+
     private static void render(ForgeGui gui, GuiGraphics g, float partialTick, int width, int height) {
         if (NOTICES.isEmpty()) return;
         long now = Util.getMillis();
         long life = ClientConfig.get(ClientConfig.NOTICE_SECONDS) * 1000L;
         NOTICES.removeIf(n -> now - n.shownMs() > life);
         Font font = Minecraft.getInstance().font;
-        int y = height - 72;
+        boolean working=Minecraft.getInstance().screen instanceof com.otectus.immersivebrewing.client.workshop.WorkshopScreen;
+        int y=height-(working?62:72);
         List<Notice> list = new ArrayList<>(NOTICES);
         for (int i = list.size() - 1; i >= 0; i--) {
             Notice n = list.get(i);
@@ -110,6 +116,7 @@ public final class StationNotices {
                 y -= 11;
             }
             y -= 3;
+            if(working) break;
         }
     }
 

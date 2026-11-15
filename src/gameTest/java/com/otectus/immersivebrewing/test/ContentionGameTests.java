@@ -60,7 +60,8 @@ public final class ContentionGameTests {
         var refused = b.act(PADDLE_PART, com.otectus.immersivebrewing.workshop.WorkshopAction.GRAB, 0);
         h.assertTrue(!refused.accepted() && refused.reason() != null, "Bob is told who holds the paddle and can not take it");
         b.sample(PADDLE_PART, 0.5, 0, true, com.otectus.immersivebrewing.workshop.Effort.FIRM);
-        h.runAfterDelay(20, () -> {
+        // The batch pours at the visible pace (a short lead, then one bottle every POUR_PACE ticks): three are in by 45.
+        h.runAfterDelay(11 + 3 * BrewersKettleBlockEntity.POUR_PACE, () -> {
             var p = kettle.liveProcess();
             h.assertTrue(p.allCharged(), "the bottles went in once");
             // Bob helps at another control while Alice holds the paddle: one live drag lease, discrete changes serialise.

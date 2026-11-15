@@ -53,5 +53,12 @@ public enum WorkshopAction {
     /** Begin preparing the reagents in the bowl (the first contact also begins it). */
     BEGIN,
     /** Return to a working view that is still open on the server (after the drawer or the book closed). */
-    FOCUS
+    FOCUS,
+    /** Kettle: turn the recipe page on the book stand to another valid route (argument: the page). */
+    SETUP_PAGE,
+    /**
+     * Move the working view to a neighbouring station (argument: the packed offset, see {@code StationOffsets}). The
+     * server checks reach, protection and the ordinary block-use hooks at the new station, and releases this one first.
+     */
+    SWITCH_STATION
 }

@@ -443,6 +443,8 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
         snapshot.putInt("kits", count);
         snapshot.putString("workshopProfile", prep.source());
         snapshot.putBoolean("workshopFallback", prep.fallback());
+        net.minecraft.resources.ResourceLocation presentation = WorkshopProfiles.presentationOf(prep.source());
+        if (presentation != null) snapshot.putString("presentation", presentation.toString());
         long seed = ((ServerLevel) level).getRandom().nextLong();
         int generation = BrewingDefinitions.server().generation();
         MortarProcess p = MortarProcess.begin(WorkshopProfiles.mortarSetup(prep, count, generation), player.getUUID());
@@ -517,7 +519,8 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
     }
 
     @Override
-    protected InteractionResult directInsert(net.minecraft.world.entity.player.Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part) {
+    protected InteractionResult directInsert(net.minecraft.world.entity.player.Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part,
+                                             int limit) {
         boolean client = level == null || level.isClientSide;
         boolean preparable = held.getItem() != ModItems.PREPARED_REAGENT_KIT.get() && !(held.getItem() instanceof PotionItem)
                 && (client ? com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.isIngredient(held) : profileFor(held) != null
@@ -542,11 +545,12 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
             notice(player, Component.translatable("workshop.immersive_brewing.mortar.bowl_full", BOWL_UNITS), true);
             return InteractionResult.CONSUME;
         }
-        // One unit per use: the amount is chosen by placing it (handoff 6).
-        putDirect(INPUT, held.copyWithCount(bowl.getCount() + 1));
-        if (!player.getAbilities().instabuild) held.shrink(1);
+        // One unit per use, or the batch action's chosen amount: the amount is chosen by placing it (handoff 6).
+        int move = Math.min(room, Math.min(held.getCount(), Math.max(1, limit)));
+        putDirect(INPUT, held.copyWithCount(bowl.getCount() + move));
+        if (!player.getAbilities().instabuild) held.shrink(move);
         changed();
-        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, 0, 0);
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, WorkshopParts.M_BOWL, move);
         markWorkshopDirty(true);
         return InteractionResult.CONSUME;
     }
@@ -558,14 +562,8 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
             case INSERT -> {
                 ItemStack held = player.getItemInHand(intent.hand());
                 if (held.isEmpty()) return WorkshopResult.IGNORED;
-                int before = held.getCount();
-                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.MORTAR, part));
+                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.MORTAR, part), intent.batch() ? BOWL_UNITS : 1);
                 if (r == InteractionResult.PASS) return WorkshopResult.refuse("workshop.immersive_brewing.refuse.not_here");
-                if (intent.batch()) for (int i = 1; i < BOWL_UNITS && held.getCount() > 0 && held.getCount() < before; i++) {
-                    int n = held.getCount();
-                    directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.MORTAR, part));
-                    if (held.getCount() == n) break;
-                }
                 return WorkshopResult.ACCEPTED;
             }
             case TAKE -> {
@@ -721,6 +719,7 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
             p.writeSnapshot(m);
             t.put("mortar", m);
         }
+        if (ledger != null && !ledger.snapshot().getString("presentation").isEmpty()) t.putString("presentation", ledger.snapshot().getString("presentation"));
     }
 
     @Override
@@ -744,6 +743,13 @@ public class ApothecaryMortarBlockEntity extends StationBlockEntity {
     @Override
     public Component getDisplayName() {
         return Component.translatable("block.immersive_brewing.apothecary_mortar");
+    }
+
+    /** Culling extent: the dose cup's ledge reaches toward the player and the pestle stands above the bowl. */
+    @Override
+    public net.minecraft.world.phys.AABB getRenderBoundingBox() {
+        return new net.minecraft.world.phys.AABB(worldPosition.getX() - 0.15, worldPosition.getY(), worldPosition.getZ() - 0.15,
+                worldPosition.getX() + 1.15, worldPosition.getY() + 1.15, worldPosition.getZ() + 1.15);
     }
 
     @Nullable

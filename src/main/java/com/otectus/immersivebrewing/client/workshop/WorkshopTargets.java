@@ -43,8 +43,21 @@ public final class WorkshopTargets {
     /** What activating a target does on this client before (or instead of) sending an intent. */
     public enum Local { SEND, TAKE_TOOL, PUT_DOWN, CARRY, COMMIT_CARRY, CONTROL, TOGGLE, NONE }
 
+    /**
+     * What a part does now. The primary action is a click (or Activate); the batch action a shift-click (or the batch key,
+     * then Activate) and always names its quantity; the secondary action a right-click with empty hands (or Put down with
+     * nothing held), such as taking a staged bottle back. {@code setup} commits also accept the recipe page shown at
+     * {@code revision}.
+     */
     public record Target(WorkshopPart part, boolean available, Component label, Local local, @Nullable WorkshopAction action, int argument,
-                         @Nullable WorkshopAction batchAction, int batchArgument, @Nullable Component batchLabel) {
+                         @Nullable WorkshopAction batchAction, int batchArgument, @Nullable Component batchLabel,
+                         @Nullable WorkshopAction secondaryAction, @Nullable Component secondaryLabel, boolean setup, long revision) {
+        public Target(WorkshopPart part, boolean available, Component label, Local local, @Nullable WorkshopAction action, int argument,
+                      @Nullable WorkshopAction batchAction, int batchArgument, @Nullable Component batchLabel) {
+            this(part, available, label, local, action, argument, batchAction, batchArgument, batchLabel, null, null, false,
+                    com.otectus.immersivebrewing.interaction.WorkshopIntent.NO_REVISION);
+        }
+
         static Target info(WorkshopPart part, Component label) {
             return new Target(part, false, label, Local.NONE, null, 0, null, 0, null);
         }
@@ -54,7 +67,19 @@ public final class WorkshopTargets {
         }
 
         Target withBatch(WorkshopAction action, int argument, Component label) {
-            return new Target(part, available, this.label, local, this.action, this.argument, action, argument, label);
+            return new Target(part, available, this.label, local, this.action, this.argument, action, argument, label, secondaryAction,
+                    secondaryLabel, setup, revision);
+        }
+
+        Target withSecondary(WorkshopAction action, Component label) {
+            return new Target(part, available, this.label, local, this.action, argument, batchAction, batchArgument, batchLabel, action, label,
+                    setup, revision);
+        }
+
+        /** The commit also accepts the recipe page the player read (revision {@code rev}). */
+        Target accepting(long rev) {
+            return new Target(part, available, label, local, action, argument, batchAction, batchArgument, batchLabel, secondaryAction,
+                    secondaryLabel, true, rev);
         }
     }
 
@@ -111,6 +136,19 @@ public final class WorkshopTargets {
             return snapshot.getCompound("alembic");
         }
 
+        /** The kettle's recipe page (idle stations only). */
+        public CompoundTag setup() {
+            return snapshot.getCompound("setup");
+        }
+
+        /** Whether the recipe page offers a batch a tipped bottle starts now. */
+        public boolean setupReady() {
+            CompoundTag s = setup();
+            int status = s.getByte("status");
+            return s.getBoolean("ready") && (status == com.otectus.immersivebrewing.blockentity.KettleSetupService.Status.READY.ordinal()
+                    || status == com.otectus.immersivebrewing.blockentity.KettleSetupService.Status.CHOOSE.ordinal());
+        }
+
         /** The live holder's name of a part, or null. */
         @Nullable
         public String holder(int part) {
@@ -162,6 +200,65 @@ public final class WorkshopTargets {
     public static List<WorkshopPart> present(View v) {
         List<WorkshopPart> out = new ArrayList<>();
         for (WorkshopPart part : WorkshopParts.of(v.kind())) if (present(v, part)) out.add(part);
+        return out;
+    }
+
+    /**
+     * The same parts with the ones the work needs now first (handoff 13: relevant targets first, a predictable order
+     * after them): the vessel while something is carried or a tool is held, the bottles while a batch is being set out
+     * or charged, the next dose cup, the spout when the brew is ready.
+     */
+    public static List<WorkshopPart> ordered(View v, ClientWorkshop.Hand hand) {
+        List<WorkshopPart> all = present(v);
+        List<Integer> first = new ArrayList<>();
+        if (v.kind() == WorkshopKind.KETTLE) {
+            CompoundTag k = v.kettle();
+            if (hand.carried() >= 0 || hand.tool() >= 0) first.add(WorkshopParts.K_VESSEL);
+            else if (v.state() == null && v.setupReady()) {
+                first.add(WorkshopParts.K_BOOK);
+                for (int i = 0; i < BrewersKettleBlockEntity.RACK_SIZE; i++) first.add(WorkshopParts.K_RACK + i);
+            } else if (k.contains("stage")) {
+                KettleProcess.Stage stage = KettleProcess.Stage.values()[Math.max(0, Math.min(5, k.getByte("stage")))];
+                switch (stage) {
+                    case CHARGING -> {
+                        byte[] slots = k.getByteArray("slots"), portions = k.getByteArray("portions");
+                        for (int i = 0; i < Math.min(slots.length, portions.length); i++) {
+                            if (portions[i] == KettleProcess.Portion.STAGED.ordinal()) first.add(WorkshopParts.K_RACK + slots[i]);
+                        }
+                    }
+                    case HEATING, WAITING_DOSE -> {
+                        first.add(WorkshopParts.K_BURNER);
+                        first.add(WorkshopParts.K_CUP + k.getByte("doses"));
+                    }
+                    case REACTING -> {
+                        first.add(WorkshopParts.K_PADDLE);
+                        first.add(WorkshopParts.K_BURNER);
+                    }
+                    case RESTING -> {
+                        first.add(WorkshopParts.K_BURNER);
+                        first.add(WorkshopParts.K_PADDLE);
+                    }
+                    case READY -> first.add(WorkshopParts.K_SPOUT);
+                }
+            }
+        } else if (v.kind() == WorkshopKind.MORTAR) {
+            if (hand.tool() >= 0) first.add(WorkshopParts.M_BOWL);
+            else if (v.mortar().getBoolean("usable")) first.add(WorkshopParts.M_CUP);
+            first.add(WorkshopParts.M_PESTLE);
+        } else if (v.kind() == WorkshopKind.ALEMBIC) {
+            if (v.state() == null) {
+                first.add(WorkshopParts.A_MODE);
+                first.add(WorkshopParts.A_CHARGE);
+            } else {
+                first.add(WorkshopParts.A_CLAMP);
+                first.add(WorkshopParts.A_BURNER);
+                first.add(WorkshopParts.A_VALVE);
+                first.add(WorkshopParts.A_DIVERTER);
+            }
+        }
+        List<WorkshopPart> out = new ArrayList<>();
+        for (int id : first) for (WorkshopPart p : all) if (p.id() == id && !out.contains(p)) out.add(p);
+        for (WorkshopPart p : all) if (!out.contains(p)) out.add(p);
         return out;
     }
 
@@ -225,7 +322,8 @@ public final class WorkshopTargets {
                     Local.CONTROL, WorkshopAction.SET_CONTROL, burner, null, 0, null);
         }
         if (id == WorkshopParts.K_FUEL) {
-            if (held.is(ModTags.BURNER_FUEL)) return Target.send(part, t("kettle.fuel.add"), WorkshopAction.INSERT, 0);
+            if (held.is(ModTags.BURNER_FUEL)) return Target.send(part, t("kettle.fuel.add_one", held.getHoverName()), WorkshopAction.INSERT, 0)
+                    .withBatch(WorkshopAction.INSERT, 0, t("kettle.fuel.add_all", held.getCount(), held.getHoverName()));
             ItemStack fuel = kettle.inventory().getStackInSlot(BrewersKettleBlockEntity.FUEL);
             Target info = Target.info(part, t("kettle.fuel", v.snapshot().getInt("fuel")));
             return fuel.isEmpty() ? info : Target.send(part, t("kettle.fuel.take", v.snapshot().getInt("fuel")), WorkshopAction.TAKE, 0);
@@ -251,8 +349,17 @@ public final class WorkshopTargets {
         }
         if (id == WorkshopParts.K_BOOK) {
             if (v.legacy() && v.state() == JobState.SEALED) return Target.send(part, t("legacy.finish"), WorkshopAction.LEGACY_RESUME, 0);
-            if (v.state() != null) return Target.info(part, t("kettle.book.busy"));
-            return Target.send(part, t("kettle.book"), WorkshopAction.BOOK, 0);
+            if (v.state() != null) return Target.info(part, t("kettle.book.busy", jobOutput(v).getHoverName()));
+            // The recipe page (handoff 6.2): what a tipped bottle starts. Several equal routes turn as pages; the full,
+            // searchable planner stays one deliberate step away and is never needed for an ordinary batch.
+            CompoundTag page = v.setup();
+            int pages = page.getByte("pages"), at = page.getByte("page");
+            Component summary = pageSummary(v);
+            if (pages > 1) {
+                return new Target(part, true, t("kettle.book.turn", at + 1, pages, summary), Local.SEND, WorkshopAction.SETUP_PAGE, (at + 1) % pages,
+                        null, 0, null).withSecondary(WorkshopAction.BOOK, t("kettle.book.search"));
+            }
+            return new Target(part, false, summary, Local.NONE, null, 0, null, 0, null).withSecondary(WorkshopAction.BOOK, t("kettle.book.search"));
         }
         if (id == WorkshopParts.K_BYPRODUCTS) {
             boolean any = false;
@@ -278,6 +385,14 @@ public final class WorkshopTargets {
             }
             if (portion >= 0) return Target.info(part, t("kettle.bottle.reserved"));
             ItemStack stack = kettle.inventory().getStackInSlot(BrewersKettleBlockEntity.RACK + slot);
+            if (!stack.isEmpty() && v.state() == null && v.setupReady() && !kettle.finishedAt(BrewersKettleBlockEntity.RACK + slot)) {
+                // Lifting a staged bottle and tipping it in starts exactly the batch the page shows (handoff 6.2 step 6).
+                ItemStack output = pageOutput(v);
+                int servings = v.setup().getByte("servings");
+                return new Target(part, true, t("kettle.bottle.lift_begin", output.getHoverName(), servings), Local.CARRY, WorkshopAction.POUR, 0,
+                        WorkshopAction.POUR, assistArgument(), t("kettle.bottle.pour_all_begin", servings, output.getHoverName()))
+                        .accepting(v.setup().getLong("rev")).withSecondary(WorkshopAction.TAKE, t("take", stack.getHoverName()));
+            }
             if (!stack.isEmpty()) return Target.send(part, t("take", stack.getHoverName()), WorkshopAction.TAKE, 0)
                     .withBatch(WorkshopAction.TAKE, 0, t("take_matching", stack.getHoverName()));
             if (v.state() != null) return Target.info(part, t("kettle.bottle.reserved"));
@@ -303,8 +418,14 @@ public final class WorkshopTargets {
         }
         if (id >= WorkshopParts.K_TRAY && id < WorkshopParts.K_TRAY + BrewersKettleBlockEntity.TRAY_SIZE) {
             ItemStack stack = kettle.inventory().getStackInSlot(BrewersKettleBlockEntity.TRAY + id - WorkshopParts.K_TRAY);
-            if (BrewersKettleBlockEntity.isIngredient(held)) return Target.send(part, t("kettle.tray.place", held.getHoverName()), WorkshopAction.INSERT, 0);
+            if (BrewersKettleBlockEntity.isIngredient(held)) {
+                Target place = Target.send(part, t("kettle.tray.place_one", held.getHoverName()), WorkshopAction.INSERT, 0)
+                        .withBatch(WorkshopAction.INSERT, 0, t("kettle.tray.place_all", held.getCount(), held.getHoverName()));
+                return stack.isEmpty() ? place : place.withSecondary(WorkshopAction.TAKE, t("take", stack.getHoverName()));
+            }
             if (!stack.isEmpty()) return Target.send(part, t("take", stack.getHoverName()), WorkshopAction.TAKE, 0);
+            ItemStack ghost = ghost(v, id);
+            if (!ghost.isEmpty()) return Target.info(part, t("kettle.tray.needs", ghost.getCount(), ghost.getHoverName()));
             return Target.info(part, t("kettle.tray"));
         }
         return Target.info(part, Component.translatable(part.key()));
@@ -317,10 +438,77 @@ public final class WorkshopTargets {
             return new Target(vessel, true, t("kettle.cup.tip", doseItem(v, step).getHoverName()), Local.COMMIT_CARRY, WorkshopAction.DOSE, step, null, 0, null);
         }
         if (carried >= WorkshopParts.K_RACK && carried < WorkshopParts.K_RACK + BrewersKettleBlockEntity.RACK_SIZE) {
-            int portion = portionAt(v.kettle(), carried - WorkshopParts.K_RACK);
-            return new Target(vessel, true, t("kettle.bottle.pour"), Local.COMMIT_CARRY, WorkshopAction.POUR, portion, null, 0, null);
+            if (v.state() == null) {
+                // Tipping the first bottle sets out the batch the page shows; nothing is consumed until the server agrees.
+                return new Target(vessel, true, t("kettle.bottle.tip_begin", pageOutput(v).getHoverName(), v.setup().getByte("servings")),
+                        Local.COMMIT_CARRY, WorkshopAction.POUR, assistArgument(), null, 0, null).accepting(v.setup().getLong("rev"));
+            }
+            return new Target(vessel, true, t("kettle.bottle.pour"), Local.COMMIT_CARRY, WorkshopAction.POUR, 0, null, 0, null);
         }
         return Target.info(vessel, t("kettle.vessel"));
+    }
+
+    /** The approved-assistance request a set-out carries (band widening in hundredths above 1, within the server's cap). */
+    static int assistArgument() {
+        if (!com.otectus.immersivebrewing.config.ClientConfig.get(com.otectus.immersivebrewing.config.ClientConfig.REQUEST_ASSIST)) return 0;
+        return (int) Math.round((com.otectus.immersivebrewing.config.ClientConfig.get(com.otectus.immersivebrewing.config.ClientConfig.ASSIST_BAND) - 1) * 100);
+    }
+
+    /** The potion the recipe page shows. */
+    public static ItemStack pageOutput(View v) {
+        CompoundTag page = v.setup();
+        return page.contains("output") ? ItemStack.of(page.getCompound("output")) : ItemStack.EMPTY;
+    }
+
+    /** The potion the batch in progress makes. */
+    public static ItemStack jobOutput(View v) {
+        return v.snapshot().contains("jobOutput") ? ItemStack.of(v.snapshot().getCompound("jobOutput")) : ItemStack.EMPTY;
+    }
+
+    /** The page in words (also what narration reads): the batch, its steps and costs, or why there is none. */
+    public static Component pageSummary(View v) {
+        CompoundTag page = v.setup();
+        var status = com.otectus.immersivebrewing.blockentity.KettleSetupService.Status.values()[Math.max(0, Math.min(
+                com.otectus.immersivebrewing.blockentity.KettleSetupService.Status.values().length - 1, page.getByte("status")))];
+        Component problem = page.contains("problem") ? Component.Serializer.fromJson(page.getString("problem")) : null;
+        ItemStack output = pageOutput(v);
+        if (!output.isEmpty()) {
+            net.minecraft.network.chat.MutableComponent steps = Component.empty();
+            ListTag ids = page.getList("steps", Tag.TAG_STRING);
+            byte[] counts = page.getByteArray("counts");
+            for (int i = 0; i < ids.size(); i++) {
+                ResourceLocation rid = ResourceLocation.tryParse(ids.getString(i));
+                var item = rid == null ? null : ForgeRegistries.ITEMS.getValue(rid);
+                if (item == null) continue;
+                if (i > 0) steps.append(Component.translatable("target.immersive_brewing.kettle.book.then"));
+                steps.append(Component.translatable("target.immersive_brewing.kettle.book.step", i < counts.length ? counts[i] : 1, new ItemStack(item).getHoverName()));
+            }
+            Component batch = t("kettle.book.page", output.getHoverName(), page.getByte("servings"), steps, page.getShort("fuel"));
+            if (status == com.otectus.immersivebrewing.blockentity.KettleSetupService.Status.MISSING && problem != null) {
+                return Component.empty().append(batch).append(" — ").append(problem);
+            }
+            return batch;
+        }
+        return switch (status) {
+            case EMPTY -> t("kettle.book.empty");
+            case NEED_BOTTLES -> t("kettle.book.need_bottles");
+            case NEED_INGREDIENTS -> t("kettle.book.need_ingredients");
+            case BUSY -> t("kettle.book.busy", Component.empty());
+            default -> problem != null ? problem : t("kettle.book.unsupported");
+        };
+    }
+
+    /** What the page says belongs at a part and is missing there (a ghost), or empty. */
+    public static ItemStack ghost(View v, int part) {
+        ListTag ghosts = v.setup().getList("ghosts", Tag.TAG_COMPOUND);
+        for (int i = 0; i < ghosts.size(); i++) {
+            CompoundTag g = ghosts.getCompound(i);
+            if (g.getByte("part") != part) continue;
+            ResourceLocation id = ResourceLocation.tryParse(g.getString("item"));
+            var item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
+            if (item != null) return new ItemStack(item, Math.max(1, g.getByte("count")));
+        }
+        return ItemStack.EMPTY;
     }
 
     public static ItemStack doseItem(View v, int step) {
@@ -425,15 +613,26 @@ public final class WorkshopTargets {
             if (v.sealed()) return Target.send(part, t("alembic.unseal"), WorkshopAction.UNSEAL, 0);
             if (running) return Target.info(part, Component.translatable(a.getString("cue")));
             if (v.state() == null && loaded) {
+                // The fitting decides which operation the charge commits; its outcome is shown before anything is used.
                 CompoundTag snap = v.snapshot();
-                if (snap.contains("previewProblem")) {
-                    Component problem = Component.Serializer.fromJson(snap.getString("previewProblem"));
-                    return Target.info(part, problem == null ? t("alembic.charge.empty") : problem);
-                }
-                return Target.send(part, t("alembic.charge", snap.getInt("previewIn"), snap.getInt("previewOut"), snap.getInt("previewReturned"),
-                        snap.getInt("previewCoolant")), WorkshopAction.FINISH, 0);
+                boolean reclaim = snap.getBoolean("reclaimMode");
+                Component outcome = reclaim ? reclaimOutcome(snap) : purifyOutcome(snap);
+                boolean possible = reclaim ? !snap.contains("reclaimProblem") : !snap.contains("previewProblem");
+                if (!possible) return Target.info(part, outcome);
+                return Target.send(part, outcome, WorkshopAction.FINISH, 0);
             }
+            if (v.state() != null && v.operation() == Operation.RECLAIM) return Target.info(part, t("alembic.reclaiming", v.snapshot().getByte("reclaimProgress")));
             return Target.info(part, v.state() == null ? t("alembic.charge.empty") : alembic.view().status());
+        }
+        if (id == WorkshopParts.A_MODE) {
+            CompoundTag snap = v.snapshot();
+            boolean reclaim = snap.getBoolean("reclaimMode");
+            if (v.state() != null) return Target.info(part, t(reclaim ? "alembic.mode.reclaim" : "alembic.mode.purify"));
+            if (!reclaim && !snap.getBoolean("reclaimAllowed")) return Target.info(part, t("alembic.mode.purify_only"));
+            // Turning the fitting shows the other operation's costs and outcome before it can be charged.
+            Component other = loaded ? (reclaim ? purifyOutcome(snap) : reclaimOutcome(snap)) : t("alembic.charge.empty");
+            return new Target(part, true, t(reclaim ? "alembic.mode.to_purify" : "alembic.mode.to_reclaim", other), Local.TOGGLE,
+                    WorkshopAction.SET_CONTROL, reclaim ? 0 : 1, null, 0, null);
         }
         if (id == WorkshopParts.A_CLAMP) {
             if (v.sealed()) return Target.send(part, t("alembic.unseal"), WorkshopAction.UNSEAL, 0);
@@ -476,6 +675,26 @@ public final class WorkshopTargets {
                     a.getByte(id == WorkshopParts.A_RECEIVER ? "toReceiver" : "toWaste")));
         }
         return Target.info(part, Component.translatable(part.key()));
+    }
+
+    /** What a purification charge would do (or why it can not), from the snapshot's preview. */
+    static Component purifyOutcome(CompoundTag snap) {
+        if (snap.contains("previewProblem")) {
+            Component problem = Component.Serializer.fromJson(snap.getString("previewProblem"));
+            return problem == null ? t("alembic.charge.empty") : t("alembic.charge.cannot_purify", problem);
+        }
+        return t("alembic.charge", snap.getInt("previewIn"), snap.getInt("previewOut"), snap.getInt("previewReturned"), snap.getInt("previewCoolant"));
+    }
+
+    /** What a reclamation would do (or why it can not). */
+    static Component reclaimOutcome(CompoundTag snap) {
+        if (snap.contains("reclaimProblem")) {
+            Component problem = Component.Serializer.fromJson(snap.getString("reclaimProblem"));
+            return problem == null ? t("alembic.charge.empty") : t("alembic.charge.cannot_reclaim", problem);
+        }
+        ItemStack result = ItemStack.of(snap.getCompound("reclaimResult"));
+        return t("alembic.reclaim", snap.getInt("reclaimUsed"), snap.getInt("reclaimOut"), result.getHoverName(), snap.getInt("reclaimUsed"),
+                snap.getInt("reclaimFuel"));
     }
 
     public static String condensate(CompoundTag a) {

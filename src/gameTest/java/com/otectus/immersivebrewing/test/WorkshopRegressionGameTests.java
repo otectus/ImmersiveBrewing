@@ -36,6 +36,38 @@ import java.util.Arrays;
 public final class WorkshopRegressionGameTests {
     private static final String CLOSED = "session.immersive_brewing.end.closed";
 
+    /**
+     * A menu opened on a client that has not received the station's block entity yet (placed a moment before) used to
+     * leave out the station's slots, so the server's contents overflowed the 36 player slots
+     * ({@code IndexOutOfBoundsException} in {@code initializeContents}) and shift-clicks moved the wrong stacks. Every
+     * station menu now has the server's layout from the start.
+     */
+    @GameTest(template = "empty")
+    public static void aMenuOpenedBeforeItsStationArrivesKeepsTheServerLayout(GameTestHelper h) {
+        FakePlayer player = TestSupport.player(h, "Early");
+        BlockPos nowhere = h.absolutePos(new BlockPos(4, 1, 4));
+        h.assertTrue(h.getLevel().getBlockEntity(nowhere) == null, "no block entity at the position");
+        var inv = player.getInventory();
+        java.util.List<net.minecraft.world.inventory.AbstractContainerMenu> menus = java.util.List.of(
+                new com.otectus.immersivebrewing.menu.KettleMenu(1, inv, nowhere), new com.otectus.immersivebrewing.menu.MortarMenu(2, inv, nowhere),
+                new com.otectus.immersivebrewing.menu.AlembicMenu(3, inv, nowhere),
+                new com.otectus.immersivebrewing.menu.ApothecaryRackMenu(4, inv, nowhere));
+        int[] stationSlots = {BrewersKettleBlockEntity.SLOTS, ApothecaryMortarBlockEntity.SLOTS,
+                com.otectus.immersivebrewing.blockentity.AlembicBlockEntity.SLOTS, com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity.SLOTS};
+        for (int i = 0; i < menus.size(); i++) {
+            var menu = menus.get(i);
+            h.assertTrue(menu.slots.size() == stationSlots[i] + 36, menu.getClass().getSimpleName() + " has " + menu.slots.size() + " slots");
+            // The full contents a server sends for this menu land without overflowing.
+            net.minecraft.core.NonNullList<ItemStack> contents = net.minecraft.core.NonNullList.withSize(menu.slots.size(), ItemStack.EMPTY);
+            contents.set(0, new ItemStack(Items.GLASS_BOTTLE));
+            contents.set(menu.slots.size() - 1, new ItemStack(Items.SUGAR));
+            menu.initializeContents(1, contents, ItemStack.EMPTY);
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.GLASS_BOTTLE) && menu.getSlot(menu.slots.size() - 1).getItem().is(Items.SUGAR),
+                    menu.getClass().getSimpleName() + " placed the contents in their slots");
+        }
+        h.succeed();
+    }
+
     @GameTest(template = "empty", timeoutTicks = 500)
     public static void kettleResumeAdvancesAfterCountIn(GameTestHelper h) {
         // The legacy engine still finishes batches saved by 1.1: its resume keeps the step and does not burst.

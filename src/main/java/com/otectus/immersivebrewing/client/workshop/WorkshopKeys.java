@@ -50,9 +50,15 @@ public final class WorkshopKeys {
     public static final KeyMapping NEXT_STATION = key("next_station", GLFW.GLFW_KEY_N);
     public static final KeyMapping WITHDRAW = key("withdraw", GLFW.GLFW_KEY_DELETE);
     public static final KeyMapping PRACTICE = key("practice", GLFW.GLFW_KEY_P);
+    /** The held tool's posture: worked near the surface, or pressed down to sweep the bottom (a toggle, no chord). */
+    public static final KeyMapping POSTURE = key("posture", GLFW.GLFW_KEY_V);
+    /** The camera's closer look at the material, and back. */
+    public static final KeyMapping INSPECT = key("inspect", GLFW.GLFW_KEY_Z);
+    /** Shows or hides the full control help (Detailed guidance shows it always). */
+    public static final KeyMapping HELP = key("help", GLFW.GLFW_KEY_H);
 
     public static final List<KeyMapping> ALL = List.of(NEXT_TARGET, PREVIOUS_TARGET, ACTIVATE, WORK, PUT_DOWN, EFFORT, INCREASE, DECREASE,
-            TOOL_LEFT, TOOL_RIGHT, TOOL_FORWARD, TOOL_BACK, BATCH, SEAL, DRAWER, BOOK, NEXT_STATION, WITHDRAW, PRACTICE);
+            TOOL_LEFT, TOOL_RIGHT, TOOL_FORWARD, TOOL_BACK, BATCH, SEAL, DRAWER, BOOK, NEXT_STATION, WITHDRAW, PRACTICE, POSTURE, INSPECT, HELP);
 
     private static KeyMapping key(String name, int code) {
         return new KeyMapping("key.immersive_brewing.workshop." + name, Context.WORKSHOP, InputConstants.Type.KEYSYM, code, CATEGORY);

@@ -16,6 +16,10 @@ package com.otectus.immersivebrewing.workshop;
  * starts afresh instead of joining a distant old point.</li>
  * </ul>
  * Identical repeated samples have zero displacement, so a stationary tool earns nothing.
+ *
+ * <p>A sample also names the tool's posture (handoff 8.3): worked near the surface of the material, or pressed down to
+ * sweep the bottom. {@link #depth()} is the recent share of credited movement made deep; the process decides what, if
+ * anything, that changes. Posture alone earns nothing: it only qualifies movement that was credited anyway.
  */
 public final class ToolTrack {
     /** Longest believable move between two samples, in pixels (about 140 px/s at 20 samples per second). */
@@ -37,6 +41,8 @@ public final class ToolTrack {
     /** Displacement per server step implied by the latest sample (its move spread over the steps it covered). */
     private double rate;
     private double broadness;
+    private double depth;
+    private boolean deep;
     private int teleports;
 
     /** @param halfX half the work plane's extent across x, in pixels; @param halfZ the same across z */
@@ -52,6 +58,8 @@ public final class ToolTrack {
         bank = 0;
         rate = 0;
         broadness = 0;
+        depth = 0;
+        deep = false;
         lastSample = Long.MIN_VALUE / 2;
     }
 
@@ -60,6 +68,12 @@ public final class ToolTrack {
      * suspicious input). Coordinates must already be finite; they are clamped to the plane.
      */
     public boolean sample(double nu, double nv, boolean inContact, long tick) {
+        return sample(nu, nv, inContact, false, tick);
+    }
+
+    /** {@link #sample(double, double, boolean, long)} with the tool's posture: {@code down} = worked at the bottom. */
+    public boolean sample(double nu, double nv, boolean inContact, boolean down, long tick) {
+        deep = down && inContact;
         nu = Math.max(-1, Math.min(1, nu));
         nv = Math.max(-1, Math.min(1, nv));
         boolean gap = tick - lastSample > GAP_TICKS;
@@ -87,6 +101,7 @@ public final class ToolTrack {
         rate = d / covered;
         double r = Math.min(1, Math.sqrt(nu * nu + nv * nv));
         broadness += (r - broadness) * 0.15;
+        if (d > 0.05) depth += ((down ? 1 : 0) - depth) * 0.15;
         return true;
     }
 
@@ -117,6 +132,16 @@ public final class ToolTrack {
     /** Recent average distance from the centre while working, 0..1: broad sweeps versus a stir in one spot. */
     public double broadness() {
         return broadness;
+    }
+
+    /** Recent share of credited movement made with the tool pressed down (0 surface .. 1 bottom). */
+    public double depth() {
+        return depth;
+    }
+
+    /** Whether the latest sample had the tool down at the bottom (presentation: the blade's height). */
+    public boolean deep() {
+        return deep && contact();
     }
 
     public int teleports() {

@@ -48,6 +48,33 @@ public final class WorkshopHand {
         return send(part, WorkshopAction.SAMPLE, 0, x, z, contact, effort, false);
     }
 
+    /** A tool sample with its posture: {@code deep} works it along the bottom of the material. */
+    public WorkshopResult sample(int part, double x, double z, boolean contact, Effort effort, boolean deep) {
+        int sequence = SEQUENCES.merge(player.getUUID(), 1, Integer::sum);
+        WorkshopIntentC2S plain = envelope(sequence, part, WorkshopAction.SAMPLE, 0, x, z, contact, effort, false);
+        return WorkshopIntents.receive(player, withFlags(plain, plain.flags() | (deep ? WorkshopIntentC2S.DEEP : 0), WorkshopIntent.NO_REVISION));
+    }
+
+    /** A commit that asks for an acknowledgement (and, with {@code setup}, accepts the recipe page at {@code revision}). */
+    public WorkshopResult commit(int part, WorkshopAction action, int argument, boolean batch, boolean setup, long revision) {
+        int sequence = SEQUENCES.merge(player.getUUID(), 1, Integer::sum);
+        WorkshopIntentC2S plain = envelope(sequence, part, action, argument, 0, 0, false, Effort.NORMAL, batch);
+        int flags = plain.flags() | WorkshopIntentC2S.ACK | (setup ? WorkshopIntentC2S.SETUP : 0);
+        return WorkshopIntents.receive(player, withFlags(plain, flags, revision));
+    }
+
+    /** The same envelope with other flags and expected revision (and the hand's current view epoch). */
+    public WorkshopIntentC2S withFlags(WorkshopIntentC2S e, int flags, long revision) {
+        return new WorkshopIntentC2S(e.dimension(), e.pos(), e.job(), e.epoch(), e.sequence(), e.part(), e.action(), e.argument(), e.x(), e.z(), flags,
+                revision);
+    }
+
+    /** An envelope stamped with an explicit view epoch (stale-view tests). */
+    public WorkshopIntentC2S withEpoch(WorkshopIntentC2S e, int epoch) {
+        return new WorkshopIntentC2S(e.dimension(), e.pos(), e.job(), epoch, e.sequence(), e.part(), e.action(), e.argument(), e.x(), e.z(), e.flags(),
+                e.expected());
+    }
+
     public WorkshopResult press(double x, double z, Effort effort) {
         return send(0, WorkshopAction.PRESS, 0, x, z, true, effort, false);
     }
@@ -60,8 +87,10 @@ public final class WorkshopHand {
     /** A raw envelope (protocol tests forge and replay these). */
     public WorkshopIntentC2S envelope(int sequence, int part, WorkshopAction action, int argument, double x, double z, boolean contact,
                                       Effort effort, boolean batch) {
-        return new WorkshopIntentC2S(player.level().dimension().location(), pos, WorkshopIntent.ANY_JOB, sequence, part, action.ordinal(), argument,
-                (float) x, (float) z, WorkshopIntentC2S.flags(contact, false, batch, effort.ordinal()));
+        // Stamped with the player's current view epoch, as a real client does.
+        return new WorkshopIntentC2S(player.level().dimension().location(), pos, WorkshopIntent.ANY_JOB,
+                com.otectus.immersivebrewing.interaction.WorkshopPresence.epoch(player.getUUID()), sequence, part, action.ordinal(), argument,
+                (float) x, (float) z, WorkshopIntentC2S.flags(contact, false, batch, effort.ordinal()), WorkshopIntent.NO_REVISION);
     }
 
     /** The next sequence number this hand would use (for replay tests). */

@@ -17,5 +17,6 @@
   "treatment": {
     "step_seconds": 10.0,
     "rest_seconds": 4.0
-  }
+  },
+  "presentation": "immersive_brewing:brewing/dense_sediment"
 }

@@ -1,5 +1,5 @@
 Immersive Brewing coverage report
-Generated 2026-11-13T02:52:34.831130948Z
+Generated 2026-11-15T02:16:24.667217749Z
 Mode: COEXIST
 Tipped-arrow override active: true
 

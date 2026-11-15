@@ -39,10 +39,46 @@ public final class ClientConfig {
 
     public enum HudAnchor { LEFT, RIGHT }
 
-    /** How the working view frames a station: a comfortable turn toward it, or the player's own unchanged view. */
+    /**
+     * 1.2.0 before the close-up camera: FOCUS turned the view toward the apparatus, DIRECT kept it. Still read while
+     * {@link #CAMERA_STYLE} is AUTO, so a player who chose DIRECT is never given a moving camera by an update.
+     */
     public enum CameraMode { FOCUS, DIRECT }
 
+    /** How the working view frames a station (handoff 5.5). */
+    public enum CameraStyle {
+        /** CLOSE_UP for new settings; EYE when the legacy cameraMode was DIRECT; INSTANT when reduced motion is on. */
+        AUTO,
+        /** The camera glides above the apparatus (a short eased move, interruptible) and back. */
+        CLOSE_UP,
+        /** The same close-up view without travel: a cut in and a cut out. */
+        INSTANT,
+        /** Your own view from your eyes; nothing moves the camera. */
+        EYE
+    }
+
+    /** How much the working view says in words (handoff 10). */
+    public enum Guidance {
+        /** DETAILED when numericDisplay is on, otherwise GUIDED. */
+        AUTO,
+        /** The apparatus, the hovered part's short label, refusals and anything urgent. */
+        MINIMAL,
+        /** Also the one useful next action and the first-use demonstrations. */
+        GUIDED,
+        /** Also numbers, the full control help and diagnostics. */
+        DETAILED
+    }
+
+    /** What is drawn gripping a tool or vessel at a station. */
+    public enum HandStyle { ARMS, TOOLS_ONLY }
+
     public static final ForgeConfigSpec.EnumValue<CameraMode> CAMERA_MODE;
+    public static final ForgeConfigSpec.EnumValue<CameraStyle> CAMERA_STYLE;
+    public static final ForgeConfigSpec.DoubleValue CAMERA_SECONDS;
+    public static final ForgeConfigSpec.IntValue CLOSE_UP_FOV;
+    public static final ForgeConfigSpec.EnumValue<Guidance> GUIDANCE;
+    public static final ForgeConfigSpec.EnumValue<HandStyle> HANDS;
+    public static final ForgeConfigSpec.DoubleValue ARM_OPACITY;
     public static final ForgeConfigSpec.BooleanValue HOLD_TO_GRAB;
     public static final ForgeConfigSpec.DoubleValue TOOL_SENSITIVITY;
     public static final ForgeConfigSpec.DoubleValue TOOL_DEAD_ZONE;
@@ -72,8 +108,27 @@ public final class ClientConfig {
         b.pop();
 
         b.comment("The working view at a station").push("workshop");
-        CAMERA_MODE = b.comment("FOCUS turns your view toward the apparatus when you start working; DIRECT keeps your own view.",
-                "Neither moves the camera through walls or away from your eyes.").defineEnum("cameraMode", CameraMode.FOCUS);
+        CAMERA_STYLE = b.comment("How the working view frames a station.",
+                "CLOSE_UP: the camera glides (about a third of a second) above and toward the apparatus, so you look into the vessel.",
+                "INSTANT: the same close-up view without the glide. EYE: your own view from your eyes, nothing moves.",
+                "AUTO (the default): CLOSE_UP, except EYE if cameraMode below is DIRECT and INSTANT if reducedMotion is on.",
+                "The camera never passes through walls; where there is no room it works from your eyes and says so.")
+                .defineEnum("cameraStyle", CameraStyle.AUTO);
+        CAMERA_MODE = b.comment("Legacy setting from before the close-up camera, read only while cameraStyle is AUTO.",
+                "DIRECT keeps your own view (as EYE); FOCUS allows the close-up camera.").defineEnum("cameraMode", CameraMode.FOCUS);
+        CAMERA_SECONDS = b.comment("How long the close-up camera takes to glide in and out, in seconds.").defineInRange("cameraSeconds", 0.35, 0.2, 0.6);
+        CLOSE_UP_FOV = b.comment("The close-up camera's preferred vertical field of view, in degrees. Narrow windows widen it as needed.")
+                .defineInRange("closeUpFov", 44, 35, 55);
+        GUIDANCE = b.comment("How much the working view says in words.",
+                "MINIMAL: the apparatus, the hovered part's short label, refusals and urgent warnings.",
+                "GUIDED: also the one useful next action and the first-use demonstrations.",
+                "DETAILED: also numbers, the full control help and diagnostics.",
+                "AUTO (the default): DETAILED if numericDisplay is on, otherwise GUIDED.").defineEnum("guidance", Guidance.AUTO);
+        HANDS = b.comment("ARMS draws your translucent, vanilla-sized arm gripping the tool or vessel; TOOLS_ONLY draws only the tool.")
+                .defineEnum("hands", HandStyle.ARMS);
+        ARM_OPACITY = b.comment("Workshop hand opacity, 0 (hidden) to 1 (opaque skin). Translucent arms fade toward the shoulder; sleeves use a lighter overlay.",
+                "Only affects the arms drawn at brewing stations; arm size and skin proportions always match vanilla.")
+                .defineInRange("armOpacity", 0.45, 0.0, 1.0);
         MIRROR_TOOLS = b.comment("Left-handed presentation: rests and held tools are drawn mirrored. The parts you act on stay the same.")
                 .define("mirrorTools", false);
         PART_HINTS = b.comment("Show the short action label beside the part under the cursor or the selected part.").define("partHints", true);
@@ -116,6 +171,24 @@ public final class ClientConfig {
 
     public static <T> T get(ForgeConfigSpec.ConfigValue<T> value) {
         return SPEC.isLoaded() ? value.get() : value.getDefault();
+    }
+
+    /**
+     * The camera style in effect (handoff 5.5 migration): an explicit choice wins; AUTO keeps an existing player's
+     * choice from before the close-up camera (DIRECT stays at the eyes, reduced motion gets the cut without travel).
+     */
+    public static CameraStyle cameraStyle() {
+        CameraStyle style = get(CAMERA_STYLE);
+        if (style != CameraStyle.AUTO) return style;
+        if (get(CAMERA_MODE) == CameraMode.DIRECT) return CameraStyle.EYE;
+        return get(REDUCED_MOTION) ? CameraStyle.INSTANT : CameraStyle.CLOSE_UP;
+    }
+
+    /** The guidance level in effect: an explicit choice, or DETAILED for players who asked for numbers, else GUIDED. */
+    public static Guidance guidance() {
+        Guidance level = get(GUIDANCE);
+        if (level != Guidance.AUTO) return level;
+        return get(NUMERIC_DISPLAY) ? Guidance.DETAILED : Guidance.GUIDED;
     }
 
     private ClientConfig() {}

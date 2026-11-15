@@ -68,6 +68,11 @@ final class VisualChecks {
         if (screen == null || !screen.getClass().getPackageName().endsWith("client.screen")) return;
         List<AbstractWidget> widgets = screen.children().stream().filter(AbstractWidget.class::isInstance)
                 .map(AbstractWidget.class::cast).filter(w -> w.visible).toList();
+        if (screen instanceof com.otectus.immersivebrewing.client.screen.NotebookScreen) {
+            for (AbstractWidget widget : widgets) if (widget instanceof EditBox) {
+                checks.put("notebook_search_clear_" + name, widget.getY() + widget.getHeight() < (Integer) field(screen, "clipTop"));
+            }
+        }
         boolean contained = widgets.stream().allMatch(w -> w.getX() >= 0 && w.getY() >= 0
                 && w.getX() + w.getWidth() <= screen.width && w.getY() + w.getHeight() <= screen.height);
         boolean separate = true;
@@ -78,6 +83,44 @@ final class VisualChecks {
         }
         checks.put("widgets_contained_" + name, contained);
         checks.put("widgets_separate_" + name, separate);
+        if(screen instanceof KettlePlanScreen&&(!(Boolean)field(screen,"compact")||(Boolean)field(screen,"detailPage"))) {
+            Ui.ScrollArea area=(Ui.ScrollArea)field(screen,"detail");
+            int ax=(Integer)field(area,"x"),ay=(Integer)field(area,"y"),aw=(Integer)field(area,"w"),ah=(Integer)field(area,"h");
+            checks.put("route_clear_of_controls_"+name,widgets.stream().noneMatch(widget->overlap(ax,ay,aw,ah,
+                    widget.getX(),widget.getY(),widget.getWidth(),widget.getHeight())));
+        }
+        if(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container) {
+            int left=(Integer)inherited(screen,"leftPos"),top=(Integer)inherited(screen,"topPos");
+            int width=(Integer)inherited(screen,"imageWidth"),height=(Integer)inherited(screen,"imageHeight");
+            boolean panel=widgets.stream().allMatch(widget->widget.getX()>=left&&widget.getY()>=top
+                    &&widget.getX()+widget.getWidth()<=left+width&&widget.getY()+widget.getHeight()<=top+height);
+            boolean clear=true;
+            int titleX=(Integer)inherited(screen,"titleLabelX"),titleY=(Integer)inherited(screen,"titleLabelY");
+            int inventoryX=(Integer)inherited(screen,"inventoryLabelX"),inventoryY=(Integer)inherited(screen,"inventoryLabelY");
+            for(var slot:container.getMenu().slots) {
+                for(var widget:widgets) if(overlap(left+slot.x,top+slot.y,16,16,widget.getX(),widget.getY(),widget.getWidth(),widget.getHeight())) clear=false;
+                if(overlap(slot.x,slot.y,16,16,titleX,titleY,Math.min(Ui.font().width(screen.getTitle()),width-16),9)) clear=false;
+                if(overlap(slot.x,slot.y,16,16,inventoryX,inventoryY,Ui.font().width(Component.translatable("container.inventory")),9)) clear=false;
+            }
+            checks.put("widgets_inside_inventory_"+name,panel);
+            checks.put("inventory_slots_clear_"+name,clear);
+            if(container.getMenu() instanceof com.otectus.immersivebrewing.menu.KettleMenu) {
+                checks.put("sixth_reagent_hint_"+name,"reagent".equals(com.otectus.immersivebrewing.menu.KettleMenu.slotRole(11)));
+                checks.put("fuel_and_tool_hints_"+name,"fuel".equals(com.otectus.immersivebrewing.menu.KettleMenu.slotRole(12))
+                        &&"paddle".equals(com.otectus.immersivebrewing.menu.KettleMenu.slotRole(13)));
+            }
+        }
+    }
+
+    private static boolean overlap(int x,int y,int w,int h,int ox,int oy,int ow,int oh) {
+        return x<ox+ow&&ox<x+w&&y<oy+oh&&oy<y+h;
+    }
+
+    private static Object inherited(Object owner,String name) {
+        for(Class<?> type=owner.getClass();type!=null;type=type.getSuperclass()) try {
+            Field field=type.getDeclaredField(name);field.setAccessible(true);return field.get(owner);
+        } catch(NoSuchFieldException ignored) {} catch(ReflectiveOperationException error) { throw new IllegalStateException(error); }
+        throw new IllegalStateException("Missing field "+name);
     }
 
     static boolean click(Screen screen, String key) {
@@ -114,6 +157,14 @@ final class VisualChecks {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    static void selectedLongestPlan(KettlePlanScreen screen,Map<String,Object> checks,String name) {
+        List<PlanListS2C.Entry> entries=(List<PlanListS2C.Entry>)field(screen,"filtered");
+        int selected=(Integer)field(screen,"selected");
+        int longest=entries.stream().mapToInt(entry->entry.steps().size()).max().orElse(0);
+        checks.put("long_route_still_selected_"+name,selected>=0&&entries.get(selected).steps().size()==longest);
     }
 
     static void scrollEnd(Screen screen, String field, Map<String, Object> checks, String name, boolean mustOverflow) {

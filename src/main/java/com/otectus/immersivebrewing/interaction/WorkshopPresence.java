@@ -29,9 +29,12 @@ import java.util.UUID;
  * Server thread only.
  */
 public final class WorkshopPresence {
-    public record Presence(ResourceKey<Level> dimension, BlockPos pos, WorkshopKind kind, long since) {}
+    /** @param epoch numbers this view for its player; intents stamped with an earlier view's epoch are stale */
+    public record Presence(ResourceKey<Level> dimension, BlockPos pos, WorkshopKind kind, long since, int epoch) {}
 
     private static final Map<UUID, Presence> BY_PLAYER = new HashMap<>();
+    /** The last epoch handed to each player (never reused while the server runs, so a late intent can not match). */
+    private static final Map<UUID, Integer> EPOCHS = new HashMap<>();
     /** The live player object of each presence: fake players (automation, tests) are not in the player list. */
     private static final Map<UUID, ServerPlayer> PLAYERS = new HashMap<>();
 
@@ -39,9 +42,16 @@ public final class WorkshopPresence {
     public static void enter(ServerPlayer player, BlockPos pos, WorkshopKind kind) {
         Presence previous = BY_PLAYER.get(player.getUUID());
         if (previous != null && (!previous.pos().equals(pos) || previous.dimension() != player.level().dimension())) releaseAt(player, previous);
-        BY_PLAYER.put(player.getUUID(), new Presence(player.level().dimension(), pos.immutable(), kind, player.server.getTickCount()));
+        int epoch = EPOCHS.merge(player.getUUID(), 1, (a, b) -> a >= Integer.MAX_VALUE - 1 ? 1 : a + 1);
+        BY_PLAYER.put(player.getUUID(), new Presence(player.level().dimension(), pos.immutable(), kind, player.server.getTickCount(), epoch));
         PLAYERS.put(player.getUUID(), player);
-        ModNetwork.sendTo(player, new WorkshopFocusS2C(pos, kind.ordinal(), true, ""));
+        ModNetwork.sendTo(player, new WorkshopFocusS2C(pos, kind.ordinal(), true, "", epoch));
+    }
+
+    /** The epoch of the player's open view, or {@link WorkshopIntent#ANY_EPOCH} when none is open. */
+    public static int epoch(UUID player) {
+        Presence p = BY_PLAYER.get(player);
+        return p == null ? WorkshopIntent.ANY_EPOCH : p.epoch();
     }
 
     /** Ends a player's working view (their leases are released; any batch carries on under the normal policy). */
@@ -50,7 +60,7 @@ public final class WorkshopPresence {
         PLAYERS.remove(player.getUUID());
         if (p == null) return;
         releaseAt(player, p);
-        ModNetwork.sendTo(player, new WorkshopFocusS2C(p.pos(), p.kind().ordinal(), false, reason));
+        ModNetwork.sendTo(player, new WorkshopFocusS2C(p.pos(), p.kind().ordinal(), false, reason, p.epoch()));
     }
 
     /** Drops a player without a message (logout: there is no connection left to tell). */
@@ -118,7 +128,7 @@ public final class WorkshopPresence {
             BY_PLAYER.remove(e.getKey());
             ServerPlayer player = PLAYERS.remove(e.getKey());
             if (player != null) ModNetwork.sendTo(player, new WorkshopFocusS2C(pos, e.getValue().kind().ordinal(), false,
-                    "workshop.immersive_brewing.focus.end.gone"));
+                    "workshop.immersive_brewing.focus.end.gone", e.getValue().epoch()));
         }
     }
 
@@ -141,6 +151,7 @@ public final class WorkshopPresence {
     public static void clear() {
         BY_PLAYER.clear();
         PLAYERS.clear();
+        EPOCHS.clear();
     }
 
     private WorkshopPresence() {}

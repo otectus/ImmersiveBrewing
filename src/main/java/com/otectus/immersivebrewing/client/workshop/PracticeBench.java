@@ -60,6 +60,9 @@ public final class PracticeBench {
     private final ToolTrack track;
     private int tool = -1;
     private Effort effort = Effort.NORMAL;
+    private boolean deep;
+    private long effects;
+    private long queueAt;
     private int pourQueue;
     private int fillQueue;
     private int cooldown;
@@ -182,22 +185,37 @@ public final class PracticeBench {
 
     // ---- actions (the same rules the stations apply) ----
 
-    /** Applies an intent locally. Returns true when it was a practice action (it must then not be sent). */
-    static boolean act(int part, WorkshopAction action, int argument, double x, double z, boolean contact, Effort chosen, boolean batch) {
-        if (active == null || !active.pos.equals(ClientWorkshop.focus())) return false;
-        if (action == WorkshopAction.LEAVE) {
-            stop(null);
-            return false; // the server still hears that the view closed
+    /** A practice action's local answer (what a server acknowledgement would have said). */
+    public record Outcome(boolean accepted, @Nullable Component reason) {}
+
+    /**
+     * Applies an intent locally. Returns null when it was not a practice action (it is then sent), else the outcome; a
+     * practice action is never sent, and its transfers settle on this answer.
+     */
+    @Nullable
+    static Outcome act(int part, WorkshopAction action, int argument, double x, double z, boolean contact, boolean deep, Effort chosen, boolean batch) {
+        if (active == null || !active.pos.equals(ClientWorkshop.focus())) return null;
+        if (action == WorkshopAction.LEAVE || action == WorkshopAction.SWITCH_STATION || action == WorkshopAction.FOCUS) {
+            if (action != WorkshopAction.FOCUS) stop(null);
+            return null; // the server still hears that the view closed or moved
         }
-        if (action == WorkshopAction.DRAWER || action == WorkshopAction.BOOK) {
-            StationNotices.show(Component.translatable("practice.immersive_brewing.workshop.no_real"), true);
-            return true;
+        if (action == WorkshopAction.DRAWER || action == WorkshopAction.BOOK || action == WorkshopAction.SETUP_PAGE) {
+            Component why = Component.translatable("practice.immersive_brewing.workshop.no_real");
+            StationNotices.show(why, true);
+            return new Outcome(false, why);
         }
         active.effort = chosen;
+        active.deep = deep;
         Component refusal = active.apply(part, action, argument, x, z, contact, batch);
-        if (refusal != null) StationNotices.show(refusal, true);
+        if (refusal != null && action != WorkshopAction.SAMPLE) StationNotices.show(refusal, true);
         active.revision++;
-        return true;
+        return new Outcome(refusal == null, refusal);
+    }
+
+    /** Practice effects drive the same transfer motion a server's accepted actions do (nothing leaves this client). */
+    private void effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind kind, int index) {
+        WorkshopTransfers.effect(new com.otectus.immersivebrewing.network.packet.StationEffectEvent(pos, PRACTICE_JOB, PRACTICE_JOB, ++effects,
+                ticks, (int) ticks, kind, index, 0));
     }
 
     @Nullable
@@ -227,12 +245,17 @@ public final class PracticeBench {
         KettleProcess p = kettle;
         switch (action) {
             case POUR -> {
-                if (batch || argument < 0) {
+                boolean rack = part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + 6;
+                if (batch || !rack && argument < 0) {
                     pourQueue = p.count(KettleProcess.Portion.STAGED);
+                    cooldown = BrewersKettleBlockEntity.POUR_LEAD;
+                    queueAt = ticks + cooldown + 1;
                     return null;
                 }
-                int index = part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + 6 ? p.portionAtSlot(part - WorkshopParts.K_RACK) : argument;
-                if (index >= 0 && p.pour(index)) sound(ModSounds.KETTLE_POUR.get());
+                int index = rack ? p.portionAtSlot(part - WorkshopParts.K_RACK) : -1;
+                if (index < 0 || !p.pour(index)) return Component.translatable("workshop.immersive_brewing.kettle.bottle.nothing");
+                sound(ModSounds.KETTLE_POUR.get());
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.POUR, part - WorkshopParts.K_RACK);
                 return null;
             }
             case DOSE -> {
@@ -241,6 +264,7 @@ public final class PracticeBench {
                 if (problem != null) return Component.translatable(problem);
                 p.dose(step);
                 sound(ModSounds.INGREDIENT_ADD.get());
+                effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.ADDITION, step);
                 return null;
             }
             case SET_CONTROL -> {
@@ -251,6 +275,17 @@ public final class PracticeBench {
                 if (part == WorkshopParts.K_PADDLE) {
                     tool = part;
                     track.reset();
+                    return null;
+                }
+                // Lifting a bottle or cup: the same checks a station applies before granting the carry.
+                if (part >= WorkshopParts.K_RACK && part < WorkshopParts.K_RACK + 6) {
+                    int index = p.portionAtSlot(part - WorkshopParts.K_RACK);
+                    return index >= 0 && p.portion(index) == KettleProcess.Portion.STAGED ? null
+                            : Component.translatable("workshop.immersive_brewing.kettle.bottle.nothing");
+                }
+                if (part >= WorkshopParts.K_CUP && part < WorkshopParts.K_CUP + WorkshopParts.MAX_CUPS) {
+                    String problem = p.doseProblem(part - WorkshopParts.K_CUP);
+                    return problem == null ? null : Component.translatable(problem);
                 }
                 return null;
             }
@@ -262,13 +297,15 @@ public final class PracticeBench {
                 return null;
             }
             case SAMPLE -> {
-                if (part == tool) track.sample(x, z, contact, ticks);
+                if (part == tool) track.sample(x, z, contact, deep, ticks);
                 return null;
             }
             case FILL -> {
                 if (!p.finalized()) return Component.translatable("workshop.immersive_brewing.kettle.not_ready");
                 // As at a real kettle: the batch action fills every ready bottle in turn, the spout alone the next one.
                 fillQueue = batch ? p.count(KettleProcess.Portion.READY) : 1;
+                cooldown = batch ? BrewersKettleBlockEntity.FILL_LEAD : 0;
+                queueAt = ticks + cooldown + 1;
                 return null;
             }
             default -> {
@@ -296,7 +333,7 @@ public final class PracticeBench {
                 return null;
             }
             case SAMPLE -> {
-                if (part == tool) track.sample(x, z, contact, ticks);
+                if (part == tool) track.sample(x, z, contact, deep, ticks);
                 return null;
             }
             case PRESS -> {
@@ -356,18 +393,23 @@ public final class PracticeBench {
                     for (int i = 0; i < p.portions(); i++) if (p.portion(i) == KettleProcess.Portion.STAGED) {
                         p.pour(i);
                         sound(ModSounds.KETTLE_POUR.get());
+                        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.POUR, p.slotOf(i));
                         break;
                     }
                     pourQueue--;
-                    cooldown = 6;
+                    cooldown = BrewersKettleBlockEntity.POUR_PACE;
+                    queueAt = pourQueue > 0 ? ticks + cooldown + 1 : 0;
                 } else if (fillQueue > 0 && p.finalized()) {
                     for (int i = 0; i < p.portions(); i++) if (p.portion(i) == KettleProcess.Portion.READY) {
+                        int slot = p.slotOf(i);
                         p.removePortion(i);
                         sound(ModSounds.BOTTLE_FILL.get());
+                        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.FILL, slot);
                         break;
                     }
                     fillQueue--;
-                    cooldown = 8;
+                    cooldown = BrewersKettleBlockEntity.FILL_PACE;
+                    queueAt = fillQueue > 0 ? ticks + cooldown + 1 : 0;
                     if (p.portions() == 0) {
                         int quality = QualityMath.quality(QualityMath.RAW_EXTRACTION, control);
                         stop(Component.translatable("practice.immersive_brewing.workshop.result.kettle", Component.translatable(Grade.of(quality).key()),
@@ -375,7 +417,7 @@ public final class PracticeBench {
                         return;
                     }
                 }
-                p.tick(tool == WorkshopParts.K_PADDLE ? px : 0, track.broadness());
+                p.tick(tool == WorkshopParts.K_PADDLE ? px : 0, track.broadness(), track.depth());
                 if (p.readyToFinalize()) {
                     control = p.finalizeControl();
                     p.markFinalized();
@@ -425,6 +467,7 @@ public final class PracticeBench {
             h.putFloat("x", (float) track.u());
             h.putFloat("z", (float) track.v());
             h.putBoolean("contact", track.contact());
+            h.putBoolean("deep", track.deep());
             held.add(h);
         }
         t.put("held", held);
@@ -435,6 +478,16 @@ public final class PracticeBench {
                 CompoundTag k = new CompoundTag();
                 kettle.writeSnapshot(k);
                 t.put("kettle", k);
+                ItemStack practiceOutput = ItemStack.of(practice.getCompound("output"));
+                if (!practiceOutput.isEmpty()) t.put("jobOutput", practiceOutput.save(new CompoundTag()));
+                if (pourQueue > 0 || fillQueue > 0) {
+                    // The practice queue is timed in this client's own steps; the transfer view reads game time.
+                    var level = Minecraft.getInstance().level;
+                    long game = level == null ? 0 : level.getGameTime();
+                    t.putByte("queue", (byte) (pourQueue > 0 ? 1 : 2));
+                    t.putByte("queued", (byte) Math.max(pourQueue, fillQueue));
+                    t.putLong("queueAt", game + Math.max(0, queueAt - ticks));
+                }
                 t.put("doseItems", practice.getList("doseItems", Tag.TAG_STRING).copy());
                 t.putIntArray("stageColors", practice.getIntArray("stageColors"));
                 ListTag portions = new ListTag();

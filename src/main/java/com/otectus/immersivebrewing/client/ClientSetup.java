@@ -29,23 +29,50 @@ public final class ClientSetup {
 
     public static void init(IEventBus modBus) {
         modBus.addListener(ClientSetup::onClientSetup);
+        modBus.addListener((net.minecraftforge.client.event.ModelEvent.RegisterAdditional event) ->
+                event.register(new net.minecraft.resources.ResourceLocation("immersive_brewing", "block/presentation_assets")));
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.client.event.RenderLevelStageEvent event) -> {
+            if(event.getStage()==net.minecraftforge.client.event.RenderLevelStageEvent.Stage.AFTER_SOLID_BLOCKS)
+                com.otectus.immersivebrewing.client.render.ApparatusBits.beginFrame();
+        });
+        MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.render.WorkshopArmRenderer::renderStage);
         modBus.addListener(Keys::register);
         modBus.addListener(com.otectus.immersivebrewing.client.workshop.WorkshopKeys::register);
         MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.workshop.ClientWorkshop::tick);
         MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.workshop.ClientWorkshop::onFov);
+        MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.workshop.ClientWorkshop::onAngles);
+        // While working at a station the hands belong to the apparatus: no first-person hand or held item over it, and no
+        // vanilla block outline competing with the part outline.
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.client.event.RenderHandEvent event) -> {
+            if (Minecraft.getInstance().screen instanceof com.otectus.immersivebrewing.client.workshop.WorkshopScreen
+                    || com.otectus.immersivebrewing.client.workshop.WorkshopCamera.overriding()) event.setCanceled(true);
+        });
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.client.event.RenderHighlightEvent.Block event) -> {
+            if (Minecraft.getInstance().screen instanceof com.otectus.immersivebrewing.client.workshop.WorkshopScreen) event.setCanceled(true);
+        });
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.client.event.ClientPlayerNetworkEvent.Clone event) ->
+                com.otectus.immersivebrewing.client.workshop.WorkshopCamera.reset());
         MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.workshop.ClientWorkshop::renderOutlines);
         MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.workshop.WorkshopScreen::onOverlay);
         modBus.addListener((RegisterGuiOverlaysEvent event) -> StationNotices.register(event));
         modBus.addListener((RegisterGuiOverlaysEvent event) -> StationInspection.register(event));
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.level.LevelEvent.Unload event) -> {
-            if (event.getLevel().isClientSide()) clearPresentation();
+            if (event.getLevel().isClientSide()) {
+                // A dimension change or disconnect: nothing may stay framed, held or in flight.
+                com.otectus.immersivebrewing.client.workshop.WorkshopCamera.reset();
+                com.otectus.immersivebrewing.client.workshop.WorkshopTransfers.clear();
+                com.otectus.immersivebrewing.client.workshop.WorkshopProjector.clear();
+                clearPresentation();
+            }
         });
         modBus.addListener(ClientSetup::registerRenderers);
         MinecraftForge.EVENT_BUS.addListener(ClientSetup::onLogout);
         MinecraftForge.EVENT_BUS.addListener(Keys::tick);
         MinecraftForge.EVENT_BUS.addListener(com.otectus.immersivebrewing.client.sound.StationSoundManager::tick);
-        modBus.addListener((net.minecraftforge.client.event.RegisterClientReloadListenersEvent event) ->
-                event.registerReloadListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) manager -> clearPresentation()));
+        modBus.addListener((net.minecraftforge.client.event.RegisterClientReloadListenersEvent event) -> {
+            event.registerReloadListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) manager -> clearPresentation());
+            event.registerReloadListener(com.otectus.immersivebrewing.client.presentation.PresentationProfiles.LISTENER);
+        });
         GuideHooks.installJournalHandler(request -> {
             var mc=Minecraft.getInstance();
             var key=com.otectus.immersivebrewing.recipe.PlanKey.parse(request.plan());
@@ -80,6 +107,10 @@ public final class ClientSetup {
                 com.otectus.immersivebrewing.client.presentation.StationVisualCache.remove(station.getLevel().dimension().location().toString(), station.getBlockPos().asLong());
                 com.otectus.immersivebrewing.client.sound.StationSoundManager.remove(station.getBlockPos());
                 com.otectus.immersivebrewing.client.particle.StationParticles.remove(station.getBlockPos().asLong());
+                com.otectus.immersivebrewing.client.workshop.WorkshopTransfers.remove(station.getBlockPos());
+                com.otectus.immersivebrewing.client.presentation.KettleSurface.remove(station.getBlockPos());
+                com.otectus.immersivebrewing.client.presentation.ToolMotion.remove(station.getBlockPos());
+                com.otectus.immersivebrewing.client.render.MortarRenderer.remove(station.getBlockPos());
             };
             com.otectus.immersivebrewing.network.packet.StationVisualS2C.clientHandler = packet -> {
                 var level = Minecraft.getInstance().level;
@@ -92,6 +123,7 @@ public final class ClientSetup {
             };
             com.otectus.immersivebrewing.network.packet.WorkshopFocusS2C.clientHandler = com.otectus.immersivebrewing.client.workshop.ClientWorkshop::onFocus;
             com.otectus.immersivebrewing.network.packet.WorkshopSnapshotS2C.clientHandler = com.otectus.immersivebrewing.client.workshop.ClientWorkshop::onSnapshot;
+            com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.clientHandler = com.otectus.immersivebrewing.client.workshop.ClientWorkshop::onAck;
             net.minecraft.client.renderer.item.ItemProperties.register(com.otectus.immersivebrewing.registry.ModItems.BATCH_CARRIER.get(),
                     com.otectus.immersivebrewing.ImmersiveBrewing.id("strapped"),
                     (stack, level, entity, seed) -> com.otectus.immersivebrewing.item.BatchCarrierItem.strapped(stack) ? 1F : 0F);
@@ -118,6 +150,13 @@ public final class ClientSetup {
     private static void clearPresentation() {
         com.otectus.immersivebrewing.client.sound.StationSoundManager.clear();
         KettleRenderer.clearPresentationCache();
+        com.otectus.immersivebrewing.client.render.MortarRenderer.clearPresentationCache();
+        com.otectus.immersivebrewing.client.render.ApparatusBits.clearHands();
+        // A reload while holding a tool: the presentation rebuilds; the hand lets go so no lease or press is left stuck.
+        if (com.otectus.immersivebrewing.client.workshop.ClientWorkshop.focus() != null) {
+            com.otectus.immersivebrewing.client.workshop.ClientWorkshop.putDown();
+            com.otectus.immersivebrewing.client.workshop.ClientWorkshop.dropCarry();
+        }
         com.otectus.immersivebrewing.client.render.ApothecaryRackRenderer.clear();
         com.otectus.immersivebrewing.client.particle.StationParticles.clear();
     }

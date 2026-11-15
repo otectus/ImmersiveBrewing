@@ -46,6 +46,15 @@ public final class WorkshopRenderBits {
         RenderBits.prism(pose, buffers, (float) x0 * PX, (float) y0 * PX, (float) z0 * PX, (float) x1 * PX, (float) y1 * PX, (float) z1 * PX, argb, light);
     }
 
+    public static void material(PoseStack pose, MultiBufferSource buffers, RenderBits.MaterialKind material,
+                                double x0,double y0,double z0,double x1,double y1,double z1,int light) {
+        RenderBits.prism(pose,buffers,material,(float)x0*PX,(float)y0*PX,(float)z0*PX,(float)x1*PX,(float)y1*PX,(float)z1*PX,0xFFFFFFFF,light);
+    }
+
+    public static void decal(PoseStack pose, MultiBufferSource buffers, String kind,double x,double y,double z,double radius,int argb,int light) {
+        RenderBits.decal(pose,buffers,kind,(float)(x-radius)*PX,(float)(z-radius)*PX,(float)(x+radius)*PX,(float)(z+radius)*PX,(float)y*PX,argb,light);
+    }
+
     /** A box whose x extent follows the left-handed presentation (mirrored and kept ordered). */
     public static void boxM(PoseStack pose, MultiBufferSource buffers, double x0, double y0, double z0, double x1, double y1, double z1, int argb, int light) {
         double a = mirror(x0), b = mirror(x1);
@@ -59,32 +68,33 @@ public final class WorkshopRenderBits {
 
     /** A falling stream between two model-pixel points: a thin vertical ribbon facing both ways. */
     public static void stream(PoseStack pose, MultiBufferSource buffers, double fx, double fy, double fz, double tx, double ty, double tz, int argb, int light) {
-        VertexConsumer vc = buffers.getBuffer(RenderType.translucent());
+        VertexConsumer vc = buffers.getBuffer(RenderBits.translucent());
         var sprite = RenderBits.water();
         Matrix4f m = pose.last().pose();
         float a = (argb >>> 24) / 255F, r = (argb >> 16 & 0xFF) / 255F, g = (argb >> 8 & 0xFF) / 255F, b = (argb & 0xFF) / 255F;
-        float w = 0.35F * PX;
-        float[][] quad = {
-                {(float) fx * PX - w, (float) fy * PX, (float) fz * PX}, {(float) tx * PX - w, (float) ty * PX, (float) tz * PX},
-                {(float) tx * PX + w, (float) ty * PX, (float) tz * PX}, {(float) fx * PX + w, (float) fy * PX, (float) fz * PX}};
-        for (int pass = 0; pass < 2; pass++) {
-            for (int i = 0; i < 4; i++) {
-                float[] c = quad[pass == 0 ? i : 3 - i];
-                vc.vertex(m, c[0], c[1], c[2]).color(r, g, b, a).uv(sprite.getU(i < 2 ? 0 : 4), sprite.getV(i % 3 == 0 ? 0 : 8))
-                        .overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(0, 0, 1).endVertex();
+        float w = 0.18F * PX;
+        for (int axis=0;axis<2;axis++) {
+            float ox=axis==0?w:0,oz=axis==1?w:0;
+            float[][] quad = {
+                    {(float)fx*PX-ox,(float)fy*PX,(float)fz*PX-oz},{(float)tx*PX-ox,(float)ty*PX,(float)tz*PX-oz},
+                    {(float)tx*PX+ox,(float)ty*PX,(float)tz*PX+oz},{(float)fx*PX+ox,(float)fy*PX,(float)fz*PX+oz}};
+            for(int pass=0;pass<2;pass++) for(int n=0;n<4;n++) {
+                int i=pass==0?n:3-n;float[] c=quad[i];
+                vc.vertex(m,c[0],c[1],c[2]).color(r,g,b,a).uv(sprite.getU(i<2?0:2),sprite.getV(i%3==0?0:12))
+                        .overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light).normal(pose.last().normal(),axis==1?1:0,0,axis==0?1:0).endVertex();
             }
         }
     }
 
     /**
      * The pose of a tool as everyone should see it: the local player's own hand when they hold it, else the holder's
-     * synced pose, else null (resting). Returns {u, v, contact} in normalised work-plane coordinates.
+     * synced pose, else null (resting). Returns {u, v, contact, deep} in normalised work-plane coordinates.
      */
     @Nullable
     public static double[] toolPose(BlockPos pos, CompoundTag snapshot, int part) {
         var player = Minecraft.getInstance().player;
         if (pos.equals(ClientWorkshop.focus()) && ClientWorkshop.tool() == part) {
-            return new double[] {ClientWorkshop.shownU(), ClientWorkshop.shownV(), ClientWorkshop.contact() ? 1 : 0};
+            return new double[] {ClientWorkshop.shownU(), ClientWorkshop.shownV(), ClientWorkshop.contact() ? 1 : 0, ClientWorkshop.deep() ? 1 : 0};
         }
         WorkshopTargets.View view = new WorkshopTargets.View(null, null, snapshot);
         CompoundTag held = view.pose(part);
@@ -92,7 +102,8 @@ public final class WorkshopRenderBits {
         UUID holder = held.hasUUID("id") ? held.getUUID("id") : null;
         // Our own lease without our local hand (we just put it down): draw it resting.
         if (player != null && holder != null && holder.equals(player.getUUID()) && pos.equals(ClientWorkshop.focus())) return null;
-        return new double[] {held.getFloat("x"), held.getFloat("z"), held.getBoolean("contact") ? 1 : 0};
+        if (held.getBoolean("carry")) return null; // a carried bottle or cup, not a tool
+        return new double[] {held.getFloat("x"), held.getFloat("z"), held.getBoolean("contact") ? 1 : 0, held.getBoolean("deep") ? 1 : 0};
     }
 
     /** Mirrors an x coordinate for the left-handed presentation (the parts acted on do not move). */

@@ -151,6 +151,11 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
         return fuelCharges;
     }
 
+    /** Whether a slot holds completed output (synced: the client reads it to tell finished bottles from staged ones). */
+    public boolean finishedAt(int slot) {
+        return slot >= 0 && slot < finished.length && finished[slot];
+    }
+
     @Nullable
     public StationResult lastResult() {
         return lastResult;
@@ -282,7 +287,8 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
         if (!held.isEmpty()) {
-            InteractionResult direct = directInsert(player, hand, held, partUnder(player, hit));
+            // One unit per use, as with other in-world containers; the working view's batch action moves more (handoff 6.3).
+            InteractionResult direct = directInsert(player, hand, held, partUnder(player, hit), 1);
             if (direct != InteractionResult.PASS) return direct;
         }
         if (level.isClientSide) return InteractionResult.SUCCESS;
@@ -313,12 +319,13 @@ public abstract class StationBlockEntity extends BlockEntity implements MenuProv
     }
 
     /**
-     * Puts the held stack into the part it was used on, or the one part that takes it. PASS when no part of this station
-     * takes the item at all (the use then opens the working view); CONSUME with a reason when a part would take it but
-     * not now (nothing is eaten).
+     * Puts up to {@code limit} units of the held stack into the part it was used on, or the one part that takes it. PASS
+     * when no part of this station takes the item at all (the use then opens the working view); CONSUME with a reason
+     * when a part would take it but not now (nothing is eaten). An ordinary use moves one unit; only an explicit batch
+     * action in the working view passes a larger limit (handoff 6.3: one pour never means the whole stack).
      */
     protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held,
-                                             @Nullable com.otectus.immersivebrewing.workshop.WorkshopPart part) {
+                                             @Nullable com.otectus.immersivebrewing.workshop.WorkshopPart part, int limit) {
         return InteractionResult.PASS;
     }
 

@@ -116,6 +116,16 @@ public final class WorkshopProfiles {
                 family == ReactionFamily.DENSE_SEDIMENT ? 4.0 : 3.0);
     }
 
+    /**
+     * The client presentation profile a resolved workshop profile names ({@code presentation}), or null for translated
+     * fallbacks and profiles without one (the client then draws the generic scene for the family).
+     */
+    @Nullable
+    public static ResourceLocation presentationOf(String source) {
+        for (WorkshopProfile p : active) if (p.id().toString().equals(source)) return p.presentation();
+        return null;
+    }
+
     // ---- distillation ----
 
     public static Resolved<WorkshopProfile.Distillation> distillation(ResourceLocation recipe) {

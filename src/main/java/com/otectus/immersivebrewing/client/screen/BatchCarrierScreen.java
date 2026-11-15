@@ -20,9 +20,10 @@ public class BatchCarrierScreen extends AbstractContainerScreen<BatchCarrierMenu
 
     public BatchCarrierScreen(BatchCarrierMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
-        this.imageWidth = 176;
-        this.imageHeight = 188;
-        this.inventoryLabelY = 95;
+        this.imageWidth = BatchCarrierMenu.WIDTH;
+        this.imageHeight = BatchCarrierMenu.HEIGHT;
+        this.inventoryLabelY = 140;
+        this.inventoryLabelX = 43;
     }
 
     @Override
@@ -36,23 +37,25 @@ public class BatchCarrierScreen extends AbstractContainerScreen<BatchCarrierMenu
                     .createNarration(ignored -> Component.translatable("screen.immersive_brewing.carrier.slot", index + 1,
                             menu.slots.get(index).getItem().isEmpty() ? Component.translatable("screen.immersive_brewing.carrier.empty")
                                     : menu.slots.get(index).getItem().getHoverName()))
-                    .bounds(leftPos + 34 + i * 18, topPos + 36, 17, 10).build()));
+                    .bounds(leftPos + 69 + i * 18, topPos + 46, 17, 12).build()));
         }
         String draft = loadoutName == null ? null : loadoutName.getValue();
-        loadoutName = new EditBox(font, leftPos + 8, topPos + 47, 78, 18, Component.translatable("screen.immersive_brewing.carrier.loadout"));
+        loadoutName = new EditBox(font, leftPos + 8, topPos + 78, 154, 18, Component.translatable("screen.immersive_brewing.carrier.loadout"));
         loadoutName.setMaxLength(CarrierContents.MAX_LOADOUT_NAME);
         String name = CarrierContents.meta(menu.carrier()).loadoutName();
         loadoutName.setValue(draft != null ? draft : name == null ? "" : name);
         addRenderableWidget(loadoutName);
-        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.carrier.save"), b ->
-                send(CarrierSettingsC2S.Action.SAVE_LOADOUT, 0, loadoutName.getValue())).bounds(leftPos + 90, topPos + 47, 78, 18).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.save_short"), b ->
+                send(CarrierSettingsC2S.Action.SAVE_LOADOUT, 0, loadoutName.getValue()))
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("screen.immersive_brewing.carrier.save")))
+                .bounds(leftPos + 168, topPos + 78, 72, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.carrier.advance"), b ->
-                send(CarrierSettingsC2S.Action.SET_ADVANCE, menu.advanceOnEmpty() ? 0 : 1, "")).bounds(leftPos + 8, topPos + 70, 76, 18).build());
+                send(CarrierSettingsC2S.Action.SET_ADVANCE, menu.advanceOnEmpty() ? 0 : 1, "")).bounds(leftPos + 8, topPos + 104, 112, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.carrier.color"), b ->
-                send(CarrierSettingsC2S.Action.SET_COLOR, nextColor(menu.labelColor()), "")).bounds(leftPos + 88, topPos + 70, 38, 18).build());
+                send(CarrierSettingsC2S.Action.SET_COLOR, nextColor(menu.labelColor()), "")).bounds(leftPos + 128, topPos + 104, 52, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.carrier.emblem"), b ->
                 send(CarrierSettingsC2S.Action.SET_EMBLEM, (menu.emblem() + 1) % CarrierContents.EMBLEM_COUNT, ""))
-                .bounds(leftPos + 130, topPos + 70, 38, 18).build());
+                .bounds(leftPos + 184, topPos + 104, 56, 20).build());
     }
 
     private void send(CarrierSettingsC2S.Action action, int value, String text) {
@@ -122,16 +125,17 @@ public class BatchCarrierScreen extends AbstractContainerScreen<BatchCarrierMenu
         }
         // Saved carrier tag preview: only this mod's carrier UI is painted.
         int tag = 0xFF000000 | menu.labelColor();
-        g.fill(leftPos + 132, topPos + 90, leftPos + 164, topPos + 104, tag);
-        g.fill(leftPos + 134, topPos + 92, leftPos + 162, topPos + 102, 0xFFE8DFC8);
+        g.fill(leftPos + 184, topPos + 130, leftPos + 240, topPos + 142, tag);
+        g.fill(leftPos + 186, topPos + 132, leftPos + 238, topPos + 140, 0xFFE8DFC8);
         String emblem = Integer.toString(menu.emblem() + 1);
-        Ui.centered(g, Component.literal(emblem), leftPos + 148, topPos + 93, tag);
-        if (menu.advanceOnEmpty()) g.drawString(font, "⟳", leftPos + 72, topPos + 75, Ui.palette().good(), false);
+        Ui.centered(g, Component.literal(emblem), leftPos + 212, topPos + 132, tag);
+        if (menu.advanceOnEmpty()) g.drawString(font, "⟳", leftPos + 106, topPos + 110, Ui.palette().good(), false);
     }
 
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
         Ui.fit(g, title, titleLabelX, titleLabelY, imageWidth - 16, Ui.palette().text());
+        Ui.fit(g,Component.translatable("screen.immersive_brewing.carrier.loadout"),8,66,imageWidth-16,Ui.palette().muted());
         g.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, Ui.palette().text(), false);
     }
 }

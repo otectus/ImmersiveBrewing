@@ -98,6 +98,41 @@ public enum ReactionFamily {
         };
     }
 
+    /**
+     * Kettle process version 2 (handoff 8.3): the paddle's posture matters where a family's cue names it. {@code depth}
+     * is the recent share of strokes swept along the bottom (0 surface folding .. 1 bottom sweeps). Heavy sediment lifts
+     * only when the bottom is swept; floating motes are drawn under by strokes at the surface; light froth settles under
+     * slow deep folds; thick ribbons fold in best from below. Every other family ignores the posture, so its rate equals
+     * version 1's.
+     */
+    public double mixRate(double v, double t, double u, double broad, double mix, boolean reacting, double depth) {
+        double d = Math.max(0, Math.min(1, depth));
+        return switch (this) {
+            case LIGHT_FOAM -> 1.2 * Math.max(0, v - 0.45) * (1 - 0.35 * d) - (v <= 0.45 ? 0.45 : 0.08 + 0.12 * d) * mix;
+            case DENSE_SEDIMENT -> reacting
+                    ? 0.10 * Math.max(0, 0.25 - v) / 0.25 - 0.9 * v * (0.20 + 0.30 * broad + 0.75 * d) * mix
+                    : -0.35 * mix;
+            case MAGMA_STREAKS -> {
+                boolean warm = t > 0.52;
+                if (warm && v > 0.22 && v < 0.78) yield -0.6 * (0.75 + 0.45 * d) * mix;
+                if (warm && v <= 0.22) yield -0.08 * mix;
+                yield reacting ? 0.02 : -0.03 * mix;
+            }
+            case FLOATING_MOTES -> v > 0.65 ? 0.7 * (v - 0.65)
+                    : v > 0.15 ? -0.7 * (0.5 + broad) * (1.1 - 0.6 * d) * mix : -0.10 * mix;
+            default -> mixRate(v, t, u, broad, mix, reacting);
+        };
+    }
+
+    /** Which posture the family's cue asks for: 1 sweep the bottom, -1 keep to the surface, 0 either. */
+    public int posture() {
+        return switch (this) {
+            case DENSE_SEDIMENT, MAGMA_STREAKS, LIGHT_FOAM -> 1;
+            case FLOATING_MOTES -> -1;
+            default -> 0;
+        };
+    }
+
     /** Change per second of the heat trouble {@code heat} (shown, never scored twice). */
     public double heatRate(double t, double heat) {
         double onset = switch (this) {

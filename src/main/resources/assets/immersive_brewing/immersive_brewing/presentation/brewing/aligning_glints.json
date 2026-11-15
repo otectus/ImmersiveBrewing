@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "station": "kettle",
+  "material": "crystal",
+  "liquid": {
+    "clarity": 0.9,
+    "foam": "#FFF8E0"
+  },
+  "effects": {
+    "glints": 1.0,
+    "bubbles": 0.3
+  }
+}

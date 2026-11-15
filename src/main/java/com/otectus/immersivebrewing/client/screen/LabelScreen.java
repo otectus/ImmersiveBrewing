@@ -32,7 +32,7 @@ public class LabelScreen extends Screen {
     @Override
     protected void init() {
         pw = Math.min(width - 16, 300);
-        ph = 154 + Ui.lines(limits(), pw - 16) * 10;
+        ph = 182 + Ui.lines(limits(), pw - 16) * 10;
         px = (width - pw) / 2;
         py = (height - ph) / 2;
         int w = pw - 16;
@@ -54,12 +54,12 @@ public class LabelScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.apply_label"), b -> {
             ModNetwork.sendToServer(new SetLabelC2S(false, BlockPos.ZERO, hand, label.getValue(), note.getValue()));
             onClose();
-        }).bounds(x, y + 64, w / 3 - 2, 20).build());
+        }).bounds(x, y + 92, w / 3 - 2, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.clear_label"), b -> {
             ModNetwork.sendToServer(new SetLabelC2S(false, BlockPos.ZERO, hand, "", ""));
             onClose();
-        }).bounds(x + w / 3 + 1, y + 64, w / 3 - 2, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(x + 2 * w / 3 + 2, y + 64, w / 3 - 2, 20).build());
+        }).bounds(x + w / 3 + 1, y + 92, w / 3 - 2, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(x + 2 * w / 3 + 2, y + 92, w / 3 - 2, 20).build());
         setInitialFocus(label);
     }
 
@@ -73,7 +73,13 @@ public class LabelScreen extends Screen {
         Ui.fit(g, potion.getHoverName(), px + 28, py + 28, pw - 36, p.text());
         g.drawString(font, Component.translatable("screen.immersive_brewing.label"), px + 8, py + 46, p.text(), false);
         g.drawString(font, Component.translatable("screen.immersive_brewing.note"), px + 8, py + 82, p.text(), false);
-        Ui.wrapped(g, limits(), px + 8, py + 150, pw - 16, p.muted());
+        Ui.inset(g,px+8,py+120,pw-16,22);
+        Ui.fit(g,label.getValue().isBlank()?potion.getHoverName():Component.literal(label.getValue()),px+14,py+127,pw-28,p.insetText());
+        String labelCount=label.getValue().codePointCount(0,label.getValue().length())+"/"+BrewingMetadata.MAX_LABEL;
+        String noteCount=note.getValue().codePointCount(0,note.getValue().length())+"/"+BrewingMetadata.MAX_NOTE;
+        g.drawString(font,labelCount,px+pw-8-font.width(labelCount),py+46,p.muted(),false);
+        g.drawString(font,noteCount,px+pw-8-font.width(noteCount),py+82,p.muted(),false);
+        Ui.wrapped(g, limits(), px + 8, py + 178, pw - 16, p.muted());
         super.render(g, mouseX, mouseY, partialTick);
         if (Ui.inside(mouseX, mouseY, px + 8, py + 24, pw - 16, 16)) g.renderTooltip(font, potion, mouseX, mouseY);
     }

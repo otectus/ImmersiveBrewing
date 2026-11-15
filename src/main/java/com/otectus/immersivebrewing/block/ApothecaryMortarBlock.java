@@ -11,9 +11,10 @@ import org.jetbrains.annotations.Nullable;
 /** Stone bowl on a small wooden base; the pestle lives in it (spec 4). */
 public class ApothecaryMortarBlock extends StationBlock {
     private static final StationShape SHAPE = new StationShape(
-            new double[] {3, 0, 3, 13, 3, 13},     // wooden base
-            new double[] {2, 3, 2, 14, 9, 14},     // stone bowl
-            new double[] {9, 9, 5, 11, 15, 7});    // pestle handle
+            new double[] {3, 0, 3, 13, 3, 13},          // wooden base
+            new double[] {2.3, 3, 2.3, 13.7, 9, 13.7},  // stone bowl (near wall lowered in the model)
+            new double[] {11.6, 0, 0, 16, 0.8, 2},      // dose cup ledge
+            new double[] {0, 0, 11.2, 5.4, 0.8, 16});   // kit shelf
 
     public ApothecaryMortarBlock(Properties properties) {
         super(properties);

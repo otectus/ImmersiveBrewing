@@ -31,6 +31,7 @@ import com.otectus.immersivebrewing.session.SimHandles;
 import com.otectus.immersivebrewing.interaction.WorkshopIntent;
 import com.otectus.immersivebrewing.interaction.WorkshopResult;
 import com.otectus.immersivebrewing.workshop.AlembicProcess;
+import com.otectus.immersivebrewing.workshop.WorkshopAction;
 import com.otectus.immersivebrewing.workshop.WorkshopKind;
 import com.otectus.immersivebrewing.workshop.WorkshopPart;
 import com.otectus.immersivebrewing.workshop.WorkshopParts;
@@ -94,6 +95,11 @@ public class AlembicBlockEntity extends StationBlockEntity {
 
     /** Water in the coolant jacket, in millibuckets (handoff 9: a real water-only tank, separate from any potion). */
     private int coolantMb;
+    /**
+     * The charge fitting's setting (handoff 9.2): purify the loaded bottles, or reclaim their salt. A public setting of
+     * the idle still, saved with it; the charge commits whichever it shows, after its preview.
+     */
+    private boolean reclaimMode;
     @Nullable
     private AlembicProcess process;
     @Nullable
@@ -431,6 +437,8 @@ public class AlembicBlockEntity extends StationBlockEntity {
         snapshot.putInt("coolant", coolant);
         var profile = WorkshopProfiles.distillation(recipe.getId());
         snapshot.putString("workshopProfile", profile.source());
+        ResourceLocation presentation = WorkshopProfiles.presentationOf(profile.source());
+        if (presentation != null) snapshot.putString("presentation", presentation.toString());
         AlembicProcess p = AlembicProcess.begin(new AlembicProcess.Setup(plan.groups(), recipe.groupSize(), recipe.yield(), cap, plan.qualityIn(),
                 coolant, profile.value().headsEnd(), profile.value().tailsStart(), profile.value().runSeconds(), profile.source()), player.getUUID());
         ledger = new JobLedger(UUID.randomUUID(), Operation.PURIFY, JobState.RUNNING, taken, List.of(), fuel, snapshot,
@@ -731,7 +739,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
     }
 
     @Override
-    protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part) {
+    protected InteractionResult directInsert(Player player, InteractionHand hand, ItemStack held, @Nullable WorkshopPart part, int limit) {
         boolean client = level == null || level.isClientSide;
         boolean water = held.is(Items.POTION) && PotionUtils.getPotion(held) == Potions.WATER && PotionUtils.getCustomEffects(held).isEmpty();
         if (water && part != null && part.id() == WorkshopParts.A_COOLANT) {
@@ -758,16 +766,22 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 notice(player, Component.translatable("workshop.immersive_brewing.alembic.busy"), true);
                 return InteractionResult.CONSUME;
             }
-            int target = -1;
-            for (int i = 0; i < INPUT_SIZE && target < 0; i++) if (inventory.getStackInSlot(INPUT + i).isEmpty()) target = INPUT + i;
-            if (target < 0) {
+            int placed = 0;
+            for (int n = 0; n < Math.max(1, limit) && !held.isEmpty(); n++) {
+                int target = -1;
+                for (int i = 0; i < INPUT_SIZE && target < 0; i++) if (inventory.getStackInSlot(INPUT + i).isEmpty()) target = INPUT + i;
+                if (target < 0) break;
+                putDirect(target, held.copyWithCount(1));
+                placed++;
+                if (player.getAbilities().instabuild) break;
+                held.shrink(1);
+            }
+            if (placed == 0) {
                 notice(player, Component.translatable("workshop.immersive_brewing.alembic.charge_full"), true);
                 return InteractionResult.CONSUME;
             }
-            putDirect(target, held.copyWithCount(1));
-            if (!player.getAbilities().instabuild) held.shrink(1);
             changed();
-            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, 0, 0);
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, StationVisual.NONE, 0, WorkshopParts.A_INPUT, placed);
             markWorkshopDirty(true);
             return InteractionResult.CONSUME;
         }
@@ -778,7 +792,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 notice(player, Component.translatable("workshop.immersive_brewing.kettle.burner_full"), true);
                 return InteractionResult.CONSUME;
             }
-            int move = Math.min(held.getCount(), held.getMaxStackSize() - fuel.getCount());
+            int move = Math.min(Math.max(1, limit), Math.min(held.getCount(), held.getMaxStackSize() - fuel.getCount()));
             putDirect(FUEL, held.copyWithCount(fuel.getCount() + move));
             if (!player.getAbilities().instabuild) held.shrink(move);
             changed();
@@ -794,14 +808,15 @@ public class AlembicBlockEntity extends StationBlockEntity {
         switch (intent.action()) {
             case FINISH -> {
                 if (part != WorkshopParts.A_CHARGE) return WorkshopResult.IGNORED;
-                WorkshopResult r = charge(player);
-                if (r.accepted()) participate(player);
+                // The charge commits what the fitting shows, never anything inferred from leaving the still.
+                WorkshopResult r = reclaimMode ? reclaim(player) : charge(player);
+                if (r.accepted() && !reclaimMode) participate(player);
                 return r;
             }
             case INSERT -> {
                 ItemStack held = player.getItemInHand(intent.hand());
                 if (held.isEmpty()) return WorkshopResult.IGNORED;
-                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.ALEMBIC, part));
+                InteractionResult r = directInsert(player, intent.hand(), held, WorkshopParts.get(WorkshopKind.ALEMBIC, part), intent.batch() ? 64 : 1);
                 return r == InteractionResult.PASS ? WorkshopResult.refuse("workshop.immersive_brewing.refuse.not_here") : WorkshopResult.ACCEPTED;
             }
             case TAKE -> {
@@ -826,6 +841,16 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 return WorkshopResult.ACCEPTED;
             }
             default -> { }
+        }
+        if (ledger == null && intent.action() == WorkshopAction.SET_CONTROL && part == WorkshopParts.A_MODE) {
+            boolean reclaim = intent.argument() != 0;
+            if (reclaim == reclaimMode) return WorkshopResult.IGNORED;
+            if (reclaim && !ServerConfig.get(ServerConfig.ALLOW_RECLAMATION)) return WorkshopResult.refuse("alembic.immersive_brewing.reclaim.disabled");
+            reclaimMode = reclaim;
+            setChanged();
+            effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.VALVE, StationVisual.NONE, 0, reclaim ? 1 : 0, part);
+            markWorkshopDirty(true);
+            return WorkshopResult.ACCEPTED;
         }
         if (ledger == null) return WorkshopResult.refuse("workshop.immersive_brewing.alembic.no_charge");
         if (ledger.state() == JobState.SEALED) {
@@ -935,6 +960,9 @@ public class AlembicBlockEntity extends StationBlockEntity {
     @Override
     protected void writeWorkshopSnapshot(CompoundTag t) {
         t.putInt("coolantMb", coolantMb);
+        t.putBoolean("reclaimMode", reclaimMode);
+        if (ledger != null && !ledger.snapshot().getString("presentation").isEmpty()) t.putString("presentation", ledger.snapshot().getString("presentation"));
+        t.putBoolean("reclaimAllowed", ServerConfig.get(ServerConfig.ALLOW_RECLAMATION));
         t.putInt("coolantCapacity", ServerConfig.get(ServerConfig.COOLANT_CAPACITY_MB));
         t.putInt("coolantNeed", ServerConfig.coolantFor(Math.max(1, purifyGroupsForView())));
         if (ledger != null && !ledger.inputs().isEmpty()) {
@@ -942,6 +970,11 @@ public class AlembicBlockEntity extends StationBlockEntity {
             item.remove("FullCount");
             t.put("charge", item);
             t.putInt("chargeCount", ledger.inputs().size());
+        }
+        if (ledger != null && ledger.operation() == Operation.RECLAIM) {
+            long[] progress = ledger.simState();
+            int duration = Math.max(1, ledger.snapshot().getInt("duration"));
+            t.putByte("reclaimProgress", (byte) Math.min(100, Math.round(100F * (progress.length > 0 ? progress[0] : 0) / duration)));
         }
         AlembicProcess p = liveProcess();
         if (p != null) {
@@ -961,6 +994,20 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 t.putInt("previewOut", plan.groups() * plan.recipe().yield());
                 t.putInt("previewReturned", plan.groups() * (plan.recipe().groupSize() - plan.recipe().yield()));
                 t.putInt("previewCoolant", coolant);
+                t.putInt("previewQualityMax", operationPreview().qualityMaximum());
+            }
+            // The other operation's outcome, shown before the fitting is turned to it (handoff 9.2: costs before commitment).
+            Component reclaimWhy = reclaimProblem();
+            if (reclaimWhy != null) {
+                t.putString("reclaimProblem", Component.Serializer.toJson(reclaimWhy));
+            } else {
+                OperationPreview preview = operationPreview();
+                CompoundTag result = LedgerCodec.saveStack(preview.reclaimResult().copyWithCount(1));
+                result.remove("FullCount");
+                t.put("reclaimResult", result);
+                t.putInt("reclaimOut", preview.reclaimOutput());
+                t.putInt("reclaimUsed", preview.reclaimContainers());
+                t.putInt("reclaimFuel", preview.reclaimFuel());
             }
         }
     }
@@ -1050,12 +1097,14 @@ public class AlembicBlockEntity extends StationBlockEntity {
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
         tag.putInt("Coolant", coolantMb);
+        tag.putBoolean("ReclaimMode", reclaimMode);
     }
 
     @Override
     public void load(CompoundTag tag) {
         super.load(tag);
         if (tag.contains("Coolant", Tag.TAG_ANY_NUMERIC)) coolantMb = Math.max(0, tag.getInt("Coolant"));
+        reclaimMode = tag.getBoolean("ReclaimMode");
         if (level == null || !level.isClientSide) process = null;
     }
 
@@ -1077,41 +1126,43 @@ public class AlembicBlockEntity extends StationBlockEntity {
     // ---- reclamation (passive) ----
 
     public void startReclamation(ServerPlayer player) {
-        if (level == null) return;
-        if (!ServerConfig.get(ServerConfig.ALLOW_RECLAMATION) || ServerConfig.disabled()) {
-            notice(player, Component.translatable("alembic.immersive_brewing.reclaim.disabled"), true);
-            return;
-        }
-        if (ledger != null) {
-            notice(player, Component.translatable("notice.immersive_brewing.busy"), true);
-            return;
-        }
+        WorkshopResult r = reclaim(player);
+        if (r.reason() != null && !r.accepted()) notice(player, r.reason(), true);
+    }
+
+    /** The reclamation problem for the loaded bottles, or null when it can start (pure: the preview and the commit share it). */
+    @Nullable
+    private Component reclaimProblem() {
+        if (!ServerConfig.get(ServerConfig.ALLOW_RECLAMATION) || ServerConfig.disabled()) return Component.translatable("alembic.immersive_brewing.reclaim.disabled");
+        if (ledger != null) return Component.translatable("notice.immersive_brewing.busy");
         List<ItemStack> in = inputs();
-        if (in.isEmpty()) {
-            notice(player, Component.translatable("alembic.immersive_brewing.purify.empty"), true);
-            return;
-        }
+        if (in.isEmpty()) return Component.translatable("alembic.immersive_brewing.purify.empty");
         ReclamationRecipe recipe = reclamationFor(in.get(0));
         if (recipe == null || in.stream().anyMatch(s -> !recipe.input().matches(s) || BrewingMetadata.hasUnreadableCompound(s)
                 || BrewingDefinitions.server().exclusions().excludesItem(s))) {
-            notice(player, Component.translatable("alembic.immersive_brewing.reclaim.unsupported"), true);
-            return;
+            return Component.translatable("alembic.immersive_brewing.reclaim.unsupported");
         }
         int groups = in.size() / recipe.groupSize();
-        if (groups < 1) {
-            notice(player, Component.translatable("alembic.immersive_brewing.purify.group", recipe.groupSize()), true);
-            return;
-        }
+        if (groups < 1) return Component.translatable("alembic.immersive_brewing.purify.group", recipe.groupSize());
         int fuel = recipe.fuelCharges() * groups;
-        if (fuelAvailable() < fuel) {
-            notice(player, Component.translatable("plan.immersive_brewing.missing.fuel", fuel, fuelAvailable()), true);
-            return;
-        }
+        if (fuelAvailable() < fuel) return Component.translatable("plan.immersive_brewing.missing.fuel", fuel, fuelAvailable());
+        if (freeOutputs() < 2) return Component.translatable("alembic.immersive_brewing.output_full");
+        return null;
+    }
+
+    /**
+     * Starts reclamation (passive: the salt is recovered over the recipe's time). The same checks as the preview; the
+     * whole full groups are reserved at once. Never started by leaving the still or by anything but this deliberate charge.
+     */
+    public WorkshopResult reclaim(ServerPlayer player) {
+        if (level == null) return WorkshopResult.IGNORED;
+        Component problem = reclaimProblem();
+        if (problem != null) return WorkshopResult.refuse(problem);
+        List<ItemStack> in = inputs();
+        ReclamationRecipe recipe = reclamationFor(in.get(0));
+        int groups = in.size() / recipe.groupSize();
+        int fuel = recipe.fuelCharges() * groups;
         int used = groups * recipe.groupSize();
-        if (freeOutputs() < 2) {
-            notice(player, Component.translatable("alembic.immersive_brewing.output_full"), true);
-            return;
-        }
         spendFuel(fuel);
         List<ItemStack> taken = new ArrayList<>();
         int moved = 0;
@@ -1132,7 +1183,10 @@ public class AlembicBlockEntity extends StationBlockEntity {
                 recipe.result(), new long[0], new long[] {0}, 0, 0, player.getUUID(), player.getGameProfile().getName(), List.of(), null, 0,
                 BrewingDefinitions.server().generation(), 0);
         changed();
+        effect(com.otectus.immersivebrewing.network.packet.StationEffectEvent.Kind.LOAD, ledger.jobId(), 0, WorkshopParts.A_CHARGE, used);
+        markWorkshopDirty(true);
         notice(player, Component.translatable("alembic.immersive_brewing.reclaim.started", used), false);
+        return WorkshopResult.ACCEPTED;
     }
 
     private void cancelReclamation(ServerPlayer player) {
@@ -1153,6 +1207,7 @@ public class AlembicBlockEntity extends StationBlockEntity {
             if (done % 20 == 0) {
                 setVisual(new StationVisual(0, 0, 0.7F, 0.6F, (float) done / duration, (float) done / duration, true));
                 setChanged();
+                markWorkshopDirty(false);
             }
             return;
         }

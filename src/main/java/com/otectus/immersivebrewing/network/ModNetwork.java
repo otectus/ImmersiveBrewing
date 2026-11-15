@@ -47,8 +47,12 @@ import java.util.function.BiConsumer;
  * carries an item, a score, an outcome or an effect list. The protocol is required on both sides.
  */
 public final class ModNetwork {
-    /** Protocol 5: the hands-on workshop (intent envelope, focus, snapshots). Older clients are refused at login. */
-    public static final String VERSION = "5";
+    /**
+     * Protocol 6: the close-up workshop (1.2.0): the intent envelope carries the working-view epoch, an acknowledgement
+     * request and the revision it commits against; focus messages carry the epoch; acknowledgements are new. Protocol 5
+     * (the first hands-on build) and older are refused at login.
+     */
+    public static final String VERSION = "6";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(ImmersiveBrewing.id("main"), () -> VERSION,
             VERSION::equals, VERSION::equals);
 
@@ -124,6 +128,10 @@ public final class ModNetwork {
                 .encoder(GuideSyncS2C::encode).decoder(GuideSyncS2C::decode).consumerMainThread(GuideSyncS2C::handle).add();
         CHANNEL.messageBuilder(OpenPracticeS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(OpenPracticeS2C::encode).decoder(OpenPracticeS2C::decode).consumerMainThread(OpenPracticeS2C::handle).add();
+        CHANNEL.messageBuilder(com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(com.otectus.immersivebrewing.network.packet.WorkshopAckS2C::encode)
+                .decoder(com.otectus.immersivebrewing.network.packet.WorkshopAckS2C::decode)
+                .consumerMainThread(com.otectus.immersivebrewing.network.packet.WorkshopAckS2C::handle).add();
     }
 
     public static void sendTo(ServerPlayer player, Object message) {

@@ -57,6 +57,11 @@ final class WorkshopDriver {
         return enabled;
     }
 
+    /** Hold the current input pose for a rendering comparison, without releasing the tool. */
+    void pausePresentation(boolean pause) {
+        enabled = !pause;
+    }
+
     int keyPresses() {
         return keyPresses;
     }
@@ -302,7 +307,7 @@ final class WorkshopDriver {
             if (select(screen, part)) press(screen, WorkshopKeys.ACTIVATE);
             return;
         }
-        if (action == WorkshopAction.DOSE && ClientWorkshop.carried() >= 0) ClientWorkshop.commitCarry(WorkshopAction.DOSE, argument);
+        if (action == WorkshopAction.DOSE && ClientWorkshop.carried() >= 0) ClientWorkshop.commitCarry(WorkshopAction.DOSE, argument, false, com.otectus.immersivebrewing.interaction.WorkshopIntent.NO_REVISION);
         else ClientWorkshop.send(part, action, argument, false);
     }
 

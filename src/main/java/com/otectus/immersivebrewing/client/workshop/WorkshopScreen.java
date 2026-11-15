@@ -2,6 +2,7 @@ package com.otectus.immersivebrewing.client.workshop;
 
 import com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity;
 import com.otectus.immersivebrewing.blockentity.StationBlockEntity;
+import com.otectus.immersivebrewing.client.StationNotices;
 import com.otectus.immersivebrewing.client.screen.Ui;
 import com.otectus.immersivebrewing.config.ClientConfig;
 import com.otectus.immersivebrewing.workshop.KettleProcess;
@@ -10,6 +11,7 @@ import com.otectus.immersivebrewing.workshop.WorkshopGeometry;
 import com.otectus.immersivebrewing.workshop.WorkshopKind;
 import com.otectus.immersivebrewing.workshop.WorkshopPart;
 import com.otectus.immersivebrewing.workshop.WorkshopParts;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.NarratorStatus;
 import net.minecraft.client.gui.GuiGraphics;
@@ -27,16 +29,23 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The working view (handoff 4): a transparent surface over the world while the player stands at a station. The world
- * keeps drawing; the apparatus is the interface. The cursor picks parts by the server's own interaction volumes; the
- * keyboard cycles them in a stable order and operates them with single keys. Held tools follow the cursor over their
- * work surface (or the arrow keys and the Work action) and send bounded samples; doses and bottles are lifted and tipped.
+ * The working view's input host (handoff 5, 10): a transparent surface over the world that captures the cursor while the
+ * camera frames a station. The apparatus is the interface: one subtle outline on the part under the cursor (or the
+ * keyboard's selection), its short label, at most one contextual hint near the part it concerns, and a brief exit hint
+ * on entry. Numbers, the full control help and diagnostics belong to the Detailed guidance level or the help key.
  *
- * <p>Nothing here grants anything: every action is an intent the server validates. Escape, the inventory key or a
- * movement key (with empty hands) leaves at once; damage, death, distance and disconnection close it too, and every held
- * input is released, never resumed.
+ * <p>The cursor picks parts by the server's own interaction volumes through the camera the world was drawn with; the
+ * keyboard cycles them, the parts the work needs now first. A held tool follows the cursor over its work surface (or
+ * the arrow keys and the Work action) and sends bounded samples; bottles and dose cups are lifted, carried and tipped.
+ * The hotbar stays visible: it is the supply strip (number keys or the wheel choose the item, a click places one,
+ * a shift-click the batch). Health, armour, food and air stay visible too; damage ends the view at once.
+ *
+ * <p>Nothing here grants anything: every action is an intent the server validates.
  */
 public class WorkshopScreen extends Screen {
+    /** How long the exit hint stays after the view opens. */
+    private static final long ENTRY_HINT_MS = 4500;
+
     private final BlockPos pos;
     private final WorkshopKind kind;
     private double mouseX = -1;
@@ -53,6 +62,8 @@ public class WorkshopScreen extends Screen {
     private int dragLastValue;
     private int lastHurt;
     private boolean leaving;
+    private boolean help;
+    private boolean pressingDeep;
 
     public WorkshopScreen(BlockPos pos, WorkshopKind kind) {
         super(Component.translatable("workshop.immersive_brewing.title"));
@@ -119,6 +130,10 @@ public class WorkshopScreen extends Screen {
         // Focus loss can swallow a key or button release: never keep a press or a hold-to-grab tool across it.
         if (!mc.isWindowActive()) {
             ClientWorkshop.setWorking(false);
+            if (pressingDeep) {
+                pressingDeep = false;
+                ClientWorkshop.setDeep(false);
+            }
             if (ClientConfig.get(ClientConfig.HOLD_TO_GRAB)) ClientWorkshop.putDown();
             if (dragPart >= 0) {
                 ClientWorkshop.send(dragPart, WorkshopAction.RELEASE, 0, false);
@@ -148,14 +163,33 @@ public class WorkshopScreen extends Screen {
 
     // ---- mouse ----
 
+    /**
+     * The part the cursor would pick at a GUI point through the rendered camera, or -1; no side effects (the same query
+     * the view's own picking makes, before a carried object's mouth override).
+     */
+    public int partAt(double mx, double my) {
+        BlockEntity be = station();
+        if (be == null) return -1;
+        Vec3[] ray = ClientWorkshop.ray(mx, my);
+        WorkshopTargets.View v = view(be);
+        List<WorkshopPart> parts = WorkshopTargets.present(v).stream().map(p -> ClientWorkshop.pickVolume(v, p)).toList();
+        Optional<WorkshopGeometry.Hit> hit = WorkshopGeometry.pick(parts, pos, ClientWorkshop.facing(be), ray[0], ray[1], 8.0, p -> true);
+        return hit.map(h -> h.part().id()).orElse(-1);
+    }
+
     private void pick(double mx, double my) {
         BlockEntity be = station();
         if (be == null) return;
-        Vec3[] ray = ClientWorkshop.ray(mx, my, width, height);
-        WorkshopTargets.View v = view(be);
-        List<WorkshopPart> parts = WorkshopTargets.present(v).stream().map(ClientWorkshop::pickVolume).toList();
-        Optional<WorkshopGeometry.Hit> hit = WorkshopGeometry.pick(parts, pos, ClientWorkshop.facing(be), ray[0], ray[1], 8.0, p -> true);
-        hovered = hit.map(h -> h.part().id()).orElse(-1);
+        Vec3[] ray = ClientWorkshop.ray(mx, my);
+        hovered = partAt(mx, my);
+        // A carried bottle or cup follows the cursor over the station at carrying height; over the mouth it can be tipped.
+        if (ClientWorkshop.carried() >= 0) {
+            double[] at = ClientWorkshop.carryPoint(be, ray[0], ray[1], WorkshopTransfers.CARRY_Y);
+            if (at != null) {
+                ClientWorkshop.moveCarry(at[0], at[2]);
+                if (overMouth(at[0], at[2])) hovered = kind == WorkshopKind.KETTLE ? WorkshopParts.K_VESSEL : hovered;
+            }
+        }
         if (ClientWorkshop.tool() >= 0 && ClientConfig.get(ClientConfig.MOUSE_STIRRING) && dragPart < 0) {
             double[] point = ClientWorkshop.planePoint(be, ray[0], ray[1]);
             if (point != null) {
@@ -163,6 +197,11 @@ public class WorkshopScreen extends Screen {
                 ClientWorkshop.moveTool(point[0] * s, point[1] * s, point[2] > 0);
             }
         }
+    }
+
+    /** Whether a carried object at this model-pixel point is over the kettle's open mouth. */
+    private static boolean overMouth(double x, double z) {
+        return Math.abs(x - WorkshopParts.KETTLE_CX) <= WorkshopParts.KETTLE_HX + 0.6 && Math.abs(z - WorkshopParts.KETTLE_CZ) <= WorkshopParts.KETTLE_HZ + 0.6;
     }
 
     @Override
@@ -181,13 +220,32 @@ public class WorkshopScreen extends Screen {
         pick(mx, my);
         BlockEntity be = station();
         if (be != null) refreshTarget(be);
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            WorkshopCamera.toggleInspect();
+            return true;
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            // Right click puts the held tool down or returns a carried dose or bottle to its place.
+            // Right click puts the held tool down, returns a carried dose or bottle, or does the part's secondary action.
             if (ClientWorkshop.carried() >= 0) ClientWorkshop.dropCarry();
-            else ClientWorkshop.putDown();
+            else if (ClientWorkshop.tool() >= 0) ClientWorkshop.putDown();
+            else secondary(target);
             return true;
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
+        // With the paddle in hand, pressing the button works it down along the bottom (a toggle in one-key modes). Only a
+        // click on the next dose cup or on the paddle's rest acts instead: the cup is lifted (the paddle goes back to its
+        // rest first) and the rest puts the paddle down, so no separate click is needed between stirring and dosing.
+        boolean handOff = target != null && (target.local() == WorkshopTargets.Local.CARRY && target.available()
+                && target.part().id() >= WorkshopParts.K_CUP && target.part().id() < WorkshopParts.K_CUP + WorkshopParts.MAX_CUPS
+                || target.local() == WorkshopTargets.Local.PUT_DOWN);
+        if (ClientWorkshop.tool() == WorkshopParts.K_PADDLE && kind == WorkshopKind.KETTLE && !handOff) {
+            if (oneKey()) ClientWorkshop.toggleDeep();
+            else {
+                pressingDeep = true;
+                ClientWorkshop.setDeep(true);
+            }
+            return true;
+        }
         if (target != null && target.local() == WorkshopTargets.Local.CONTROL && target.available()) {
             dragPart = target.part().id();
             dragStartY = my;
@@ -196,8 +254,12 @@ public class WorkshopScreen extends Screen {
             ClientWorkshop.send(dragPart, WorkshopAction.GRAB, 0, false);
             return true;
         }
-        activate(target);
+        activate(target, hasShiftDown());
         return true;
+    }
+
+    private static boolean oneKey() {
+        return ClientConfig.get(ClientConfig.TOGGLE_PRESSURE) || ClientConfig.get(ClientConfig.REDUCED_INPUT);
     }
 
     @Override
@@ -224,6 +286,10 @@ public class WorkshopScreen extends Screen {
             dragPart = -1;
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && pressingDeep) {
+            pressingDeep = false;
+            ClientWorkshop.setDeep(false);
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && ClientConfig.get(ClientConfig.HOLD_TO_GRAB) && !ClientConfig.get(ClientConfig.REDUCED_INPUT)
                 && ClientWorkshop.tool() >= 0) {
             ClientWorkshop.putDown();
@@ -240,7 +306,13 @@ public class WorkshopScreen extends Screen {
             adjust(target, amount > 0 ? 1 : -1);
             return true;
         }
-        if (ClientWorkshop.tool() >= 0) ClientWorkshop.cycleEffort();
+        if (ClientWorkshop.tool() >= 0) {
+            ClientWorkshop.cycleEffort();
+            return true;
+        }
+        // Otherwise the wheel chooses the supply in hand, as in ordinary play.
+        var player = Minecraft.getInstance().player;
+        if (player != null) player.getInventory().swapPaint(amount);
         return true;
     }
 
@@ -252,7 +324,7 @@ public class WorkshopScreen extends Screen {
 
     // ---- activation (the same path for mouse and keyboard) ----
 
-    private void activate(@Nullable WorkshopTargets.Target t) {
+    private void activate(@Nullable WorkshopTargets.Target t, boolean batch) {
         int carried = ClientWorkshop.carried();
         if (t == null) {
             if (carried >= 0) ClientWorkshop.dropCarry();
@@ -263,47 +335,58 @@ public class WorkshopScreen extends Screen {
             ClientWorkshop.dropCarry();
             return;
         }
-        if (ClientWorkshop.batch() && t.batchAction() != null) {
-            ClientWorkshop.send(t.part().id(), t.batchAction(), t.batchArgument(), true);
-            ClientWorkshop.toggleBatch();
+        boolean useBatch = (batch || ClientWorkshop.batch()) && t.batchAction() != null;
+        ClientWorkshop.clearBatch();
+        if (useBatch) {
+            // The batch action names its quantity on the label; it is sent once and the server paces the work.
+            if (t.setup()) ClientWorkshop.commit(t.part().id(), t.batchAction(), t.batchArgument(), true, true, t.revision());
+            else ClientWorkshop.commit(t.part().id(), t.batchAction(), t.batchArgument(), true, false, com.otectus.immersivebrewing.interaction.WorkshopIntent.NO_REVISION);
             return;
         }
         if (!t.available()) {
             // An unavailable part explains itself; nothing is sent and nothing in hand is used.
-            com.otectus.immersivebrewing.client.StationNotices.show(t.label(), true);
+            StationNotices.show(t.label(), true);
             return;
         }
         switch (t.local()) {
             case SEND -> {
-                ClientWorkshop.send(t.part().id(), t.action(), t.argument(), false);
+                if (t.action() == WorkshopAction.INSERT || t.action() == WorkshopAction.TAKE || t.action() == WorkshopAction.FILL
+                        || t.action() == WorkshopAction.FINISH) {
+                    ClientWorkshop.commit(t.part().id(), t.action(), t.argument(), false, false, com.otectus.immersivebrewing.interaction.WorkshopIntent.NO_REVISION);
+                } else {
+                    ClientWorkshop.send(t.part().id(), t.action(), t.argument(), false);
+                }
                 if (t.action() == WorkshopAction.BOOK || t.action() == WorkshopAction.LEGACY_RESUME) ClientWorkshop.returnAfter(pos, kind);
             }
             case TAKE_TOOL -> ClientWorkshop.takeTool(t.part().id());
             case PUT_DOWN -> ClientWorkshop.putDown();
             case CARRY -> ClientWorkshop.carry(t.part().id());
-            case COMMIT_CARRY -> ClientWorkshop.commitCarry(t.action(), t.argument());
+            case COMMIT_CARRY -> ClientWorkshop.commitCarry(t.action(), t.argument(), t.setup(), t.revision());
             case TOGGLE -> ClientWorkshop.send(t.part().id(), WorkshopAction.SET_CONTROL, t.argument(), false);
             case CONTROL, NONE -> { }
         }
     }
 
-    // ---- keyboard ----
-
-    private List<WorkshopPart> parts() {
-        BlockEntity be = station();
-        return be == null ? List.of() : WorkshopTargets.present(view(be));
+    /** The part's secondary action (take a staged bottle back, open the full recipe search), with empty hands. */
+    private void secondary(@Nullable WorkshopTargets.Target t) {
+        if (t == null || t.secondaryAction() == null) return;
+        ClientWorkshop.send(t.part().id(), t.secondaryAction(), 0, false);
+        if (t.secondaryAction() == WorkshopAction.BOOK) ClientWorkshop.returnAfter(pos, kind);
     }
 
+    // ---- keyboard ----
+
     private void cycle(int direction) {
-        List<WorkshopPart> parts = parts();
+        BlockEntity be = station();
+        if (be == null) return;
+        List<WorkshopPart> parts = WorkshopTargets.ordered(view(be), ClientWorkshop.hand());
         if (parts.isEmpty()) return;
         int index = -1;
         for (int i = 0; i < parts.size(); i++) if (parts.get(i).id() == (keyboard ? selected : hovered)) index = i;
         index = index < 0 ? (direction > 0 ? 0 : parts.size() - 1) : Math.floorMod(index + direction, parts.size());
         selected = parts.get(index).id();
         keyboard = true;
-        BlockEntity be = station();
-        if (be != null) refreshTarget(be);
+        refreshTarget(be);
     }
 
     @Override
@@ -320,20 +403,31 @@ public class WorkshopScreen extends Screen {
             onClose();
             return true;
         }
+        // The hotbar is the supply strip: its keys choose what is in hand, as in ordinary play.
+        for (int i = 0; i < 9; i++) {
+            if (mc.options.keyHotbarSlots[i].matches(keyCode, scanCode) && mc.player != null) {
+                mc.player.getInventory().selected = i;
+                return true;
+            }
+        }
         BlockEntity be = station();
         if (be != null) refreshTarget(be);
         boolean toggleWork = ClientConfig.get(ClientConfig.TOGGLE_STIR) || ClientConfig.get(ClientConfig.REDUCED_INPUT);
         double step = 0.12;
         if (WorkshopKeys.is(WorkshopKeys.NEXT_TARGET, keyCode, scanCode)) cycle(1);
         else if (WorkshopKeys.is(WorkshopKeys.PREVIOUS_TARGET, keyCode, scanCode)) cycle(-1);
-        else if (WorkshopKeys.is(WorkshopKeys.ACTIVATE, keyCode, scanCode)) activate(target);
+        else if (WorkshopKeys.is(WorkshopKeys.ACTIVATE, keyCode, scanCode)) activate(target, false);
         else if (WorkshopKeys.is(WorkshopKeys.WORK, keyCode, scanCode)) {
             if (ClientWorkshop.tool() >= 0) ClientWorkshop.setWorking(toggleWork ? !ClientWorkshop.working() : true);
-            else activate(target);
+            else activate(target, false);
         } else if (WorkshopKeys.is(WorkshopKeys.PUT_DOWN, keyCode, scanCode)) {
             if (ClientWorkshop.carried() >= 0) ClientWorkshop.dropCarry();
-            else ClientWorkshop.putDown();
+            else if (ClientWorkshop.tool() >= 0) ClientWorkshop.putDown();
+            else secondary(target);
         } else if (WorkshopKeys.is(WorkshopKeys.EFFORT, keyCode, scanCode)) ClientWorkshop.cycleEffort();
+        else if (WorkshopKeys.is(WorkshopKeys.POSTURE, keyCode, scanCode)) ClientWorkshop.toggleDeep();
+        else if (WorkshopKeys.is(WorkshopKeys.INSPECT, keyCode, scanCode)) WorkshopCamera.toggleInspect();
+        else if (WorkshopKeys.is(WorkshopKeys.HELP, keyCode, scanCode)) help = !help;
         else if (WorkshopKeys.is(WorkshopKeys.BATCH, keyCode, scanCode)) ClientWorkshop.toggleBatch();
         else if (WorkshopKeys.is(WorkshopKeys.SEAL, keyCode, scanCode)) ClientWorkshop.send(sealPart(), WorkshopAction.SEAL, 0, false);
         else if (WorkshopKeys.is(WorkshopKeys.WITHDRAW, keyCode, scanCode)) ClientWorkshop.send(sealPart(), WorkshopAction.CANCEL, 0, false);
@@ -405,7 +499,10 @@ public class WorkshopScreen extends Screen {
                 com.otectus.immersivebrewing.network.packet.NotebookPrefsC2S.Action.PRACTICE_KIND, "", hint, sessionKind.ordinal()));
     }
 
-    /** The explicit Next station action: leaves this view and turns toward the nearest other station. */
+    /**
+     * The explicit Next station action (handoff 9.3): the held tool is put down first, then the server moves the view to
+     * the nearest other station after checking reach and protection there, and the camera glides over.
+     */
     private void nextStation() {
         var mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
@@ -422,14 +519,11 @@ public class WorkshopScreen extends Screen {
             }
         }
         if (best == null) {
-            com.otectus.immersivebrewing.client.StationNotices.show(Component.translatable("workshop.immersive_brewing.next.none"), true);
+            StationNotices.show(Component.translatable("workshop.immersive_brewing.next.none"), true);
             return;
         }
-        BlockPos next = best;
-        onClose();
-        ClientWorkshop.lookAt(next);
-        com.otectus.immersivebrewing.client.StationNotices.show(Component.translatable("workshop.immersive_brewing.next.turned",
-                mc.level.getBlockState(next).getBlock().getName()), false);
+        if (PracticeBench.active(pos)) PracticeBench.stop(null);
+        ClientWorkshop.switchTo(best);
     }
 
     // ---- leaving ----
@@ -459,9 +553,10 @@ public class WorkshopScreen extends Screen {
             ClientWorkshop.dropCarry();
         }
         ClientWorkshop.setWorking(false);
+        ClientWorkshop.setDeep(false);
     }
 
-    // ---- drawing ----
+    // ---- drawing (handoff 10: the interface budget) ----
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float partialTick) {
@@ -473,108 +568,162 @@ public class WorkshopScreen extends Screen {
         }
         Ui.Palette p = Ui.palette();
         WorkshopTargets.View v = view(be);
+        ClientConfig.Guidance guidance = ClientConfig.guidance();
 
-        // Top: what the apparatus shows now, in words (handoff 10: observable guidance, colour never the only cue).
-        Component title = PracticeBench.active(pos)
-                ? Component.translatable("practice.immersive_brewing.workshop.banner", be.getBlockState().getBlock().getName(), WorkshopKeys.name(WorkshopKeys.PRACTICE))
-                : be.getBlockState().getBlock().getName();
-        Component cue = cue(v);
-        int top = 6;
-        List<FormattedCharSequence> lines = font.split(cue == null ? title : Component.empty().append(title).append(" — ").append(cue), Math.min(width - 20, 420));
-        int boxW = 0;
-        for (FormattedCharSequence line : lines) boxW = Math.max(boxW, font.width(line));
-        g.fill(width / 2 - boxW / 2 - 5, top - 3, width / 2 + boxW / 2 + 5, top + lines.size() * 10 + 1, 0x90000000);
-        for (FormattedCharSequence line : lines) {
-            g.drawString(font, line, width / 2 - font.width(line) / 2, top, p.insetText(), false);
-            top += 10;
+        int headerY=6;
+        // Practice is always named: nothing in it is real.
+        if (PracticeBench.active(pos)) {
+            Component banner=Component.translatable("practice.immersive_brewing.workshop.banner",be.getBlockState().getBlock().getName(),WorkshopKeys.name(WorkshopKeys.PRACTICE));
+            tag(g,banner,6,headerY,0xC0402818,0xFFFFE6B0);
+            headerY+=font.split(banner,Math.min(width-12,360)).size()*11+4;
         }
-        if (v.state() == null && kind != WorkshopKind.RACK && !PracticeBench.active(pos)) {
-            top = centredLines(g, Component.translatable("workshop.immersive_brewing.hint.idle", WorkshopKeys.name(WorkshopKeys.PRACTICE)), top, p.insetMuted());
+        Component hand=handLine(guidance);
+        long handAge=Util.getMillis()-ClientWorkshop.handChangedAt();
+        if(hand!=null&&(guidance==ClientConfig.Guidance.DETAILED||handAge<3000||ClientWorkshop.carried()>=0)) {
+            centred(g,hand,headerY,0xFFA8D8FF);
+            headerY+=font.split(hand,Math.min(width-20,420)).size()*10+6;
         }
-        if (ClientConfig.get(ClientConfig.NUMERIC_DISPLAY)) {
-            Component reading = reading(v);
-            if (reading != null) top = centredLines(g, reading, top, p.insetMuted());
-        }
+        Component reading=guidance==ClientConfig.Guidance.DETAILED||ClientConfig.get(ClientConfig.NUMERIC_DISPLAY)?reading(v):null;
+        int readingWidth=Math.min(220,Math.max(80,width/3));
+        int headerBottom=headerY;
+        if(reading!=null) tag(g,reading,6,headerY,readingWidth,0x90000000,p.insetMuted());
+        if(reading!=null) headerBottom=Math.max(headerBottom,headerY+font.split(reading,readingWidth).size()*11);
+        if(help||guidance==ClientConfig.Guidance.DETAILED)
+            headerBottom=Math.max(headerBottom,controls(g,p,headerY,reading==null?Math.min(width-20,420):Math.min(420,width-readingWidth-24),help));
 
-        // The selected or hovered part's short label, beside it.
-        WorkshopTutorial.Prompt prompt = WorkshopTutorial.prompt(v, ClientWorkshop.hand());
-        if (target != null && ClientConfig.get(ClientConfig.PART_HINTS)) {
-            double[] at = keyboard ? ClientWorkshop.project(WorkshopGeometry.center(pos, ClientWorkshop.facing(be), target.part()), width, height)
-                    : new double[] {mouseX, mouseY};
-            if (at != null) label(g, target, (int) at[0] + 10, (int) at[1] - 14, p);
-        }
-        if (prompt != null) {
-            WorkshopPart part = WorkshopParts.get(kind, prompt.part());
-            double[] at = part == null ? null : ClientWorkshop.project(WorkshopGeometry.center(pos, ClientWorkshop.facing(be), part), width, height);
-            if (at != null) {
-                int x = (int) Math.max(4, Math.min(width - 160, at[0] - 80)), y = (int) Math.max(24, Math.min(height - 70, at[1] + 14));
-                int w = Math.min(220, Math.max(120, font.width(prompt.text()) + 10));
-                List<FormattedCharSequence> wrapped = font.split(prompt.text(), w - 8);
-                g.fill(x - 2, y - 2, x + w, y + wrapped.size() * 10 + 2, 0xC0203040);
-                for (int i = 0; i < wrapped.size(); i++) g.drawString(font, wrapped.get(i), x + 2, y + i * 10, 0xFFFFF0B0, false);
-            }
-        }
+        WorkshopTutorial.Prompt prompt=guidance==ClientConfig.Guidance.MINIMAL?null:WorkshopTutorial.prompt(v,ClientWorkshop.hand());
+        Component hint=guidance==ClientConfig.Guidance.MINIMAL?null:prompt!=null?prompt.text():WorkshopGuidance.hint(v,ClientWorkshop.hand());
+        int anchor=prompt!=null?prompt.part():WorkshopGuidance.anchor(v,ClientWorkshop.hand());
+        Component urgent=WorkshopGuidance.urgent(v);
+        boolean sameHint=target!=null&&hint!=null&&anchor==target.part().id();
 
-        // Bottom: the keys, by their current names (handoff 11: rebindable, no chords).
+        if(target!=null&&ClientConfig.get(ClientConfig.PART_HINTS)&&!sameHint) {
+            double[] at=keyboard?ClientWorkshop.project(WorkshopGeometry.center(pos,ClientWorkshop.facing(be),target.part())):new double[]{mouseX,mouseY};
+            if(at!=null) label(g,target,(int)at[0]+12,(int)at[1]-16,p,guidance,headerBottom+4);
+        }
+        // The next action has a reserved band; hover labels never compete with it over the work surface.
+        if(urgent!=null) bubble(g,urgent,width/2,true);
+        else if(hint!=null&&!StationNotices.visible()) bubble(g,hint,width/2,prompt!=null);
+
+        // A brief exit hint on entry; Detailed keeps its controls reminder beside the readings.
+        long since = Util.getMillis() - ClientWorkshop.enteredAt();
+        if (since < ENTRY_HINT_MS && !help && hint == null && !StationNotices.visible()) {
+            int alpha = since > ENTRY_HINT_MS - 600 ? (int) ((ENTRY_HINT_MS - since) / 600.0 * 255) : 255;
+            centred(g, Component.translatable("workshop.immersive_brewing.hint.entry", Component.literal("Esc"), WorkshopKeys.name(WorkshopKeys.HELP)),
+                    height - 62, (Math.max(8, alpha) << 24) | 0xE8E4D8);
+        }
+        super.render(g, mx, my, partialTick);
+    }
+
+    /**
+     * Where a hint about a part goes: just off the part, never over the material. A large part (the vessel, the bowl)
+     * gets it above its projected top edge (or below it when that is off screen); a small one just below its centre.
+     */
+    @Nullable
+    private int[] beside(BlockEntity be, WorkshopPart part) {
+        var facing = ClientWorkshop.facing(be);
+        double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+        for (int c = 0; c < 8; c++) {
+            double[] p = ClientWorkshop.project(com.otectus.immersivebrewing.workshop.WorkshopGeometry.toWorld(pos, facing,
+                    (c & 1) == 0 ? part.x0() : part.x1(), (c & 2) == 0 ? part.y0() : part.y1(), (c & 4) == 0 ? part.z0() : part.z1()));
+            if (p == null) continue;
+            minX = Math.min(minX, p[0]);
+            maxX = Math.max(maxX, p[0]);
+            minY = Math.min(minY, p[1]);
+            maxY = Math.max(maxY, p[1]);
+        }
+        if (minX == Double.MAX_VALUE) return null;
+        int cx = (int) ((minX + maxX) / 2);
+        if (maxY - minY > height * 0.25) {
+            int above = (int) minY - 26;
+            return above > 24 ? new int[] {cx, above} : new int[] {cx, (int) maxY + 6};
+        }
+        return new int[] {cx, (int) maxY + 4};
+    }
+
+    private void label(GuiGraphics g, WorkshopTargets.Target t, int x, int y, Ui.Palette p, ClientConfig.Guidance guidance,int minY) {
+        MutableComponent text = Component.empty().append(t.label());
+        if (ClientWorkshop.batch() && t.batchLabel() != null) text = Component.translatable("workshop.immersive_brewing.hint.batch", t.batchLabel());
+        int w = Math.min(Math.min(width - 8, 260), font.width(text) + 8);
+        x = Math.max(4, Math.min(width - w - 4, x));
+        y = Math.max(Math.min(minY,height-80), Math.min(height - 80, y));
+        List<FormattedCharSequence> lines = new java.util.ArrayList<>(font.split(text, w - 6));
+        if ((guidance == ClientConfig.Guidance.DETAILED || help) && !ClientWorkshop.batch()) {
+            // The other ways to use this part, with their quantities: shift-click and right-click.
+            if (t.batchLabel() != null) lines.addAll(font.split(Component.translatable("workshop.immersive_brewing.hint.shift", t.batchLabel()), w - 6));
+            if (t.secondaryLabel() != null) lines.addAll(font.split(Component.translatable("workshop.immersive_brewing.hint.right", t.secondaryLabel()), w - 6));
+        }
+        int h = lines.size() * 10;
+        g.fill(x - 3, y - 3, x + w, y + h + 1, t.available() ? 0xB0101418 : 0xB0302020);
+        for (int i = 0; i < lines.size(); i++) {
+            int color = i == 0 ? (t.available() ? p.insetText() : p.insetMuted()) : p.insetMuted();
+            g.drawString(font, lines.get(i), x + 1, y + i * 10, color, false);
+        }
+    }
+
+    /** A footer above vanilla's health/food/experience area, clear of the burner controls even at GUI scale 4. */
+    private void bubble(GuiGraphics g, Component text, int cx, boolean strong) {
+        int w = Math.min(Math.min(280,width-16), Math.max(90, font.width(text) + 10));
+        List<FormattedCharSequence> wrapped = font.split(text, w - 8);
+        int x = Math.max(4, Math.min(width - w - 4, cx - w / 2));
+        int y = Math.max(22,height-52-wrapped.size()*10);
+        g.fill(x - 2, y - 2, x + w, y + wrapped.size() * 10 + 2, strong ? 0xC0203040 : 0xA0141820);
+        for (int i = 0; i < wrapped.size(); i++) g.drawString(font, wrapped.get(i), x + 2, y + i * 10, strong ? 0xFFFFF0B0 : 0xFFE0E4EC, false);
+    }
+
+    private void tag(GuiGraphics g, Component text, int x, int y, int fill, int color) {
+        tag(g,text,x,y,Math.min(width-12,360),fill,color);
+    }
+
+    private void tag(GuiGraphics g,Component text,int x,int y,int maxWidth,int fill,int color) {
+        for (FormattedCharSequence line : font.split(text,maxWidth)) {
+            g.fill(x - 3, y - 2, x + font.width(line) + 3, y + 9, fill);
+            g.drawString(font, line, x, y, color, false);
+            y += 11;
+        }
+    }
+
+    private void centred(GuiGraphics g, Component text, int y, int argb) {
+        for (FormattedCharSequence line : font.split(text, Math.min(width - 20, 420))) {
+            int a = argb >>> 24;
+            g.fill(width / 2 - font.width(line) / 2 - 4, y - 1, width / 2 + font.width(line) / 2 + 4, y + 9, (Math.min(0x90, a) << 24));
+            g.drawString(font, line, width / 2 - font.width(line) / 2, y, argb, false);
+            y += 10;
+        }
+    }
+
+    /** Detailed keeps a short reminder; H expands the full legend and can hide it again. */
+    private int controls(GuiGraphics g,Ui.Palette p,int y,int maxWidth,boolean expanded) {
+        if (!expanded) {
+            Component reminder=Component.translatable("workshop.immersive_brewing.hint.entry",Component.literal("Esc"),WorkshopKeys.name(WorkshopKeys.HELP));
+            return controlLines(g,p,y,maxWidth,List.of(reminder));
+        }
         MutableComponent keys = Component.translatable("workshop.immersive_brewing.hint.keys", WorkshopKeys.name(WorkshopKeys.NEXT_TARGET),
                 WorkshopKeys.name(WorkshopKeys.ACTIVATE), WorkshopKeys.name(WorkshopKeys.WORK), WorkshopKeys.name(WorkshopKeys.EFFORT),
                 Component.translatable(ClientWorkshop.effort().key()), WorkshopKeys.name(WorkshopKeys.BATCH),
                 Component.translatable(ClientWorkshop.batch() ? "workshop.immersive_brewing.on" : "workshop.immersive_brewing.off"),
                 WorkshopKeys.name(WorkshopKeys.SEAL), WorkshopKeys.name(WorkshopKeys.DRAWER));
-        // The hotbar and status bars are hidden while the view is open (onOverlay), so the bottom edge is ours.
-        List<FormattedCharSequence> keyLines = font.split(keys, width - 20);
-        int ky = height - 6 - keyLines.size() * 10;
-        Component hand = handLine();
-        if (hand != null) {
-            List<FormattedCharSequence> handLines = font.split(hand, width - 20);
-            int hy = ky - 4 - handLines.size() * 10;
-            for (FormattedCharSequence line : handLines) {
-                g.fill(width / 2 - font.width(line) / 2 - 4, hy - 1, width / 2 + font.width(line) / 2 + 4, hy + 9, 0x90000000);
-                g.drawString(font, line, width / 2 - font.width(line) / 2, hy, accentOnDark(p), false);
-                hy += 10;
+        MutableComponent more = Component.translatable("workshop.immersive_brewing.hint.keys_more", WorkshopKeys.name(WorkshopKeys.POSTURE),
+                WorkshopKeys.name(WorkshopKeys.INSPECT), WorkshopKeys.name(WorkshopKeys.NEXT_STATION), WorkshopKeys.name(WorkshopKeys.BOOK),
+                WorkshopKeys.name(WorkshopKeys.PRACTICE), WorkshopKeys.name(WorkshopKeys.HELP));
+        return controlLines(g,p,y,maxWidth,List.of(keys,more));
+    }
+
+    private int controlLines(GuiGraphics g,Ui.Palette p,int y,int maxWidth,List<Component> lines) {
+        for (Component line : lines) {
+            for (FormattedCharSequence l : font.split(line,maxWidth)) {
+                g.fill(width - font.width(l) - 10, y - 1, width - 2, y + 9, 0x90000000);
+                g.drawString(font, l, width - font.width(l) - 6, y, p.insetMuted(), false);
+                y += 10;
             }
         }
-        for (FormattedCharSequence line : keyLines) {
-            g.fill(width / 2 - font.width(line) / 2 - 4, ky - 1, width / 2 + font.width(line) / 2 + 4, ky + 9, 0x90000000);
-            g.drawString(font, line, width / 2 - font.width(line) / 2, ky, p.insetMuted(), false);
-            ky += 10;
-        }
-        super.render(g, mx, my, partialTick);
-    }
-
-    private void label(GuiGraphics g, WorkshopTargets.Target t, int x, int y, Ui.Palette p) {
-        MutableComponent text = Component.empty().append(t.label());
-        if (ClientWorkshop.batch() && t.batchLabel() != null) text = Component.translatable("workshop.immersive_brewing.hint.batch", t.batchLabel());
-        int w = Math.min(width - 8, font.width(text) + 8);
-        x = Math.max(4, Math.min(width - w - 4, x));
-        y = Math.max(20, Math.min(height - 40, y));
-        List<FormattedCharSequence> lines = font.split(text, w - 6);
-        g.fill(x - 3, y - 3, x + w, y + lines.size() * 10 + 1, t.available() ? 0xB0101418 : 0xB0302020);
-        for (int i = 0; i < lines.size(); i++) g.drawString(font, lines.get(i), x + 1, y + i * 10, t.available() ? p.insetText() : p.insetMuted(), false);
-    }
-
-    /** Draws {@code text} centred and wrapped to the screen on dark fills; returns the next free line's top. */
-    private int centredLines(GuiGraphics g, Component text, int top, int color) {
-        for (FormattedCharSequence line : font.split(text, Math.min(width - 20, 420))) {
-            g.fill(width / 2 - font.width(line) / 2 - 4, top, width / 2 + font.width(line) / 2 + 4, top + 11, 0x90000000);
-            g.drawString(font, line, width / 2 - font.width(line) / 2, top + 1, color, false);
-            top += 11;
-        }
-        return top + 1;
-    }
-
-    /** The accent for text on the overlay's dark fills (the panel accent is tuned for light panels). */
-    private static int accentOnDark(Ui.Palette p) {
-        return switch (ClientConfig.get(ClientConfig.PALETTE)) {
-            case HIGH_CONTRAST -> p.accent();
-            case COLORBLIND_SAFE -> 0xFF56B4E9;
-            default -> 0xFFA8D8FF;
-        };
+        return y;
     }
 
     /**
-     * While the working view is open the hands belong to the apparatus (handoff 5): the hotbar, its status bars and the
-     * crosshair would only duplicate or contradict the view, so they are not drawn. Notices still show.
+     * While the working view is open the hotbar stays (it is the supply strip) and so do health, armour, food and air
+     * (handoff 10: a calm view must not hide drowning or an attack). Only what the cursor and the apparatus replace is
+     * hidden: the crosshair, the experience and jump bars.
      */
     public static void onOverlay(net.minecraftforge.client.event.RenderGuiOverlayEvent.Pre event) {
         if (!(Minecraft.getInstance().screen instanceof WorkshopScreen)) return;
@@ -588,42 +737,24 @@ public class WorkshopScreen extends Screen {
     }
 
     private static final net.minecraftforge.client.gui.overlay.VanillaGuiOverlay[] HIDDEN_OVERLAYS = {
-            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.HOTBAR, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.CROSSHAIR,
-            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.PLAYER_HEALTH, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.ARMOR_LEVEL,
-            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.FOOD_LEVEL, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.AIR_LEVEL,
-            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.MOUNT_HEALTH, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.EXPERIENCE_BAR,
-            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.JUMP_BAR, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.ITEM_NAME};
+            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.CROSSHAIR, net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.EXPERIENCE_BAR,
+            net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.JUMP_BAR};
 
     @Nullable
-    private Component handLine() {
+    private Component handLine(ClientConfig.Guidance guidance) {
         int tool = ClientWorkshop.tool();
         int carried = ClientWorkshop.carried();
-        if (carried >= 0) return Component.translatable("workshop.immersive_brewing.hint.carrying", WorkshopKeys.name(WorkshopKeys.PUT_DOWN));
+        if (carried >= 0) {
+            return guidance == ClientConfig.Guidance.DETAILED || help
+                    ? Component.translatable("workshop.immersive_brewing.hint.carrying", WorkshopKeys.name(WorkshopKeys.PUT_DOWN)) : null;
+        }
         if (tool < 0) return null;
         WorkshopPart part = WorkshopParts.get(kind, tool);
         Component name = part == null ? Component.empty() : Component.translatable(part.key());
-        return Component.translatable(ClientWorkshop.working() ? "workshop.immersive_brewing.hint.working" : "workshop.immersive_brewing.hint.holding",
-                name, Component.translatable(ClientWorkshop.effort().key()), WorkshopKeys.name(WorkshopKeys.PUT_DOWN), WorkshopKeys.name(WorkshopKeys.WORK),
-                WorkshopKeys.name(WorkshopKeys.TOOL_FORWARD), WorkshopKeys.name(WorkshopKeys.TOOL_LEFT), WorkshopKeys.name(WorkshopKeys.TOOL_BACK),
-                WorkshopKeys.name(WorkshopKeys.TOOL_RIGHT));
-    }
-
-    @Nullable
-    private static Component cue(WorkshopTargets.View v) {
-        String key = switch (v.kind()) {
-            case KETTLE -> v.kettle().contains("cue") ? v.kettle().getString("cue") : v.finishing().getString("cue");
-            case MORTAR -> v.mortar().getString("cue");
-            case ALEMBIC -> v.alembic().getString("cue");
-            case RACK -> "";
-        };
-        if (v.sealed()) return Component.translatable("cue.immersive_brewing.sealed");
-        if (v.state() == com.otectus.immersivebrewing.batch.JobState.RECOVERY) return Component.translatable("cue.immersive_brewing.held");
-        if (v.legacy()) return Component.translatable("cue.immersive_brewing.legacy");
-        if (key.isEmpty()) {
-            if (v.be() instanceof StationBlockEntity station) return station.view().status();
-            return null;
-        }
-        return Component.translatable(key);
+        Component posture = Component.translatable(ClientWorkshop.deep() ? "workshop.immersive_brewing.posture.deep" : "workshop.immersive_brewing.posture.surface");
+        if (guidance == ClientConfig.Guidance.MINIMAL) return null;
+        Component identity=tool==WorkshopParts.K_PADDLE?name.copy().append(" · ").append(posture):name;
+        return guidance==ClientConfig.Guidance.DETAILED?identity.copy().append(" · ").append(Component.translatable(ClientWorkshop.effort().key())):identity;
     }
 
     /** The optional precise readout for players and pack authors who want numbers (handoff 7, 10). */

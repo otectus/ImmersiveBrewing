@@ -78,13 +78,19 @@ All server fields are per world.
 | `controls.toolSensitivity` | `1.0` | 0.25-3.0 | How far a held tool moves for a given mouse movement or key press. |
 | `controls.toolDeadZone` | `0.0` | 0.0-0.2 | Mouse movement (as a part of the work surface) ignored before a held tool moves; steadies shaky hands. |
 | `controls.toolSmoothing` | `0.35` | 0.0-0.9 | Visual weight of a held tool following the hand. It never delays what the server receives. |
-| `workshop.cameraMode` | `FOCUS` | `FOCUS`, `DIRECT` | `FOCUS` turns your view toward the apparatus when you start working; `DIRECT` keeps your own view. Neither moves the camera through walls or away from your eyes; reduced motion makes the turn instant. |
+| `workshop.cameraStyle` | `AUTO` | `AUTO`, `CLOSE_UP`, `INSTANT`, `EYE` | How the working view frames a station. `CLOSE_UP`: the camera glides above and toward the apparatus (an eased move of `cameraSeconds`) so you look into the vessel, and glides back when you leave. `INSTANT`: the same close-up view with a cut in and out. `EYE`: your own view from your eyes; nothing moves the camera. `AUTO` resolves to `EYE` when the legacy `cameraMode` is `DIRECT`, to `INSTANT` when `display.reducedMotion` is on, otherwise to `CLOSE_UP`. The camera never passes through blocks: it tries the authored shot, then alternatives, and falls back to your eyes with a notice when there is no room. |
+| `workshop.cameraMode` | `FOCUS` | `FOCUS`, `DIRECT` | Legacy setting from before the close-up camera, read only while `cameraStyle` is `AUTO`: `DIRECT` keeps your own view (as `EYE`), so a player who chose it is never given a moving camera by the update; `FOCUS` allows the close-up camera. |
+| `workshop.cameraSeconds` | `0.35` | 0.2-0.6 | How long the close-up camera takes to glide in and out. |
+| `workshop.closeUpFov` | `44` | 35-55 | The close-up camera's preferred vertical field of view in degrees. The shot is fitted against both the vertical and horizontal field of view, so narrow windows widen it as needed. |
+| `workshop.guidance` | `AUTO` | `AUTO`, `MINIMAL`, `GUIDED`, `DETAILED` | How much the working view says in words. `MINIMAL`: the apparatus, the hovered part's short label, refusals and urgent warnings. `GUIDED`: also the one useful next action and the first-use demonstrations. `DETAILED`: also numbers, the full control help and diagnostics. `AUTO` is `DETAILED` when `display.numericDisplay` is on, otherwise `GUIDED`. Guidance never changes what the server accepts or how work is scored. |
+| `workshop.hands` | `ARMS` | `ARMS`, `TOOLS_ONLY` | `ARMS` draws your translucent arm (in your skin) gripping the tool, bottle or cup. Classic and slim arms retain their full vanilla dimensions in every view; `TOOLS_ONLY` draws only the object. |
+| `workshop.armOpacity` | `0.45` | 0.0-1.0 | Workshop hand opacity, from hidden to opaque skin. Translucent arms fade toward the shoulder and sleeves use a lighter overlay. Glass, liquid and reaction cues remain visible through the default arms; ordinary player rendering is unaffected. |
 | `workshop.mirrorTools` | `false` | boolean | Left-handed presentation: rests and held tools are drawn mirrored. The parts you act on stay the same. |
 | `workshop.partHints` | `true` | boolean | Shows the short action label beside the hovered or selected part. |
 | `workshop.tutorialStage` | `0` | 0-3 | First-use demonstrations already seen (tool, burner, dose). Set 0 to see them again; the Notebook's guided lessons also reset it. |
 | `display.palette` | `STANDARD` | `STANDARD`, `HIGH_CONTRAST`, `COLORBLIND_SAFE` | Selects the semantic UI palette; critical state also retains text/shape. |
 | `display.largeMarkers` | `false` | boolean | Enlarges apparatus markers and target-band indicators. |
-| `display.reducedMotion` | `false` | boolean | Calms liquid/profile animation and disables camera effects. |
+| `display.reducedMotion` | `false` | boolean | Calms liquid/profile animation and disables camera effects; with `workshop.cameraStyle = AUTO` the close-up camera cuts instead of gliding. |
 | `display.screenShake` | `false` | boolean | Enables the optional small boil/flare shake; reduced motion overrides it. |
 | `display.particleDensity` | `1.0` | 0.0-1.0 | Scales station/profile particle emission; zero disables it. |
 | `display.animationIntensity` | `1.0` | 0.0-1.0 | Scales apparatus animation intensity. |
@@ -159,7 +165,8 @@ toolSensitivity = 0.75
 toolDeadZone = 0.05
 
 [workshop]
-cameraMode = "FOCUS"
+cameraStyle = "INSTANT"
+guidance = "DETAILED"
 partHints = true
 
 [display]

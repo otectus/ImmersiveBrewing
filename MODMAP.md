@@ -23,17 +23,21 @@ Machine-generated map of this mod. Read this first when picking the project up.
 ```
 com.otectus.immersivebrewing                         1 file
 com.otectus.immersivebrewing.advancement             3 files
-com.otectus.immersivebrewing.api                     5 files
+com.otectus.immersivebrewing.api                     6 files
 com.otectus.immersivebrewing.api.event               4 files
 com.otectus.immersivebrewing.batch                   5 files
-com.otectus.immersivebrewing.block                   5 files
-com.otectus.immersivebrewing.blockentity             9 files
-com.otectus.immersivebrewing.client                  9 files
-com.otectus.immersivebrewing.client.compat.jei       8 files
+com.otectus.immersivebrewing.block                   6 files
+com.otectus.immersivebrewing.blockentity             14 files
+com.otectus.immersivebrewing.client                  11 files
+com.otectus.immersivebrewing.client.compat.jei       9 files
+com.otectus.immersivebrewing.client.journal          1 file
 com.otectus.immersivebrewing.client.particle         1 file
-com.otectus.immersivebrewing.client.render           4 files
-com.otectus.immersivebrewing.client.screen           15 files
-com.otectus.immersivebrewing.client.sound            1 file
+com.otectus.immersivebrewing.client.presentation     8 files
+com.otectus.immersivebrewing.client.render           7 files
+com.otectus.immersivebrewing.client.screen           17 files
+com.otectus.immersivebrewing.client.sound            2 files
+com.otectus.immersivebrewing.client.tutorial         1 file
+com.otectus.immersivebrewing.client.workshop         10 files
 com.otectus.immersivebrewing.command                 1 file
 com.otectus.immersivebrewing.compat.jade             1 file
 com.otectus.immersivebrewing.config                  4 files
@@ -42,38 +46,42 @@ com.otectus.immersivebrewing.event                   6 files
 com.otectus.immersivebrewing.guide                   2 files
 com.otectus.immersivebrewing.integration             1 file
 com.otectus.immersivebrewing.integration.smithing    1 file
+com.otectus.immersivebrewing.interaction             6 files
 com.otectus.immersivebrewing.item                    8 files
-com.otectus.immersivebrewing.menu                    5 files
+com.otectus.immersivebrewing.menu                    6 files
 com.otectus.immersivebrewing.minigame                4 files
 com.otectus.immersivebrewing.minigame.brewing        11 files
 com.otectus.immersivebrewing.minigame.distillation   4 files
 com.otectus.immersivebrewing.minigame.preparation    5 files
-com.otectus.immersivebrewing.mixin                   5 files
+com.otectus.immersivebrewing.mixin                   7 files
 com.otectus.immersivebrewing.network                 1 file
-com.otectus.immersivebrewing.network.packet          16 files
+com.otectus.immersivebrewing.network.packet          33 files
 com.otectus.immersivebrewing.potion                  6 files
-com.otectus.immersivebrewing.recipe                  14 files
+com.otectus.immersivebrewing.recipe                  16 files
 com.otectus.immersivebrewing.recipe.adapter          3 files
 com.otectus.immersivebrewing.registry                9 files
 com.otectus.immersivebrewing.session                 5 files
+com.otectus.immersivebrewing.workshop                19 files
 ```
 
-## Registered content (41 entries)
+## Registered content (47 entries)
 
-### Blocks (3)
+### Blocks (4)
 
 | id | field | type | declared in |
 |---|---|---|---|
 | `alembic` | `ALEMBIC` | `AlembicBlock` | src/main/java/com/otectus/immersivebrewing/registry/ModBlocks.java |
 | `apothecary_mortar` | `APOTHECARY_MORTAR` | `ApothecaryMortarBlock` | src/main/java/com/otectus/immersivebrewing/registry/ModBlocks.java |
+| `apothecary_rack` | `APOTHECARY_RACK` | `ApothecaryRackBlock` | src/main/java/com/otectus/immersivebrewing/registry/ModBlocks.java |
 | `brewers_kettle` | `BREWERS_KETTLE` | `BrewersKettleBlock` | src/main/java/com/otectus/immersivebrewing/registry/ModBlocks.java |
 
-### Items (10)
+### Items (11)
 
 | id | field | type | declared in |
 |---|---|---|---|
 | `alembic` | `ALEMBIC` | `BlockItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 | `apothecary_mortar` | `APOTHECARY_MORTAR` | `BlockItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
+| `apothecary_rack` | `APOTHECARY_RACK` | `BlockItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 | `batch_carrier` | `BATCH_CARRIER` | `BatchCarrierItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 | `brewers_kettle` | `BREWERS_KETTLE` | `BlockItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 | `brewers_notebook` | `BREWERS_NOTEBOOK` | `BrewersNotebookItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
@@ -83,20 +91,22 @@ com.otectus.immersivebrewing.session                 5 files
 | `spent_alchemical_salt` | `SPENT_ALCHEMICAL_SALT` | `Item` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 | `wooden_brewing_paddle` | `WOODEN_BREWING_PADDLE` | `BrewingPaddleItem` | src/main/java/com/otectus/immersivebrewing/registry/ModItems.java |
 
-### Block entities (3)
+### Block entities (4)
 
 | id | field | type | declared in |
 |---|---|---|---|
 | `alembic` | `ALEMBIC` | `BlockEntityType<AlembicBlockEntity>` | src/main/java/com/otectus/immersivebrewing/registry/ModBlockEntities.java |
 | `apothecary_mortar` | `APOTHECARY_MORTAR` | `BlockEntityType<ApothecaryMortarBlockEntity>` | src/main/java/com/otectus/immersivebrewing/registry/ModBlockEntities.java |
+| `apothecary_rack` | `APOTHECARY_RACK` | `BlockEntityType<ApothecaryRackBlockEntity>` | src/main/java/com/otectus/immersivebrewing/registry/ModBlockEntities.java |
 | `brewers_kettle` | `BREWERS_KETTLE` | `BlockEntityType<BrewersKettleBlockEntity>` | src/main/java/com/otectus/immersivebrewing/registry/ModBlockEntities.java |
 
-### Menus / GUIs (4)
+### Menus / GUIs (5)
 
 | id | field | type | declared in |
 |---|---|---|---|
 | `alembic` | `ALEMBIC` | `MenuType<AlembicMenu>` | src/main/java/com/otectus/immersivebrewing/registry/ModMenus.java |
 | `apothecary_mortar` | `MORTAR` | `MenuType<MortarMenu>` | src/main/java/com/otectus/immersivebrewing/registry/ModMenus.java |
+| `apothecary_rack` | `APOTHECARY_RACK` | `MenuType<ApothecaryRackMenu>` | src/main/java/com/otectus/immersivebrewing/registry/ModMenus.java |
 | `batch_carrier` | `BATCH_CARRIER` | `MenuType<BatchCarrierMenu>` | src/main/java/com/otectus/immersivebrewing/registry/ModMenus.java |
 | `brewers_kettle` | `KETTLE` | `MenuType<KettleMenu>` | src/main/java/com/otectus/immersivebrewing/registry/ModMenus.java |
 
@@ -106,7 +116,7 @@ com.otectus.immersivebrewing.session                 5 files
 |---|---|---|---|
 | `main` | `MAIN` | `CreativeModeTab` | src/main/java/com/otectus/immersivebrewing/registry/ModCreativeTabs.java |
 
-### Sounds (16)
+### Sounds (18)
 
 | id | field | type | declared in |
 |---|---|---|---|
@@ -114,12 +124,14 @@ com.otectus.immersivebrewing.session                 5 files
 | `alembic.receiver` | `RECEIVER_SWITCH` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `alembic.valve` | `VALVE_TURN` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `bottle.clink` | `BOTTLE_CLINK` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
+| `bottle.fill` | `BOTTLE_FILL` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `brew.complete` | `BREW_COMPLETE` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `cue.ready` | `CUE_READY` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `cue.warning` | `CUE_WARNING` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `kettle.add` | `INGREDIENT_ADD` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `kettle.boil` | `KETTLE_BOIL` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `kettle.foam` | `FOAM_HISS` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
+| `kettle.pour` | `KETTLE_POUR` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `kettle.simmer` | `KETTLE_SIMMER` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `kettle.swirl` | `PADDLE_SWIRL` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
 | `mortar.crush` | `MORTAR_CRUSH` | `SoundEvent` | src/main/java/com/otectus/immersivebrewing/registry/ModSounds.java |
@@ -144,13 +156,13 @@ _No datagen providers detected — assets and data JSON are hand-written._
 
 | kind | count |
 |---|---|
-| blockstates | 3 |
-| block models | 3 |
-| item models | 11 |
-| block textures | 11 |
+| blockstates | 4 |
+| block models | 7 |
+| item models | 12 |
+| block textures | 12 |
 | item textures | 8 |
-| recipes | 8 |
-| block loot tables | 3 |
+| recipes | 11 |
+| block loot tables | 4 |
 | block tags | 0 |
 | item tags | 4 |
 | biome modifiers | 0 |
@@ -165,10 +177,13 @@ Run `check_mod.py` for a full consistency check (missing models, lang keys, text
 
 
 
+
 ## Current focus
 
-1.2.0 hands-on workshop (`Immersive_Brewing_Hands_On_Overhaul_Handoff.md`): implementation and automated checks are
-in `docs/reports/1.2.0-hands-on-overhaul.md`; human playtests, two-client latency and native-language review remain.
+1.2.0 close-up workshop (`Immersive_Brewing_Cinematic_Hands_On_Overhaul_Handoff.md`) on top of the hands-on workshop
+(`Immersive_Brewing_Hands_On_Overhaul_Handoff.md`): feature map, automated checks, real-input journeys and footage are
+in `docs/reports/1.2.0-close-up-workshop.md`; human playtests, two real clients under latency, shader/camera-mod
+combinations, audio listening and native-language review remain.
 
 ## Hands-on workshop map (1.2)
 
@@ -182,21 +197,46 @@ in `docs/reports/1.2.0-hands-on-overhaul.md`; human playtests, two-client latenc
   `act(...)` per station; `directInsert` for right-click loading; schema-3 ledgers (`JobLedger.process`).
 - Client: `client/workshop/` (`WorkshopScreen`, `ClientWorkshop` hand/camera, `WorkshopTargets`, `WorkshopKeys`,
   `WorkshopTutorial`, `PracticeBench`); renderers draw from snapshots via `WorkshopRenderBits`.
-- Packets: `WorkshopIntentC2S`, `WorkshopFocusS2C`, `WorkshopSnapshotS2C`, `OpenPracticeS2C`; protocol 5.
+- Packets: `WorkshopIntentC2S` (epoch, sequence, flags ACK/DEEP/SETUP, expected revision), `WorkshopAckS2C`,
+  `WorkshopFocusS2C` (with the view epoch), `WorkshopSnapshotS2C`, `OpenPracticeS2C`; protocol 6.
 - Tests: `src/testShared/.../testing/` tenders (`KettleTender`, `MortarTender`, `AlembicTender`, `WorkshopHand`) and
-  `LegacyBatches` (1.1-format fixtures); smoke driver `src/smokeTest/.../WorkshopDriver`.
+  `LegacyBatches` (1.1-format fixtures); smoke driver `src/smokeTest/.../WorkshopDriver`; real-input journeys
+  `RealInput`/`RealJourney`/`ObserverBrewer`/`Footage` (`-Pvariant=journey`).
+
+## Close-up workshop map (1.2.0)
+
+- Camera (client): `client/workshop/WorkshopCamera` (lifecycle, obstruction, glide), `WorkshopProjector` (matrices of
+  the drawn frame for picking), `mixin/CameraMixin` (`Camera.setup` tail, MIT notice
+  `META-INF/licenses/Diegesis-MIT.txt`); shared fit maths `workshop/CameraFit` and authored shots `workshop/WorkshopShots`.
+- Direct setup (server): `blockentity/KettleSetupService` (preview, pages, ghosts, pins, revision); accepted through
+  `BrewersKettleBlockEntity.acceptSetup` and the shared `setOut` transaction; `recipe/CatalogSearch.select` pins a page.
+- Transfers: carry leases and poses in `BrewersKettleBlockEntity` (`carry`, paced pour/fill queues); client
+  `WorkshopTransfers` (lift/travel/align/tip/flow/return/settle, observers from snapshots).
+- Presentation (client): `client/presentation/PresentationProfiles` (resource-pack profiles and the reagent table under
+  `assets/<ns>/immersive_brewing/presentation/`), `KettleSurface` (liquid height field), `ToolMotion`;
+  `client/render/ApparatusBits` (glass, bottles, ghosts, arm, page text).
+- Guidance and input: `WorkshopGuidance` (MINIMAL/GUIDED/DETAILED), `WorkshopKeys` (`V` posture, `Z` inspect, `H` help),
+  `WorkshopScreen.partAt` (what the cursor would pick), `interaction/StationOffsets` (neighbour switching).
+- Process: `KettleProcess` version 2 (posture through `ToolTrack.depth` and `ReactionFamily.mixRate`), version 1 rules
+  and wording kept for older payloads.
 
 ## Roadmap
 
 - [ ] Hands-on difficulty and timing trials with real players (the reference tenders only prove the work is doable).
 - [ ] Dedicated server with two real clients: contention, latency (0/100/200 ms), reduced TPS, forged packets.
-- [ ] A presentation hook for the reserved `presentation` field of workshop profiles.
+- [x] A presentation hook for the `presentation` field of workshop profiles (client presentation profiles).
+- [ ] Shader and camera-mod combinations with the close-up camera; audio listening review; human review of the
+  recorded journeys.
 - [ ] Later content (spec 30): herb drying, poultices, coatings, fermentation, alchemist jewelry.
 
 ## Decisions
 
 - 1.2: new work is hands-on at the apparatus; the 1.1 minigame sessions only finish batches saved by 1.1
   (`LEGACY_RESUME`). Brewing owns a local part-volume substitute for Diegesis (ADR-5).
+- 1.2.0 close-up: Brewing owns its camera layer; Diegesis 1.0.0-beta.8 is published but not adopted (a second scene and
+  authority engine, a beta hard dependency); its camera hook is adapted under MIT (ADR-6). `cameraStyle` AUTO keeps a
+  legacy `cameraMode = DIRECT` at the eyes. The Kettle's spout pipe sits forward and low so the dose cups and the
+  tray's first row are visible past it (found by the real-input journey: the cups were not pickable).
 - 1.2: station lifecycle updates are owed and flushed from the station tick, never sent while building an update
   packet: a re-entrant `sendBlockUpdated` inside the chunk broadcast stranded the section's change set and later block
   changes in that section stopped reaching clients (`WorkshopRegressionGameTests.buildingAnUpdatePacketNeverMarksTheChunk`).

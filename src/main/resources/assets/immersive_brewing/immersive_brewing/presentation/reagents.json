@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "reagents": {
+    "minecraft:nether_wart": {
+      "material": "fibrous",
+      "color": "#7A1E22",
+      "size": 1.1
+    },
+    "minecraft:sugar": {
+      "material": "crystal",
+      "color": "#F4F1EA",
+      "size": 0.6
+    },
+    "minecraft:redstone": {
+      "material": "crystal",
+      "color": "#C41E1E",
+      "size": 0.6
+    },
+    "minecraft:glowstone_dust": {
+      "material": "crystal",
+      "color": "#F2C94C",
+      "size": 0.6
+    },
+    "minecraft:gunpowder": {
+      "material": "crystal",
+      "color": "#5C5C5C",
+      "size": 0.6
+    },
+    "minecraft:spider_eye": {
+      "material": "fibrous",
+      "color": "#8E1B2B",
+      "size": 1.0
+    },
+    "minecraft:fermented_spider_eye": {
+      "material": "fibrous",
+      "color": "#5A2A3A",
+      "size": 1.0
+    },
+    "minecraft:magma_cream": {
+      "material": "paste",
+      "color": "#E06A1C",
+      "size": 1.1
+    },
+    "minecraft:blaze_powder": {
+      "material": "crystal",
+      "color": "#F08A24",
+      "size": 0.6
+    },
+    "minecraft:ghast_tear": {
+      "material": "liquid",
+      "color": "#D8E8F0",
+      "size": 0.8
+    },
+    "minecraft:rabbit_foot": {
+      "material": "fibrous",
+      "color": "#C9A27E",
+      "size": 1.0
+    },
+    "minecraft:glistering_melon_slice": {
+      "material": "particulate",
+      "color": "#F5D26B",
+      "size": 0.9
+    },
+    "minecraft:golden_carrot": {
+      "material": "fibrous",
+      "color": "#E8A33A",
+      "size": 1.0
+    },
+    "minecraft:pufferfish": {
+      "material": "fibrous",
+      "color": "#D8B34A",
+      "size": 1.0
+    },
+    "minecraft:turtle_helmet": {
+      "material": "crystal",
+      "color": "#4F8A3C",
+      "size": 1.2
+    },
+    "minecraft:phantom_membrane": {
+      "material": "particulate",
+      "color": "#B9C4D6",
+      "size": 0.9
+    },
+    "minecraft:dragon_breath": {
+      "material": "liquid",
+      "color": "#B04AD8",
+      "size": 0.8
+    },
+    "minecraft:honey_bottle": {
+      "material": "paste",
+      "color": "#E8A82A",
+      "size": 1.0
+    },
+    "minecraft:sweet_berries": {
+      "material": "fibrous",
+      "color": "#B02A2A",
+      "size": 0.9
+    },
+    "minecraft:glow_berries": {
+      "material": "fibrous",
+      "color": "#F0B040",
+      "size": 0.9
+    }
+  }
+}

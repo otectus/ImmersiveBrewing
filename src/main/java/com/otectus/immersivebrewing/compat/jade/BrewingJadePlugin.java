@@ -93,8 +93,17 @@ public final class BrewingJadePlugin implements IWailaPlugin {
         @Override
         public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
             if (!(accessor.getBlockEntity() instanceof StationBlockEntity station)) return;
-            com.otectus.immersivebrewing.blockentity.StationSummary.lines(station.view()).forEach(tooltip::add);
             CompoundTag tag = accessor.getServerData().getCompound("immersive_brewing");
+            if(!accessor.getPlayer().isShiftKeyDown()) {
+                if(tag.contains("cue")) tooltip.add(Component.translatable(tag.getString("cue")));
+                else com.otectus.immersivebrewing.blockentity.StationSummary.lines(station.view()).stream().limit(2).forEach(tooltip::add);
+                if(tag.contains("heat")) tooltip.add(Component.translatable("jade.immersive_brewing.heat",Component.translatable("heat.immersive_brewing.band."+tag.getInt("heat"))));
+                if(tag.contains("ready")) tooltip.add(Component.translatable("jade.immersive_brewing.ready",tag.getInt("ready")));
+                if(tag.contains("working")) tooltip.add(Component.translatable("jade.immersive_brewing.working",tag.getString("working")));
+                tooltip.add(Component.translatable("tooltip.immersive_brewing.details_hint"));
+                return;
+            }
+            com.otectus.immersivebrewing.blockentity.StationSummary.lines(station.view()).forEach(tooltip::add);
             if (tag.contains("cue")) tooltip.add(Component.translatable(tag.getString("cue")));
             if (tag.contains("heat")) tooltip.add(Component.translatable("jade.immersive_brewing.heat",
                     Component.translatable("heat.immersive_brewing.band." + tag.getInt("heat"))));

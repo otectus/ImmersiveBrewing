@@ -56,6 +56,40 @@ public final class StationGallery {
         return row.offset(dx, 0, 0);
     }
 
+    /** A default-resource-pack comparison: the authored apparatus beside familiar vanilla workstations. */
+    static BlockPos materialReference(ServerLevel level,BlockPos base) {
+        BlockPos origin=base.offset(0,0,-20);
+        Block[] apparatus={ModBlocks.APOTHECARY_MORTAR.get(),ModBlocks.BREWERS_KETTLE.get(),ModBlocks.ALEMBIC.get(),ModBlocks.APOTHECARY_RACK.get()};
+        Block[] vanilla={Blocks.CAULDRON,Blocks.BREWING_STAND,Blocks.FURNACE,Blocks.ANVIL};
+        for(int i=0;i<4;i++) {
+            BlockPos pos=origin.offset(-3+i*2,0,0),behind=pos.offset(0,0,-2);
+            level.setBlock(pos.below(),Blocks.STONE.defaultBlockState(),3);
+            level.setBlock(behind.below(),Blocks.STONE.defaultBlockState(),3);
+            place(level,pos,apparatus[i],Direction.SOUTH);
+            var state=vanilla[i].defaultBlockState();
+            var facing=net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING;
+            if(state.hasProperty(facing)) state=state.setValue(facing,Direction.SOUTH);
+            level.setBlock(behind,state,3);
+        }
+        level.setBlock(origin.offset(-5,0,-1),Blocks.SPRUCE_PLANKS.defaultBlockState(),3);
+        level.setBlock(origin.offset(5,0,-1),Blocks.CRAFTING_TABLE.defaultBlockState(),3);
+        level.setBlock(origin.offset(-5,0,1),Blocks.TORCH.defaultBlockState(),3);
+        level.setBlock(origin.offset(5,0,1),Blocks.TORCH.defaultBlockState(),3);
+        var kettle=(BrewersKettleBlockEntity)level.getBlockEntity(origin.offset(-1,0,0));
+        loaded(kettle);
+        var mortar=(com.otectus.immersivebrewing.blockentity.ApothecaryMortarBlockEntity)level.getBlockEntity(origin.offset(-3,0,0));
+        mortar.inventory().setStackInSlot(com.otectus.immersivebrewing.blockentity.ApothecaryMortarBlockEntity.INPUT,new ItemStack(Items.SUGAR));
+        var alembic=(AlembicBlockEntity)level.getBlockEntity(origin.offset(1,0,0));
+        var rack=(com.otectus.immersivebrewing.blockentity.ApothecaryRackBlockEntity)level.getBlockEntity(origin.offset(3,0,0));
+        ItemStack[] containers={new ItemStack(Items.GLASS_BOTTLE),PotionUtils.setPotion(new ItemStack(Items.POTION),Potions.SWIFTNESS),
+                PotionUtils.setPotion(new ItemStack(Items.SPLASH_POTION),Potions.HEALING),PotionUtils.setPotion(new ItemStack(Items.LINGERING_POTION),Potions.POISON)};
+        for(int i=0;i<containers.length;i++) {
+            alembic.inventory().setStackInSlot(AlembicBlockEntity.INPUT+i,containers[i].copy());
+            rack.inventory().setStackInSlot(i,containers[i].copy());
+        }
+        return origin;
+    }
+
     /** Server thread: places the row and starts its jobs. */
     static void build(ServerLevel level, BlockPos base) {
         row = base.offset(0, 0, -6);

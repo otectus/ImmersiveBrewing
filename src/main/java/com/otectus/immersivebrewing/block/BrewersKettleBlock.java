@@ -8,13 +8,18 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
-/** Iron vessel with a copper rim over an enclosed blaze burner, draft vent at the front and a bottle rack behind (spec 4). */
+/**
+ * An open copper pot with a lowered near rim over an iron firebox (1.2.0 close-up composition): the bottle rail in front
+ * (outside the collision shape, like a shelf ledge), the spout carriage's pipe along the near side, the dose tray and
+ * book stand on the left and the by-product basket on the right.
+ */
 public class BrewersKettleBlock extends StationBlock {
     private static final StationShape SHAPE = new StationShape(
-            new double[] {1, 0, 1, 15, 5, 15},     // burner housing
-            new double[] {2, 5, 2, 14, 13, 14},    // vessel
-            new double[] {1, 13, 1, 15, 14, 15},   // copper rim
-            new double[] {0, 0, 13, 16, 9, 16});   // bottle rack at the back
+            new double[] {0.6, 0, 0.8, 15.4, 4, 15.4},    // firebox
+            new double[] {2, 4, 3, 12, 12.5, 15},         // vessel
+            new double[] {0.6, 4, 0.8, 15.4, 9.9, 1.6},   // spout pipe and posts
+            new double[] {12.2, 4, 4.1, 15.8, 9, 15.9},   // dose tray and book stand
+            new double[] {0.2, 4, 11.4, 2.2, 6.6, 15.4}); // by-product basket
 
     public BrewersKettleBlock(Properties properties) {
         super(properties);

@@ -25,21 +25,25 @@ public class KettleScreen extends StationScreen<KettleMenu> {
     @Override
     protected void init() {
         super.init();
-        plan = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.choose_plan"),
-                b -> action(StationActionC2S.Action.REQUEST_PLANS, 0)).bounds(leftPos + 8, topPos + 66, 76, 18).build());
+        plan = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.plans_short"),
+                b -> action(StationActionC2S.Action.REQUEST_PLANS, 0))
+                .tooltip(Tooltip.create(Component.translatable("screen.immersive_brewing.choose_plan")))
+                .bounds(leftPos + 8, topPos + 94, 76, 18).build());
         resume = addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.resume"),
-                b -> action(StationActionC2S.Action.RESUME, 0)).bounds(leftPos + 8, topPos + 66, 76, 18).build());
+                b -> action(StationActionC2S.Action.RESUME, 0)).bounds(leftPos + 8, topPos + 94, 76, 18).build());
         comparator = addRenderableWidget(Button.builder(Component.literal("≡"), b -> action(StationActionC2S.Action.TOGGLE_COMPARATOR, 0))
-                .bounds(leftPos + 88, topPos + 66, 18, 18).build());
+                .bounds(leftPos + 88, topPos + 94, 18, 18).build());
         comparator.setTooltip(Tooltip.create(Component.translatable("screen.immersive_brewing.comparator_tip")));
-        addRenderableWidget(Button.builder(Component.translatable("staging.immersive_brewing.collect"),b->batch(false))
-                .bounds(leftPos+imageWidth+3,topPos+4,65,18).build());
-        addRenderableWidget(Button.builder(Component.translatable("staging.immersive_brewing.return"),b->batch(true))
-                .bounds(leftPos+imageWidth+3,topPos+25,65,18).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.collect_short"),b->batch(false))
+                .tooltip(Tooltip.create(Component.translatable("staging.immersive_brewing.collect")))
+                .bounds(leftPos + 180, topPos + 32, 78, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.return_short"),b->batch(true))
+                .tooltip(Tooltip.create(Component.translatable("staging.immersive_brewing.return")))
+                .bounds(leftPos + 180, topPos + 58, 78, 20).build());
         seal=addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.seal"),b->action(StationActionC2S.Action.CANCEL_PASSIVE,0))
-                .bounds(leftPos+imageWidth+3,topPos+46,65,18).build());
-        addRenderableWidget(Button.builder(Component.translatable("item.immersive_brewing.brewers_notebook"),b->minecraft.setScreen(new NotebookScreen()))
-                .bounds(leftPos+imageWidth+3,topPos+67,65,18).build());
+                .bounds(leftPos + 180, topPos + 110, 78, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.immersive_brewing.notebook_short"),b->minecraft.setScreen(new NotebookScreen()))
+                .bounds(leftPos + 180, topPos + 84, 78, 20).build());
     }
 
     private void batch(boolean unused) {
@@ -66,18 +70,12 @@ public class KettleScreen extends StationScreen<KettleMenu> {
 
     @Override
     protected void renderExtras(GuiGraphics g, int mouseX, int mouseY) {
-        Ui.Palette p = Ui.palette();
-        // Captions label real menu roles; they are never fake stacks or requirements.
-        label(g, Component.translatable("screen.immersive_brewing.slot.bottles"), 35, 7, 108, p.muted(), mouseX, mouseY);
-        label(g, Component.translatable("screen.immersive_brewing.slot.fuel"), 8, 31, 22, p.muted(), mouseX, mouseY);
-        label(g, Component.translatable("screen.immersive_brewing.slot.reagents"), 35, 31, 108, p.muted(), mouseX, mouseY);
-        label(g, Component.translatable("screen.immersive_brewing.slot.paddle"), 143, 7, 28, p.muted(), mouseX, mouseY);
-        label(g, Component.translatable("screen.immersive_brewing.slot.returns"), 116, 55, 52, p.muted(), mouseX, mouseY);
-        String[] roles = {"bottle", "bottle", "bottle", "bottle", "bottle", "bottle", "reagent", "reagent", "reagent", "reagent", "fuel", "paddle", "returns", "returns"};
-        for (int i = 0; i < Math.min(roles.length, menu.slots.size()); i++) {
+        g.fill(leftPos + 174, topPos + 24, leftPos + 175, topPos + 112, Ui.palette().panelDark());
+        for (int i = 0; i < com.otectus.immersivebrewing.blockentity.BrewersKettleBlockEntity.SLOTS; i++) {
             if (!menu.slots.get(i).getItem().isEmpty()) continue;
             var slot = menu.slots.get(i);
-            g.blit(new ResourceLocation("immersive_brewing", "textures/gui/slot_roles/" + roles[i] + ".png"),
+            String role = KettleMenu.slotRole(i);
+            g.blit(new ResourceLocation("immersive_brewing", "textures/gui/slot_roles/" + role + ".png"),
                     leftPos + slot.x, topPos + slot.y, 0, 0, 16, 16, 16, 16);
         }
     }
@@ -85,18 +83,21 @@ public class KettleScreen extends StationScreen<KettleMenu> {
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
         super.renderLabels(g, mouseX, mouseY);
+        Ui.Palette p = Ui.palette();
+        label(g, Component.translatable("screen.immersive_brewing.slot.bottles"), 35, 20, 108, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.reagents"), 35, 54, 108, p.muted(), mouseX, mouseY);
+        label(g, Component.translatable("screen.immersive_brewing.slot.returns"), 116, 84, 52, p.muted(), mouseX, mouseY);
         StationBlockEntity station = station();
         if (station == null) return;
-        Ui.Palette p = Ui.palette();
         Component fuel = Component.translatable("screen.immersive_brewing.fuel_charges", station.fuelCharges());
-        label(g, station.view().status(), 8, 88, imageWidth - 16, p.text(), mouseX, mouseY);
-        label(g, fuel, 8, 100, imageWidth - 16, p.muted(), mouseX, mouseY);
+        label(g, station.view().status(), 8, 116, seal.visible ? 160 : imageWidth - 16, p.text(), mouseX, mouseY);
+        label(g, fuel, 8, 128, 160, p.muted(), mouseX, mouseY);
         int empty=0,filled=0;
         for(int i=0;i<6;i++) {
             var stack=menu.slots.get(i).getItem();
             if(stack.is(net.minecraft.world.item.Items.GLASS_BOTTLE)) empty++;
             else if(!stack.isEmpty())filled++;
         }
-        if(empty>0) label(g,Component.translatable("staging.immersive_brewing.water",filled,empty*250),8,111,imageWidth-16,p.muted(),mouseX,mouseY);
+        if(empty>0) Ui.wrappedMax(g,Component.translatable("staging.immersive_brewing.water",filled,empty*250),180,142,78,4,p.muted());
     }
 }

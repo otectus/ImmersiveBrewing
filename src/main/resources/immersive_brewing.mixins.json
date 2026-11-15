@@ -11,7 +11,10 @@
     "ArrowMixin",
     "BrewingStandBlockEntityMixin"
   ],
-  "client": ["ItemInHandRendererMixin"],
+  "client": [
+    "ItemInHandRendererMixin",
+    "CameraMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

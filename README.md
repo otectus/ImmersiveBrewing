@@ -11,8 +11,14 @@ the ordinary potion; better work lasts a little longer and drinks a little faste
 Minecraft 1.20.1, Forge 47 or later, Java 17. Install on both the client and the server.
 
 This branch is in development (the version it builds is set in `gradle.properties`); this document does not announce a
-release. The hands-on workshop and its validation status are described in
-[`docs/reports/1.2.0-hands-on-overhaul.md`](docs/reports/1.2.0-hands-on-overhaul.md).
+release. The hands-on workshop is described in
+[`docs/reports/1.2.0-hands-on-overhaul.md`](docs/reports/1.2.0-hands-on-overhaul.md) and its close-up camera, direct
+setup and continuous transfers, with their validation status, in
+[`docs/reports/1.2.0-close-up-workshop.md`](docs/reports/1.2.0-close-up-workshop.md).
+The texture, model, interface and working-view refinements, with comparison sheets and runtime checks, are recorded in
+[`docs/reports/1.2.0-visual-refinement.md`](docs/reports/1.2.0-visual-refinement.md). The follow-up review of vanilla-style
+materials, connected geometry, panel borders and HUD framing is in
+[`docs/reports/1.2.0-vanilla-style-review.md`](docs/reports/1.2.0-vanilla-style-review.md).
 
 ## The workshop
 
@@ -20,14 +26,15 @@ release. The hands-on workshop and its validation status are described in
 | --- | --- |
 | **Apothecary's Mortar** | Prepares one to four units of a reagent at once in the bowl: press and grind with the pestle until the texture is even, fold uneven spots with the scraper, then scrape it into the dose cup. Each material behaves differently (crystalline, fibrous, soft, brittle, liquid); working past the endpoint only makes fines. Each unit becomes a Prepared Reagent Kit carrying an *extraction* score. |
 | **Brewer's Kettle** | Brews one to six bottles of one kind as one batch: tip the bottles in, set the burner, tip each dose in from its cup when the liquid is warm, stir with the paddle while anything is undissolved, let the surface settle and fill each bottle from the spout. Each reaction family (foam, sediment, shimmer, streaks, bubbles, whorls, glints, motes) wants its own balance of heat and agitation and shows on the surface what it needs. Its *control* score and the reagents' extraction make the quality. |
-| **Alembic** | Purifies three identical potions into two better ones (or six into four), once per potion line, up to quality 70: fill the coolant jacket with water, pour the charge, close the clamp, set the burner and coolant valves and move the diverter so the cloudy heads and hazy tails go to waste and only the clear heart reaches the receiver. Reclaims unwanted potions into Spent Alchemical Salt and their glass bottles on its own, without a player. |
+| **Alembic** | Purifies three identical potions into two better ones (or six into four), once per potion line, up to quality 70: fill the coolant jacket with water, pour the charge, close the clamp, set the burner and coolant valves and move the diverter so the cloudy heads and hazy tails go to waste and only the clear heart reaches the receiver. Its fitting chooses purification or reclamation (and shows the other's outcome first); reclamation turns unwanted potions into Spent Alchemical Salt and their glass bottles on its own, without a player. |
 | **Apothecary Rack** | Stores six exact potion stacks with reservation ghosts and short shelf labels. Take, place, pack and unpack directly at its positions and carrier cradle; it packs matching stacks into a Batch Carrier or restocks from the carrier without merging unlike metadata. |
 
-Every station is worked in place. An ordinary right-click with an empty hand opens its *working view*: the world keeps
-drawing, nothing hides the apparatus, and the cursor (or `Tab`) picks its parts. Right-clicking while holding something
-puts it where it belongs (bottles in the rack, reagents on the tray or in the bowl, fuel in the burner, a paddle on its
-rest, water in the jacket). Every action is a request the server checks against the station's own part volumes, your
-reach and line of sight; a refused action changes nothing and says why.
+Every station is worked in place. An ordinary right-click with an empty hand opens its *working view*: the camera moves
+from your eyes to a close-up above the apparatus, so you look into the pot, the bowl or the still, and the cursor (or
+`Tab`) picks its parts. Your hotbar stays as the supply strip, and your health and food stay in view. Right-clicking a
+station while holding something puts one of it where it belongs (bottles in the rack, reagents on the tray or in the
+bowl, fuel in the burner, a paddle on its rest, water in the jacket). Every action is a request the server checks
+against the station's own part volumes, your reach and line of sight; a refused action changes nothing and says why.
 
 Also: wooden and iron brewing paddles; the Batch Carrier (six exact stacks, a selected slot and named loadout); the
 Brewer's Notebook (guided onboarding, server-backed recipe support, favourites, a 32-batch journal, pinned checklist
@@ -40,23 +47,34 @@ pane: its light-gray stained counterpart).
    grants the Brewer's Notebook. Its Practice page starts short lessons at a real, idle station (take up and put down a
    tool, the burner, a dose, then a whole batch); practice never consumes ingredients, creates output or awards
    productive milestones.
-2. Load the Kettle by right-clicking it with three water bottles, raw nether wart, raw sugar, blaze powder and the
-   paddle (or with empty bottles and a water bucket: one bucket fills four). The Mortar is optional for this first
-   batch: raw preparable reagents contribute extraction 50.
-3. Right-click the Kettle with an empty hand, click the route book and choose Potion of Swiftness. The plan screen can
-   stage exact bottles from the Kettle, your inventory or a selected Batch Carrier; review the exact costs (one reagent
-   per three bottles per step and one fuel charge per application), then **Set out the batch**. You are back at the
-   apparatus with the bottles in the rack and each dose in its own cup.
-4. Click each bottle to tip it into the kettle (or toggle batch actions with `C` to pour them all in turn). Scroll over
-   the burner control to warm the liquid until small bubbles rise. Click the first dose cup, then the kettle mouth to
-   tip it in. Click the paddle and move it through the liquid while pieces still float; the words at the top of the
-   view always say what the brew needs, and the surface shows it too.
-5. When the reaction settles, tip in the next dose. After the last one, shut the burner, put the paddle down and let
-   the surface calm. When the cue says *Ready*, click the spout once for each bottle (or once, with batch actions on).
-   The bottles in the rack carry their grade; hover one for the effective duration.
-6. Prepare sugar at the Mortar on a later batch when you want extraction above the raw baseline and a route toward
+2. Right-click the Kettle with an empty hand. The camera moves above it: the opening and the liquid in the middle, the
+   bottle rail in front, the dose tray and book stand on the left, the paddle on the right, the burner dial and fuel
+   hatch at the front. Put in three water bottles, raw nether wart, raw sugar, blaze powder and the paddle from your
+   hotbar: choose the item with its hotbar key or the mouse wheel and click where it goes (bottles on the rail, the
+   reagents on the tray, the powder in the fuel hatch, the paddle on its rest). A click places one; shift-click, or `C`
+   and a click, places the rest of the stack. The Mortar is optional for this batch: raw preparable reagents contribute
+   extraction 50.
+3. The small page on the book stand shows what the staged supplies make: Swiftness, three servings, the wart then the
+   sugar, and the fuel it takes. A faint ghost shows where anything missing belongs. If several routes fit, click the
+   book to turn to the next page.
+4. Click a bottle to lift it, bring it over the opening and click to tip it in. That starts the batch the page shows,
+   exactly as shown; nothing is used before. Shift-click another bottle (or `C`, then click it) to pour the rest, one
+   after the other.
+5. Scroll over the burner dial to warm the liquid until small bubbles rise. Click the first dose cup, carry it over
+   the opening and click to tip it in. Click the paddle and move the cursor in circles through the liquid while pieces
+   still float; where sediment settles, hold the left button to sweep the bottom. The surface shows what the brew
+   needs; with guidance on, a short line says it too.
+6. When the reaction settles, tip in the next dose (clicking its cup while you hold the paddle puts the paddle back on
+   its rest). After the last one, turn the burner down, right-click to rest the paddle and let the surface calm. When
+   it is ready, shift-click the spout to fill every bottle in turn. The bottles carry their grade (hover one for the
+   effective duration); shift-click one to take them all.
+7. Prepare sugar at the Mortar on a later batch when you want extraction above the raw baseline and a route toward
    Masterwork: put up to four units in the bowl, take up the pestle, press and grind until the texture is even, fold
-   with the scraper where it is uneven and scrape it into the dose cup.
+   with the scraper where it is uneven and click the dose cup to scrape it in.
+
+No menu is part of this. The full recipe search (right-click the book stand, or `K`) stays available: it searches every
+route, can stage exact bottles from the Kettle, your inventory or a selected Batch Carrier, and a route chosen there
+becomes the page.
 
 Plans chain: from water the Kettle offers Awkward, Swiftness through Awkward, splash and lingering versions, and so
 on. Starting from a potion you already have charges only the remaining steps.
@@ -81,25 +99,30 @@ the real drawer and route book stay closed while it runs.
 
 | Action | Mouse | Keyboard |
 | --- | --- | --- |
-| Pick a part | point at it | `Tab` / `Backspace` cycle the parts in a fixed order |
-| Use the picked part (take a tool, lift a dose or bottle, tip it, open the spout, close a clamp) | left click | `Enter` |
+| Pick a part | point at it | `Tab` / `Backspace` cycle the parts, the ones the work needs now first |
+| Choose the supply in hand | the wheel (with empty hands, away from a control) | the hotbar keys |
+| Use the picked part (take a tool, lift a dose or bottle, tip it, open the spout, close the clamp, move the diverter, turn the Alembic's fitting) | left click | `Enter` |
 | Work a held tool (stir, grind, fold) | move it over the liquid or the bowl | hold `Space` (or toggle it), move it with the arrow keys, `Page Up`, `Page Down` |
 | Press with the pestle | click the bowl where you want to press | select the bowl, `Enter` (it presses where the pestle is) |
+| Sweep the bottom with the paddle | hold the left button while stirring | `V` toggles |
 | Put a tool down, or return a carried dose or bottle | right click, or click its rest | `X` |
-| Turn a burner, valve or diverter | scroll over it, or drag it | select it, `Up` / `Down` |
-| Effort (gentle, normal, firm) | | `F` |
-| Batch action (pour, fill or take all in turn) | | `C` toggles |
+| Turn a burner or valve | scroll over it, or drag it | select it, `Up` / `Down` |
+| Effort (gentle, normal, firm) | the wheel while holding a tool | `F` |
+| Batch action (place, pour, fill or take all in turn) | shift-click | `C`, then use the part |
+| Look closer, and back | middle click | `Z` |
+| Full control help | | `H` |
 | Seal the batch | the Kettle's lid | `L` (any station) |
 | Reopen a sealed batch | the lid, clamp or bowl | select it, `Enter` |
-| Drawer, route book, turn to the next station, withdraw an untouched batch, practise | | `I`, `K`, `N`, `Delete`, `P` |
+| Drawer, full recipe search, the next station, withdraw an untouched batch, practise | | `I`, `K`, `N`, `Delete`, `P` |
 | Leave | | `Esc` (or the inventory key, or a movement key with empty hands) |
 
 No action needs two keys at once. Taking damage, dying, changing dimension, walking out of reach or disconnecting
 closes the working view and puts every tool down; losing window focus releases any held key or button. Nothing is
 resumed automatically.
 
-Client options (`config/immersive_brewing-client.toml`) include the focus camera (turns your view toward the apparatus,
-or keep your own view), hold-to-grab, toggle work, keyboard-only tool movement, tool sensitivity, dead zone and visual
+Client options (`config/immersive_brewing-client.toml`) include the camera style (the close-up glide, the same view as a
+cut, or your own eyes with no camera movement), how much the view says (minimal, guided or detailed), whether your arm
+is drawn at the grip, hold-to-grab, toggle work, keyboard-only tool movement, tool sensitivity, dead zone and visual
 smoothing, a left-handed (mirrored) presentation, part labels, standard/high-contrast/colour-blind palettes, reduced
 motion, particle and animation intensity, an optional small screen shake (off by default), written cues, numeric
 readings, narration through Minecraft's narrator and sound volumes. None of them changes what the server accepts or how
@@ -213,7 +236,11 @@ Back up a world before trying a development build.
 - Recipes, reagent and brew profiles, potion data, item and block IDs, carrier and rack payloads and the quality
   formula are unchanged. Datapacks may add `workshop_profiles` to tune the hands-on work (`docs/DATAPACKS.md`).
 - Client options: the old stirring, pressure and reduced-input toggles keep their keys and now control the working
-  view's held tools (see `docs/CONFIGURATION.md`). The network protocol changed; client and server need the same build.
+  view's held tools (see `docs/CONFIGURATION.md`). The camera is chosen by the new `cameraStyle`; while it is `AUTO`, a
+  `cameraMode` of `DIRECT` from an earlier development build keeps your own view, so nobody who chose it is given a
+  moving camera. The network protocol changed (version 6); client and server need the same build.
+- Hands-on batches set out before the close-up update keep their original Kettle rules (process version 1); only
+  batches set out with this build use the paddle's posture (process version 2).
 
 ## Migration notes: 1.0.x to 1.1.0
 
@@ -275,7 +302,8 @@ python3 tools/generate_sounds.py --check
 Optional runtime switches: `-PwithSmithing`, `-PwithTanning`, `-PwithJewelry`, `-PwithEnchanting` (the sister jars are
 in `libs/`), `-PwithApothecary`, `-PwithMorePotions`, `-PwithPotionsMaster`, `-PwithRpgPotions` or `-PwithPotionMods` for
 all four potion mods (also in `libs/`, compile-only/runtime-only for development and never shipped). The smoke client
-also accepts `-PguiScale=N` and `-Pwindow=WxH`.
+also accepts `-PguiScale=N`, `-Pwindow=WxH` and `-Pvariant=<name>`; `-Pvariant=journey` plays the real-input journeys
+and records them to `run/footage/` (needs `ffmpeg`).
 
 ## License
 

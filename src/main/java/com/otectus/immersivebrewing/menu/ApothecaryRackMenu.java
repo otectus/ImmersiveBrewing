@@ -17,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 
 /** Conventional six-slot rack inventory. Filter and pack buttons are server-routed through the open menu. */
 public class ApothecaryRackMenu extends AbstractContainerMenu {
+    public static final int WIDTH = 248, HEIGHT = 232;
     public static final int FILTER_BASE = 0;
     public static final int PACK_BUTTON = 10;
     private final BlockPos pos;
@@ -26,15 +27,16 @@ public class ApothecaryRackMenu extends AbstractContainerMenu {
         super(ModMenus.APOTHECARY_RACK.get(), id);
         this.pos = pos;
         this.rack = inventory.player.level().getBlockEntity(pos) instanceof ApothecaryRackBlockEntity be ? be : null;
-        if (rack != null) {
-            // Server indices remain row-major: 0..2 top, 3..5 bottom.
-            for (int i = 0; i < ApothecaryRackBlockEntity.SLOTS; i++)
-                addSlot(new SlotItemHandler(rack.inventory(), i, 35 + (i % 3) * 18, 16 + (i / 3) * 20));
-        }
+        // Server indices remain row-major: 0..2 top, 3..5 bottom. A client that has not received the rack's block entity
+        // yet (placed a moment before) still gets the server's slot layout, over a stand-in, so the contents land right.
+        net.minecraftforge.items.IItemHandler positions = rack != null ? rack.inventory()
+                : new net.minecraftforge.items.ItemStackHandler(ApothecaryRackBlockEntity.SLOTS);
+        for (int i = 0; i < ApothecaryRackBlockEntity.SLOTS; i++)
+            addSlot(new SlotItemHandler(positions, i, 70 + i * 18, 36));
         for (int row = 0; row < 3; row++) for (int col = 0; col < 9; col++) {
-            addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 85 + row * 18));
+            addSlot(new Slot(inventory, col + row * 9 + 9, 43 + col * 18, 150 + row * 18));
         }
-        for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col, 8 + col * 18, 143));
+        for (int col = 0; col < 9; col++) addSlot(new Slot(inventory, col, 43 + col * 18, 208));
     }
 
     public static ApothecaryRackMenu fromNetwork(int id, Inventory inventory, FriendlyByteBuf buf) {

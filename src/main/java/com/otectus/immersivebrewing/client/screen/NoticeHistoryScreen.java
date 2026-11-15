@@ -29,7 +29,12 @@ public final class NoticeHistoryScreen extends Screen {
         content.begin(g); int cy = content.top();
         var notices = StationNotices.history();
         if (notices.isEmpty()) cy += Ui.wrapped(g, Component.translatable("notice.immersive_brewing.history_empty"), x + 8, cy, content.width(), Ui.palette().muted());
-        for (Component notice : notices) cy += Ui.wrapped(g, notice, x + 8, cy, content.width(), Ui.palette().text()) + 4;
+        for(int i=notices.size()-1;i>=0;i--) {
+            Component notice=notices.get(i);
+            int rowH=Ui.lines(notice,content.width()-12)*10+10;
+            Ui.inset(g,x+8,cy,content.width(),rowH);
+            Ui.wrapped(g,notice,x+14,cy+5,content.width()-12,Ui.palette().insetText());cy+=rowH+5;
+        }
         content.end(g, cy); super.render(g, mx, my, partial);
     }
     @Override public boolean mouseScrolled(double mx, double my, double delta) { return content.wheel(mx, my, delta) || super.mouseScrolled(mx, my, delta); }

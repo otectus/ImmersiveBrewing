@@ -9,9 +9,10 @@ import java.util.function.Supplier;
 
 /**
  * The server accepted (or ended) a player's working view at a station: the client opens or closes its focus surface.
- * Sent only after the ordinary block use passed every interaction and protection check on the server.
+ * Sent only after the ordinary block use passed every interaction and protection check on the server. {@code epoch}
+ * numbers the view: the client stamps it on every intent, so nothing sent from an earlier view is applied to this one.
  */
-public record WorkshopFocusS2C(BlockPos pos, int kind, boolean open, String reason) {
+public record WorkshopFocusS2C(BlockPos pos, int kind, boolean open, String reason, int epoch) {
     /** Installed by client setup; common code never loads client classes. */
     public static volatile Consumer<WorkshopFocusS2C> clientHandler = message -> {};
 
@@ -20,10 +21,11 @@ public record WorkshopFocusS2C(BlockPos pos, int kind, boolean open, String reas
         buf.writeByte(kind);
         buf.writeBoolean(open);
         buf.writeUtf(reason, 256);
+        buf.writeVarInt(epoch);
     }
 
     public static WorkshopFocusS2C decode(FriendlyByteBuf buf) {
-        return new WorkshopFocusS2C(buf.readBlockPos(), buf.readUnsignedByte(), buf.readBoolean(), buf.readUtf(256));
+        return new WorkshopFocusS2C(buf.readBlockPos(), buf.readUnsignedByte(), buf.readBoolean(), buf.readUtf(256), buf.readVarInt());
     }
 
     public void handle(Supplier<NetworkEvent.Context> ctx) {

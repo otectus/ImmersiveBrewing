@@ -30,10 +30,39 @@ This section describes the current development tree; it is not a release announc
   the client at an idle station and changes nothing.
 - Saves: new batches use ledger schema 3 with a versioned process payload; a running batch loads sealed. Batches saved
   by 1.1 finish through their original interface from the route book stand. Recipes, item and block IDs, potion data and
-  the quality formula are unchanged. Network protocol version 5.
+  the quality formula are unchanged. Network protocol version 6 (client and server need the same build).
 - New server options `participantRange`, `coolantCapacityMb` and `coolantPerGroupMb`; new client options for the
   working view. Existing control options keep their keys with their hands-on meaning (`docs/CONFIGURATION.md`).
 - Details, validation results and limits: `docs/reports/1.2.0-hands-on-overhaul.md`.
+
+Close-up workshop (the cinematic hands-on handoff, also in this development version):
+
+- The working view now looks into the apparatus: the camera glides from your eyes to a close-up above each station and
+  back, fitted to the window and kept out of walls, with an inspect view (`Z` or the middle button). `cameraStyle`
+  chooses `CLOSE_UP`, `INSTANT` (a cut) or `EYE` (no camera movement); a player who had chosen `DIRECT` keeps their
+  own view. The cursor picks through the camera that drew the frame.
+- No menu is needed for a routine Kettle batch: a page on the book stand shows the batch the staged bottles and tray
+  would make (potion, servings, steps, exact costs) and where a missing supply belongs; equally good routes turn as
+  pages. Lifting a bottle and tipping it in starts exactly that page; if the page changed first, nothing is used. The
+  searchable planner remains on the book's secondary action and `K`.
+- Bottles and dose cups are lifted, carried over the mouth and tipped as one continuous motion; other players see the
+  carried object, and batch actions pour or fill one bottle at a time at a visible pace. Supplies go in from the
+  hotbar (its keys and the wheel choose what is in hand): a click places one, the batch action places the rest.
+- The liquid answers: the paddle leaves a wake, pours and doses ripple where they land and each dose arrives as
+  pieces of its own kind. Resource packs can tune this with presentation profiles (`docs/DATAPACKS.md`).
+- The paddle can sweep the bottom (hold the left button, or `V`); dense sediment clears far faster that way. Batches
+  set out before this change keep their original rules. With the paddle in hand, clicking the next dose cup puts the
+  paddle back on its rest and lifts the cup, and clicking the rest puts the paddle down.
+- `guidance` sets how much is said (minimal, guided, detailed); the hotbar, health and food stay visible; your arm
+  grips the tool or vessel (`hands`). `N` moves the view to a neighbouring station.
+- The Kettle was recomposed around a wider opening with the bottle rail in front; the Alembic shows boiler, condenser,
+  diverter, receiver and a separate waste crock, and its fitting chooses purification or reclamation before charging.
+  In the Rack's working view the bottle under the cursor turns its label toward you.
+- Opening a station's or the Rack's menu right after placing it no longer misplaces its contents (the client built the
+  menu without the station's slots until the block entity arrived).
+- New client options `cameraStyle`, `cameraSeconds`, `closeUpFov`, `guidance` and `hands`; `cameraMode` is kept as a
+  legacy setting (`docs/CONFIGURATION.md`). Details, validation results and limits:
+  `docs/reports/1.2.0-close-up-workshop.md`.
 
 ## 1.1.1 — Unreleased development
 

@@ -233,8 +233,9 @@ How the hands-on work feels at each apparatus. Every value is optional tuning on
 ships no workshop profiles gets a translation of its reagent and brew profiles, so existing datapacks keep working. The
 built-in profiles live in `data/immersive_brewing/immersive_brewing/workshop_profiles/{preparation,brewing,distillation}/`.
 `schema_version` is 1; a newer version is rejected. Unknown fields are reported as warnings and ignored.
-`presentation` (a resource location) is reserved for a future presentation hook: it is parsed and stored, and has no
-effect yet.
+`presentation` (a resource location, optional) names the client presentation profile the batch is shown with (see
+Presentation profiles below). The server only passes the id along in the station's snapshot; it never decides a cost,
+a yield or a rule. The built-in brewing profiles name `immersive_brewing:brewing/<reaction>`.
 
 ### Preparation (`"kind": "preparation"`)
 
@@ -329,6 +330,57 @@ keeps the previous dataset on `/reload`, as for other definitions. When a batch 
 profile it came from (or `translated:<id>` for a fallback) are saved in its process payload, so a later reload never
 changes a running batch. `/immersivebrewing profile <item>` and `/immersivebrewing explain plan <key>` show which workshop
 profile, or which translation, applies.
+
+## Presentation profiles (resource packs)
+
+How a batch looks in the close-up working view, in client resources rather than server data:
+`assets/<namespace>/immersive_brewing/presentation/<path>.json`, named `<namespace>:<path>` by a workshop profile's
+`presentation` field. They are reloaded with the client's resources (F3+T); changing one never needs a world migration.
+A presentation profile can not change a cost, a yield, reach, permissions or quality, and an unsupported or missing
+profile never makes a recipe unusable: anything missing or invalid falls back to the generic scene, with a warning in
+the client log. In this version the Kettle uses a profile for its liquid, dose arrivals, surface accents and vapour; the
+close-up camera applies a profile's small angle adjustments at any station.
+
+```json
+{
+  "schema_version": 1,
+  "station": "kettle",
+  "material": "crystal",
+  "liquid": { "tint": "#6FB7E0", "clarity": 0.9, "foam": "#FFF8E0" },
+  "fragments": { "count": 3, "scale": 1.0, "item": "minecraft:sugar" },
+  "effects": { "glints": 1.0, "bubbles": 0.3, "motes": 0.0, "steam": 0.5 },
+  "camera": { "pitch": 0, "yaw": 0 }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | 1 (the default). A newer or older version is rejected and the generic scene is used. |
+| `station`, `sounds` | Accepted and currently unused. Any other unknown field is reported as a warning and ignored. |
+| `material` | The arrival family for a dose that neither the reagent table below nor the dose's reagent profile describes: `crystal` (grains or a short stream, brief cloudy trails), `fibrous` (a few recognisable pieces that soften and leave infusion trails), `paste` (a cohesive dollop folding in), `liquid` (a stream and a spreading plume), `particulate` (a restrained cluster of flakes or motes) or `generic` (the default: a neutral piece). |
+| `liquid.tint` | `#RRGGBB`, mixed into the reaction's own stage colours (up to 35 % as each dose's reaction proceeds). Without it the liquid shows the stage colours alone. |
+| `liquid.clarity` | 0.2-1.0, default 0.75: how strongly the liquid's colour reads over the vessel (its opacity; lower is more see-through). |
+| `liquid.foam` | `#RRGGBB`, default `#F4F6FF`: the colour of froth on the surface. |
+| `fragments.count` | 0-6, default 3: scales how many pieces each dose arrives as, relative to its arrival family's usual number (3 or 0 keep it, 6 doubles it, rounded down and within the surface's limit). |
+| `fragments.scale` | 0.5-2.0, default 1.0: the size of those pieces. |
+| `fragments.item` | An item id drawn for the pieces; an id that is not a registered item is reported and the dose's own item is used. |
+| `effects.glints` | 0-1, default 0: up to six glints riding the flow, on top of what the reaction family shows. |
+| `effects.motes` | 0-1, default 0: up to eight motes on the surface. |
+| `effects.bubbles` | 0-1, default 0.5: scales the bubbles that break at the surface with heat (0.5 keeps the usual number, 1 is half as many again, 0 half as many). |
+| `effects.steam` | 0-1, default 0.5: scales the vapour over a working kettle in the same way. |
+| `camera.pitch` | -10 to 10 degrees added to the station's authored close-up pitch. |
+| `camera.yaw` | -20 to 20 degrees added to its yaw. |
+
+A value outside its range rejects that profile (the generic scene is used). The reagent table
+`assets/immersive_brewing/immersive_brewing/presentation/reagents.json` says how each known ingredient arrives:
+
+```json
+{ "schema_version": 1, "reagents": { "minecraft:sugar": { "material": "crystal", "color": "#F4F1EA", "size": 0.6 } } }
+```
+
+`size` is 0.5-2.0 (default 1). Entries for items that are not installed are skipped silently; an invalid entry is
+reported and skipped. An ingredient without an entry arrives as the family its reagent profile prepares as (crystalline
+and brittle as `crystal`, fibrous, soft as `paste`, liquid), else as a neutral generic piece drawn with its own item.
 
 ## Effect policies
 

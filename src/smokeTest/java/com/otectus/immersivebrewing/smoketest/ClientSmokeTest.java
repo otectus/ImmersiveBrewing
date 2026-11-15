@@ -100,9 +100,21 @@ public final class ClientSmokeTest {
      * Without a variant every one of those options is reset to its default.
      */
     private static final String VARIANT = System.getProperty("immersive_brewing.smoketest.variant");
-    private static final boolean KEYBOARD = "keyboard".equals(VARIANT);
+    private static final boolean ARM_CHECK_ONLY = "arms_eye".equals(VARIANT);
+    private static final boolean KEYBOARD = "keyboard".equals(VARIANT) || ARM_CHECK_ONLY;
     private static final KeyboardDriver DRIVER = new KeyboardDriver();
     private static final WorkshopDriver WORKSHOP = new WorkshopDriver(KEYBOARD);
+    /**
+     * {@code journey}: only the real-input journeys (handoff 15.3) with uncut footage in {@code run/footage}: a mortar
+     * preparation, a guided first batch, the same batch with help off, a purification, and an observer's view of a second
+     * brewer. Every apparatus action there is the window's own mouse and keyboard input ({@link RealJourney}).
+     */
+    private static final boolean JOURNEY_RUN = "journey".equals(VARIANT);
+    private static final RealJourney JOURNEY = new RealJourney(name -> shot(Minecraft.getInstance(), name), ClientSmokeTest::log);
+    private static final java.util.Set<String> journeyScreens = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+    private static final int[] journeyAcks = new int[3];
+    private static final List<java.util.concurrent.CompletableFuture<Map<String, Object>>> footage = new ArrayList<>();
+    private static volatile ObserverBrewer observer;
     private static final java.util.concurrent.atomic.AtomicReference<net.minecraft.nbt.CompoundTag> SEALED_PROCESS = new java.util.concurrent.atomic.AtomicReference<>();
     private static final java.util.concurrent.atomic.AtomicReference<String> PRACTICE_BEFORE = new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -125,7 +137,7 @@ public final class ClientSmokeTest {
             (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
     private static boolean denseMeasuring() { return denseUntilMillis != 0 && denseUntilMillis != Long.MAX_VALUE; }
 
-    private record Step(String name, BooleanSupplier ready, Runnable action) {}
+    private record Step(String name, BooleanSupplier ready, Runnable action, int timeout) {}
 
     private static final List<Step> steps = new ArrayList<>();
     private static int stepIndex;
@@ -209,6 +221,14 @@ public final class ClientSmokeTest {
                 org.lwjgl.glfw.GLFW.glfwFocusWindow(mc.getWindow().getWindow());
             }
             WORKSHOP.tick(mc);
+            if (JOURNEY.active()) {
+                // Real input needs the window's focus (the view drops a held press without it); refocus, never pause.
+                if (!mc.isWindowActive()) {
+                    checks.merge("journey_unfocused_ticks", 1, (a, b) -> (Integer) a + (Integer) b);
+                    org.lwjgl.glfw.GLFW.glfwFocusWindow(mc.getWindow().getWindow());
+                }
+                JOURNEY.tick(mc);
+            }
             if (steps.isEmpty()) plan(mc);
             if (stepIndex >= steps.size()) {
                 finish(mc, allPassed(), "complete");
@@ -220,7 +240,7 @@ public final class ClientSmokeTest {
                 step.action().run();
                 stepIndex++;
                 stepTicks = 0;
-            } else if (++stepTicks > STEP_TIMEOUT) {
+            } else if (++stepTicks > step.timeout()) {
                 checks.put("timeout_" + step.name(), true);
                 finish(mc, false, "timed out waiting for " + step.name());
             }
@@ -288,6 +308,10 @@ public final class ClientSmokeTest {
             checks.put("jei_all_categories_filled", counts.size() == 4 && counts.values().stream().allMatch(n -> n > 0));
         });
 
+        if (JOURNEY_RUN) {
+            journeyPlan(mc);
+            return;
+        }
         probe(mc, "start");
         // ---- Mortar: an ordinary use opens the working view; the pestle and scraper do the work ----
         add("world_view", ticks(20), () -> shot(mc, "world_stations"));
@@ -299,6 +323,8 @@ public final class ClientSmokeTest {
         // The view opens at once; the station's first snapshot (what is in the bowl) follows within a tick or two.
         add("mortar_view", () -> mc.screen instanceof WorkshopScreen && workshop(mc, mortarPos()).getBoolean("preparable"), () -> {
             checks.put("mortar_use_opens_working_view", true);
+            // EYE never moves the camera; the default (and reduced motion's cut) frames the close-up.
+            checks.put("camera_style_respected", KEYBOARD == com.otectus.immersivebrewing.client.workshop.WorkshopCamera.eyeView());
             checks.put("mortar_no_minigame", !(mc.screen instanceof GameScreen));
             checks.put("tutorial_points_at_tool", tutorialPrompt(mc) != null);
             checks.put("tutorial_state", "stage " + ClientConfig.get(ClientConfig.TUTORIAL_STAGE) + " show " + ClientConfig.get(ClientConfig.SHOW_TUTORIAL)
@@ -366,6 +392,7 @@ public final class ClientSmokeTest {
             if (chosen != null) ModNetwork.sendToServer(new StartBrewC2S(kettlePos(), chosen.key(), 1F, 1F));
         });
         add("brew_view", () -> mc.screen instanceof WorkshopScreen && workshop(mc, kettlePos()).contains("kettle"), () -> {
+            WorkshopArmChecks.verify(mc, checks);
             checks.put("set_out_opens_working_view", true);
             checks.put("kettle_no_minigame", !(mc.screen instanceof GameScreen));
             shot(mc, "kettle_set_out");
@@ -387,6 +414,67 @@ public final class ClientSmokeTest {
             checks.put("liquid_circulates", workshop(mc, kettlePos()).getCompound("kettle").getByte("circ") > 0);
             shot(mc, "kettle_stirring");
         });
+        add("visual_left_hand",ticks(2),()->ClientConfig.MIRROR_TOOLS.set(true));
+        add("visual_left_hand_shot",ticks(2),()->shot(mc,"kettle_left_hand"));
+        add("visual_tools_only",ticks(2),()->{
+            ClientConfig.MIRROR_TOOLS.set(false);
+            ClientConfig.HANDS.set(ClientConfig.HandStyle.TOOLS_ONLY);
+        });
+        add("visual_tools_only_shot",ticks(2),()->shot(mc,"kettle_tools_only"));
+        boolean[] savedReducedMotion = {false};
+        add("visual_reduced_motion",ticks(2),()->{
+            savedReducedMotion[0] = ClientConfig.get(ClientConfig.REDUCED_MOTION);
+            ClientConfig.REDUCED_MOTION.set(true);
+        });
+        add("visual_reduced_motion_shot",ticks(2),()->{
+            checks.put("reduced_motion_hot_burner", workshop(mc,kettlePos()).getCompound("kettle").getByte("flame") > 0
+                    && com.otectus.immersivebrewing.client.presentation.PresentationPolicy.current().decorativeMotion() == 0);
+            shot(mc,"kettle_reduced_motion");
+        });
+        add("visual_motion_restore",ticks(2),()->ClientConfig.REDUCED_MOTION.set(savedReducedMotion[0]));
+        add("visual_hands_restore",ticks(2),()->ClientConfig.HANDS.set(ClientConfig.HandStyle.ARMS));
+        net.minecraft.client.GraphicsStatus[] savedGraphics = {net.minecraft.client.GraphicsStatus.FANCY};
+        add("visual_fabulous_arms", ticks(2), () -> {
+            WORKSHOP.pausePresentation(true);
+            savedGraphics[0] = mc.options.graphicsMode().get();
+            mc.options.graphicsMode().set(net.minecraft.client.GraphicsStatus.FABULOUS);
+            mc.levelRenderer.allChanged();
+        });
+        add("visual_fabulous_arms_shot", ticks(12), () -> {
+            checks.put("fabulous_arm_paddle_held", ClientWorkshop.tool() == com.otectus.immersivebrewing.workshop.WorkshopParts.K_PADDLE);
+            shot(mc, "kettle_translucent_arm_fabulous");
+        });
+        add("visual_graphics_restore", ticks(2), () -> {
+            mc.options.graphicsMode().set(savedGraphics[0]);
+            mc.levelRenderer.allChanged();
+            WORKSHOP.pausePresentation(false);
+        });
+        // A focused repeat for arm/camera/render-layer changes: prepare at the Mortar, then stir at eye level.
+        if (ARM_CHECK_ONLY) return;
+        if("dense".equals(VARIANT)||"visual".equals(VARIANT)) {
+            ClientConfig.Palette[] savedPalette={ClientConfig.Palette.STANDARD};
+            ClientConfig.Guidance[] savedGuidance={ClientConfig.Guidance.AUTO};
+            boolean[] savedNumeric={false};int[] savedScale={2};
+            add("header_compact_setup",ticks(2),()->{
+                savedPalette[0]=ClientConfig.get(ClientConfig.PALETTE);savedGuidance[0]=ClientConfig.get(ClientConfig.GUIDANCE);
+                savedNumeric[0]=ClientConfig.get(ClientConfig.NUMERIC_DISPLAY);savedScale[0]=mc.options.guiScale().get();
+                ClientConfig.PALETTE.set(ClientConfig.Palette.HIGH_CONTRAST);ClientConfig.GUIDANCE.set(ClientConfig.Guidance.DETAILED);
+                ClientConfig.NUMERIC_DISPLAY.set(true);mc.options.guiScale().set(4);mc.resizeDisplay();
+            });
+            add("header_compact_shot",ticks(10),()->shot(mc,"header_detailed_compact"));
+            add("header_help_open",ticks(2),()->mc.screen.keyPressed(com.otectus.immersivebrewing.client.workshop.WorkshopKeys.HELP.getKey().getValue(),0,0));
+            add("header_help_shot",ticks(3),()->shot(mc,"header_controls_expanded"));
+            add("header_help_hide",ticks(2),()->mc.screen.keyPressed(com.otectus.immersivebrewing.client.workshop.WorkshopKeys.HELP.getKey().getValue(),0,0));
+            add("header_help_hidden_shot",ticks(3),()->shot(mc,"header_controls_collapsed"));
+            add("header_wide_setup",ticks(2),()->{mc.options.guiScale().set(2);mc.resizeDisplay();});
+            add("header_wide_shot",ticks(10),()->shot(mc,"header_detailed_wide"));
+            add("header_restore",ticks(2),()->{
+                ClientConfig.PALETTE.set(savedPalette[0]);ClientConfig.GUIDANCE.set(savedGuidance[0]);
+                ClientConfig.NUMERIC_DISPLAY.set(savedNumeric[0]);mc.options.guiScale().set(savedScale[0]);mc.resizeDisplay();ClientConfig.SPEC.save();
+                checks.put("header_settings_restored",ClientConfig.get(ClientConfig.PALETTE)==savedPalette[0]
+                        &&ClientConfig.get(ClientConfig.NUMERIC_DISPLAY)==savedNumeric[0]&&mc.options.guiScale().get()==savedScale[0]);
+            });
+        }
         add("seal_halfway", ticks(40), () -> {
             WORKSHOP.disable();
             ClientWorkshop.send(com.otectus.immersivebrewing.workshop.WorkshopParts.K_LID, com.otectus.immersivebrewing.workshop.WorkshopAction.SEAL, 0, false);
@@ -396,8 +484,10 @@ public final class ClientSmokeTest {
             server(mc, (level, player) -> SEALED_PROCESS.set(((BrewersKettleBlockEntity) level.getBlockEntity(kettlePos())).liveProcess().save()));
             shot(mc, "kettle_sealed");
         });
-        add("sealed_still", ticks(40), () -> server(mc, (level, player) -> checks.put("sealed_batch_frozen",
-                SEALED_PROCESS.get() != null && SEALED_PROCESS.get().equals(((BrewersKettleBlockEntity) level.getBlockEntity(kettlePos())).liveProcess().save()))));
+        add("sealed_still",ticks(40),()->server(mc,(level,player)->{
+            var process=((BrewersKettleBlockEntity)level.getBlockEntity(kettlePos())).liveProcess();
+            checks.put("sealed_batch_frozen",process!=null&&SEALED_PROCESS.get()!=null&&SEALED_PROCESS.get().equals(process.save()));
+        }));
         add("unseal", ticks(2), () -> {
             ClientWorkshop.send(com.otectus.immersivebrewing.workshop.WorkshopParts.K_LID, com.otectus.immersivebrewing.workshop.WorkshopAction.UNSEAL, 0, false);
             WORKSHOP.enable();
@@ -632,7 +722,22 @@ public final class ClientSmokeTest {
             checks.put("gallery_four_facings", VisualChecks.fourFacings(mc, new BlockPos[] {StationGallery.at(-4), StationGallery.at(-2), StationGallery.at(0), StationGallery.at(2)}));
             shot(mc, "gallery_day");
         });
-        add("gallery_night_time", ticks(2), () -> server(mc, (level, player) -> level.setDayTime(18000)));
+        add("gallery_reclaim_view", ticks(2), () -> server(mc, (level, player) -> {
+            level.setDayTime(6000);
+            BlockPos still = StationGallery.at(4);
+            player.connection.teleport(still.getX() + 2.5, still.getY() + .3, still.getZ() - .6, 62F, 31F);
+        }));
+        add("gallery_reclaim_detail", ticks(10), () -> {
+            var still = view(mc, StationGallery.at(4));
+            checks.put("reclaim_effects_active", still != null && still.visual().active()
+                    && still.view().state() == JobState.RUNNING && still.view().operation() == com.otectus.immersivebrewing.batch.Operation.RECLAIM);
+            shot(mc, "alembic_reclaiming_detail");
+        });
+        add("gallery_night_time", ticks(2), () -> server(mc, (level, player) -> {
+            level.setDayTime(18000);
+            BlockPos row = StationGallery.row;
+            player.connection.teleport(row.getX() + .5, row.getY(), row.getZ() + 5.5, 180F, 20F);
+        }));
         add("gallery_night", ticks(30), () -> shot(mc, "gallery_night"));
         add("gallery_recovery_view", ticks(2), () -> server(mc, (level, player) -> {
             level.setDayTime(6000);
@@ -666,6 +771,214 @@ public final class ClientSmokeTest {
         if ("dense".equals(VARIANT)) denseMatrix(mc);
     }
 
+    // ---- Real-input journeys (variant journey, handoff 15.3 and 22.7) ----
+
+    private static boolean observerSawCarry, observerSawPaddle, observerSawLiquid;
+
+    private static void journeyPlan(Minecraft mc) {
+        BlockPos kettle = base.offset(0, 0, 12), mortar = base.offset(-4, 0, 12), alembic = base.offset(4, 0, 12), watched = base.offset(9, 0, 12);
+        add("journey_setup", ticks(5), () -> {
+            mc.options.pauseOnLostFocus = false;
+            checks.put("journey_ffmpeg", Footage.available());
+            var acks = com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.clientHandler;
+            com.otectus.immersivebrewing.network.packet.WorkshopAckS2C.clientHandler = ack -> {
+                if (JOURNEY.active()) journeyAcks[Math.max(0, Math.min(2, ack.outcome()))]++;
+                acks.accept(ack);
+            };
+            server(mc, (level, player) -> {
+                for (BlockPos p : List.of(kettle, mortar, alembic, watched)) level.setBlock(p.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(mortar, ModBlocks.APOTHECARY_MORTAR.get().defaultBlockState().setValue(StationBlock.FACING, Direction.SOUTH), 3);
+                level.setBlock(kettle, ModBlocks.BREWERS_KETTLE.get().defaultBlockState().setValue(StationBlock.FACING, Direction.SOUTH), 3);
+                level.setBlock(alembic, ModBlocks.ALEMBIC.get().defaultBlockState().setValue(StationBlock.FACING, Direction.SOUTH), 3);
+                level.setBlock(watched, ModBlocks.BREWERS_KETTLE.get().defaultBlockState().setValue(StationBlock.FACING, Direction.SOUTH), 3);
+                // A survival player, as a fresh player is: what is placed leaves the hand.
+                player.setGameMode(GameType.SURVIVAL);
+                player.removeAllEffects();
+            });
+        });
+        ItemStack water = PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.WATER);
+        List<ItemStack> brewing = List.of(water, water, water, new ItemStack(Items.NETHER_WART), new ItemStack(Items.SUGAR),
+                new ItemStack(Items.BLAZE_POWDER), new ItemStack(ModItems.WOODEN_BREWING_PADDLE.get()));
+        ItemStack strength = PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.STRENGTH);
+        journeySegment(mc, "mortar", mortar, com.otectus.immersivebrewing.workshop.WorkshopKind.MORTAR, List.of(new ItemStack(Items.SUGAR, 2)));
+        journeySegment(mc, "first_batch", kettle, com.otectus.immersivebrewing.workshop.WorkshopKind.KETTLE, brewing);
+        // The experienced batch: the same journey with every optional word off (handoff 15.3 item 2).
+        add("journey_help_off", ticks(5), () -> {
+            ClientConfig.GUIDANCE.set(ClientConfig.Guidance.MINIMAL);
+            ClientConfig.SHOW_TUTORIAL.set(false);
+            ClientConfig.PART_HINTS.set(false);
+        });
+        // The paddle stays on the kettle's rest from the first batch.
+        journeySegment(mc, "experienced_batch", kettle, com.otectus.immersivebrewing.workshop.WorkshopKind.KETTLE, brewing.subList(0, 6));
+        add("journey_help_restored", ticks(5), () -> {
+            ClientConfig.GUIDANCE.set(ClientConfig.Guidance.AUTO);
+            ClientConfig.SHOW_TUTORIAL.set(true);
+            ClientConfig.PART_HINTS.set(true);
+        });
+        journeySegment(mc, "alembic", alembic, com.otectus.immersivebrewing.workshop.WorkshopKind.ALEMBIC,
+                List.of(strength, strength, strength, new ItemStack(Items.BLAZE_POWDER), new ItemStack(Items.WATER_BUCKET)));
+
+        // ---- The observer's view: a second brewer works a kettle while this client only watches from the world ----
+        add("journey_observer_setup", ticks(10), () -> server(mc, (level, player) -> {
+            player.setGameMode(GameType.CREATIVE);
+            player.getAbilities().flying = true;
+            player.onUpdateAbilities();
+            // Near and above, as a player standing beside a friend's kettle would look into it (no working view).
+            player.connection.teleport(watched.getX() + 0.5, watched.getY() + 0.9, watched.getZ() + 2.4, 180F, 44F);
+            BrewersKettleBlockEntity k = (BrewersKettleBlockEntity) level.getBlockEntity(watched);
+            for (int i = 0; i < 3; i++) k.inventory().setStackInSlot(BrewersKettleBlockEntity.RACK + i, water.copy());
+            k.inventory().setStackInSlot(BrewersKettleBlockEntity.TRAY, new ItemStack(Items.NETHER_WART));
+            k.inventory().setStackInSlot(BrewersKettleBlockEntity.TRAY + 1, new ItemStack(Items.SUGAR));
+            k.inventory().setStackInSlot(BrewersKettleBlockEntity.FUEL, new ItemStack(Items.BLAZE_POWDER));
+            k.inventory().setStackInSlot(BrewersKettleBlockEntity.PADDLE, new ItemStack(ModItems.WOODEN_BREWING_PADDLE.get()));
+        }));
+        add("journey_observer_start", ticks(40), () -> {
+            checks.put("journey_observer_recording", Footage.start(footageDir(), "journey_observer"));
+            shot(mc, "journey_observer_before");
+            server(mc, (level, player) -> observer = new ObserverBrewer(level, watched));
+        });
+        addLong("journey_observer_done", () -> {
+            observe(mc, watched);
+            ObserverBrewer o = observer;
+            return o != null && o.done() && rackFinished(mc, watched) == 3;
+        }, () -> {
+            ObserverBrewer o = observer;
+            checks.put("journey_observer_carries_tipped", o.carries());
+            checks.put("journey_observer_refusals", o.refused());
+            checks.put("journey_observer_saw_carried_objects", observerSawCarry);
+            checks.put("journey_observer_saw_paddle_held", observerSawPaddle);
+            checks.put("journey_observer_saw_liquid", observerSawLiquid);
+            checks.put("journey_observer_saw_filled_bottles", rackFinished(mc, watched) == 3);
+            checks.put("journey_observer_never_entered_view", !(mc.screen instanceof WorkshopScreen) && ClientWorkshop.focus() == null);
+        }, 20 * 600);
+        add("journey_observer_after", ticks(30), () -> {
+            shot(mc, "journey_observer_filled");
+            footage.add(Footage.stop());
+            observer = null;
+        });
+        addLong("journey_footage", () -> footage.stream().allMatch(java.util.concurrent.CompletableFuture::isDone), () -> {
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (var f : footage) results.add(f.join());
+            checks.put("journey_footage", results);
+            if (Footage.available()) checks.put("journey_footage_written", results.stream().allMatch(r -> Boolean.TRUE.equals(r.get("recorded"))));
+        }, 20 * 300);
+        // Documentation captures after all real-input segments and recordings have ended.
+        for(String chapter:List.of("start","stations","recipes")) {
+            add("documentation_notebook_"+chapter,ticks(2),()->{
+                mc.setScreen(new NotebookScreen());
+                checks.put("documentation_chapter_"+chapter,VisualChecks.notebookTab(mc.screen,chapter));
+            });
+            add("documentation_notebook_"+chapter+"_shot",ticks(2),()->shot(mc,"documentation_notebook_"+chapter));
+        }
+        add("documentation_notebook_close",ticks(2),()->mc.setScreen(null));
+        add("documentation_drawer_fixture",ticks(2),()->server(mc,(level,player)->{
+            var station=(BrewersKettleBlockEntity)level.getBlockEntity(kettle);
+            for(int i=0;i<3;i++) station.inventory().setStackInSlot(BrewersKettleBlockEntity.RACK+i,water.copy());
+            station.inventory().setStackInSlot(BrewersKettleBlockEntity.TRAY,new ItemStack(Items.NETHER_WART));
+            station.inventory().setStackInSlot(BrewersKettleBlockEntity.TRAY+1,new ItemStack(Items.SUGAR));
+            player.connection.teleport(kettle.getX()+.5,kettle.getY(),kettle.getZ()+3.5,180F,30F);
+        }));
+        add("documentation_drawer_open",ticks(6),()->openMenu(mc,kettle));
+        add("documentation_drawer_shot",()->mc.screen instanceof KettleScreen,()->shot(mc,"documentation_kettle_menu"));
+        add("documentation_plans_open",ticks(2),()->ModNetwork.sendToServer(new StationActionC2S(kettle,StationActionC2S.Action.REQUEST_PLANS,0)));
+        add("documentation_plans_shot",()->mc.screen instanceof KettlePlanScreen,()->shot(mc,"documentation_plans"));
+        add("documentation_plans_close",ticks(2),()->mc.setScreen(null));
+    }
+
+    private static Path footageDir() {
+        return Path.of(OUTPUT).getParent().resolve("footage");
+    }
+
+    /** What an observer's client has been sent about the watched kettle: carried objects, the paddle, the liquid. */
+    private static void observe(Minecraft mc, BlockPos watched) {
+        var snapshot = workshop(mc, watched);
+        var held = snapshot.getList("held", net.minecraft.nbt.Tag.TAG_COMPOUND);
+        for (int i = 0; i < held.size(); i++) {
+            var h = held.getCompound(i);
+            if (!"Brewer".equals(h.getString("name"))) continue;
+            if (h.getBoolean("carry") && !observerSawCarry) {
+                observerSawCarry = true;
+                shot(mc, "journey_observer_carry");
+            }
+            if (h.getByte("part") == com.otectus.immersivebrewing.workshop.WorkshopParts.K_PADDLE && !observerSawPaddle) {
+                observerSawPaddle = true;
+                shot(mc, "journey_observer_stirring");
+            }
+        }
+        if (snapshot.getCompound("kettle").contains("stage")) observerSawLiquid = true;
+    }
+
+    /**
+     * One real-input segment: the fixture (what the player carries, where the player stands, facing the station), then
+     * the journey itself through the window's input only, recorded uncut; the outcome is checked on the server after.
+     */
+    private static void journeySegment(Minecraft mc, String name, BlockPos at, com.otectus.immersivebrewing.workshop.WorkshopKind kind, List<ItemStack> hotbar) {
+        add("journey_" + name + "_fixture", ticks(10), () -> server(mc, (level, player) -> {
+            player.getInventory().clearContent();
+            for (int i = 0; i < hotbar.size(); i++) player.getInventory().setItem(i, hotbar.get(i).copy());
+            player.getAbilities().flying = false;
+            player.onUpdateAbilities();
+            double eye = player.getEyeHeight();
+            double dz = 3.2, dy = eye - 0.55;
+            float pitch = (float) Math.toDegrees(Math.atan2(dy, dz - 0.5));
+            player.connection.teleport(at.getX() + 0.5, at.getY(), at.getZ() + dz, 180F, pitch);
+        }));
+        add("journey_" + name + "_start", () -> mc.player != null && !mc.player.getInventory().getItem(0).isEmpty()
+                && mc.player.position().distanceTo(net.minecraft.world.phys.Vec3.atBottomCenterOf(at)) < 3.6 && mc.screen == null, () -> {
+            journeyScreens.clear();
+            java.util.Arrays.fill(journeyAcks, 0);
+            checks.put("journey_" + name + "_recording", Footage.start(footageDir(), "journey_" + name));
+            JOURNEY.begin(name, at, kind);
+        });
+        addLong("journey_" + name + "_done", JOURNEY::finished, () -> {
+            Map<String, Object> report = JOURNEY.report();
+            report.put("acks_accepted", journeyAcks[0]);
+            report.put("acks_refused", journeyAcks[1]);
+            report.put("acks_ignored", journeyAcks[2]);
+            report.put("screens_other_than_the_working_view", new ArrayList<>(journeyScreens));
+            checks.put("journey_" + name, report);
+            checks.put("journey_" + name + "_every_part_pointed_at", JOURNEY.failures().isEmpty());
+            checks.put("journey_" + name + "_no_menu_or_minigame", journeyScreens.isEmpty());
+            checks.put("journey_" + name + "_camera_translated", Boolean.TRUE.equals(report.get("camera_moved")));
+            footage.add(Footage.stop());
+            JOURNEY.end();
+        }, 20 * 600);
+        add("journey_" + name + "_outcome", ticks(10), () -> server(mc, (level, player) -> {
+            var inv = player.getInventory();
+            switch (kind) {
+                case KETTLE -> {
+                    int graded = 0;
+                    for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack s = inv.getItem(i);
+                        if (PotionUtils.getPotion(s) == Potions.SWIFTNESS && BrewingMetadata.read(s).isPresent()) graded += s.getCount();
+                    }
+                    checks.put("journey_" + name + "_three_swiftness_in_hand", graded == 3);
+                    var result = ((BrewersKettleBlockEntity) level.getBlockEntity(at)).lastResult();
+                    checks.put("journey_" + name + "_quality", result == null ? -1 : result.quality());
+                    checks.put("journey_" + name + "_tip", result == null ? "" : result.tipKey());
+                }
+                case MORTAR -> {
+                    int kits = 0;
+                    for (int i = 0; i < inv.getContainerSize(); i++) if (KitData.read(inv.getItem(i)).isPresent()) kits += inv.getItem(i).getCount();
+                    checks.put("journey_" + name + "_kits_in_hand", kits);
+                    checks.put("journey_" + name + "_prepared", kits > 0);
+                }
+                case ALEMBIC -> {
+                    int purified = 0;
+                    for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack s = inv.getItem(i);
+                        if (s.is(Items.POTION) && PotionUtils.getPotion(s) == Potions.STRENGTH && BrewingMetadata.read(s).isPresent()) purified += s.getCount();
+                    }
+                    checks.put("journey_" + name + "_purified_in_hand", purified);
+                    checks.put("journey_" + name + "_purified", purified == 2);
+                    var result = ((AlembicBlockEntity) level.getBlockEntity(at)).lastResult();
+                    checks.put("journey_" + name + "_quality", result == null ? -1 : result.quality());
+                }
+                default -> { }
+            }
+        }));
+    }
+
     private static void denseMatrix(Minecraft mc) {
         add("dense_instrumentation", ticks(1), () -> {
             var visualHandler = com.otectus.immersivebrewing.network.packet.StationVisualS2C.clientHandler;
@@ -686,8 +999,10 @@ public final class ClientSmokeTest {
             checks.put("dense_particles", mc.options.particles().get().toString());
             checks.put("dense_view_distance", mc.options.renderDistance().get());
             checks.put("dense_resource_packs", mc.getResourcePackRepository().getSelectedIds());
+            checks.put("dense_palette",ClientConfig.get(ClientConfig.PALETTE).name());
             checks.put("dense_fps_limit", mc.options.framerateLimit().get());
-            checks.put("dense_vsync", mc.options.enableVsync().get());
+            // A recorded setting, not a check (a boolean here would count as a failed check whenever vsync is off).
+            checks.put("dense_vsync", mc.options.enableVsync().get() ? "on" : "off");
             checks.put("dense_frame_note", "Frame interval includes frame cap and GPU wait; level CPU sample is AFTER_SKY to AFTER_LEVEL. Visual bytes exclude transport/full BE baselines; allocations are render thread only. Integrated-server tick includes all loaded work.");
         });
         for (int count : new int[] {0, 1, 8, 32, -128}) {
@@ -814,8 +1129,8 @@ public final class ClientSmokeTest {
             if (mc.screen != null) mc.screen.onClose();
             openMenu(mc, kettlePos());
         });
-        add("finishing_collect", () -> mc.screen instanceof KettleScreen && buttonReady(mc, "staging.immersive_brewing.collect"), () ->
-                checks.put("collect_button", VisualChecks.click(mc.screen, "staging.immersive_brewing.collect")));
+        add("finishing_collect", () -> mc.screen instanceof KettleScreen && buttonReady(mc, "screen.immersive_brewing.collect_short"), () ->
+                checks.put("collect_button", VisualChecks.click(mc.screen, "screen.immersive_brewing.collect_short")));
         add("finishing_close", ticks(5), () -> mc.setScreen(null));
         rack110(mc);
     }
@@ -883,6 +1198,70 @@ public final class ClientSmokeTest {
 
     /** Every page and JEI at 320x240, in each shipped language. */
     private static void visualMatrix(Minecraft mc) {
+        add("material_reference_setup",ticks(2),()->{
+            if(mc.screen!=null) mc.screen.onClose();
+            server(mc,(level,player)->{
+                BlockPos origin=StationGallery.materialReference(level,base);
+                level.setDayTime(6000);player.removeAllEffects();player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
+                player.connection.teleport(origin.getX()+.5,origin.getY()+2,origin.getZ()+7.5,180F,23F);
+            });
+        });
+        add("material_reference_day",ticks(30),()->shot(mc,"material_reference_day"));
+        add("material_reference_night_time",ticks(2),()->server(mc,(level,player)->level.setDayTime(18000)));
+        add("material_reference_night",ticks(20),()->shot(mc,"material_reference_night"));
+        // Native close views make material density, vessel seams and the actual funnel mouths reviewable.
+        for(int i=0;i<4;i++) {
+            final int stationIndex=i;
+            String detail=List.of("mortar","kettle","alembic","rack").get(i);
+            add("material_detail_setup_"+detail,ticks(2),()->{
+                mc.options.hideGui=true;
+                server(mc,(level,player)->{
+                    BlockPos at=base.offset(-3+stationIndex*2,0,-20);
+                    level.setDayTime(6000);
+                    player.connection.teleport(at.getX()+.5,at.getY()+.65,at.getZ()+2.4,180F,27F);
+                });
+            });
+            add("material_detail_"+detail,ticks(16),()->shot(mc,"material_detail_"+detail));
+        }
+        add("material_reference_return",ticks(2),()->server(mc,(level,player)->{
+            mc.execute(()->mc.options.hideGui=false);
+            level.setDayTime(6000);player.connection.teleport(base.getX()+.5,base.getY(),base.getZ()+3.5,180F,30F);
+        }));
+        add("visual_favorite_seed",ticks(2),()->{
+            var entry=reviewPlans.entries().stream().filter(e->!e.contextual()
+                            &&e.key().serialize().length()<=com.otectus.immersivebrewing.guide.PlayerGuide.MAX_KEY)
+                    .max(java.util.Comparator.comparingInt(e->e.steps().size())).orElseThrow();
+            ModNetwork.sendToServer(new com.otectus.immersivebrewing.network.packet.NotebookPrefsC2S(
+                    com.otectus.immersivebrewing.network.packet.NotebookPrefsC2S.Action.ADD_FAVORITE,entry.key().serialize(),entry.output(),0));
+        });
+        add("visual_favorite_ready",()->!com.otectus.immersivebrewing.client.ClientGuide.favorites().isEmpty(),()->checks.put("favorites_populated",true));
+        // Actual GUI-scale changes exercise the rebuilt drawers and wrapped selected rows in one live client.
+        for(int scale=1;scale<=4;scale++) {
+            final int chosenScale=scale;
+            String prefix="scale"+scale+"_";
+            add(prefix+"resize",ticks(2),()->{
+                mc.options.guiScale().set(chosenScale);mc.resizeDisplay();mc.setScreen(new NotebookScreen());
+                checks.put(prefix+"actual_gui_scale",mc.getWindow().getGuiScale()==chosenScale);
+            });
+            add(prefix+"journal",ticks(3),()->{VisualChecks.notebookTab(mc.screen,"journal");shot(mc,prefix+"journal");});
+            for(String station:List.of("mortar","kettle","alembic","rack")) {
+                BlockPos at=station.equals("mortar")?mortarPos():station.equals("kettle")?kettlePos():station.equals("rack")?base.offset(4,0,0):alembicPos();
+                add(prefix+station+"_open",ticks(3),()->{if(mc.screen!=null)mc.screen.onClose();openMenu(mc,at);});
+                add(prefix+station+"_shot",()->switch(station) {
+                    case "mortar" -> mc.screen instanceof com.otectus.immersivebrewing.client.screen.MortarScreen;
+                    case "kettle" -> mc.screen instanceof KettleScreen;
+                    case "alembic" -> mc.screen instanceof com.otectus.immersivebrewing.client.screen.AlembicScreen;
+                    default -> mc.screen instanceof com.otectus.immersivebrewing.client.screen.ApothecaryRackScreen;
+                },()->shot(mc,prefix+station+"_menu"));
+            }
+            add(prefix+"plans",ticks(3),()->{
+                mc.setScreen(new KettlePlanScreen(null,reviewPlans));VisualChecks.longestPlan((KettlePlanScreen)mc.screen);
+                if(mc.screen.width<480||mc.screen.height<300) VisualChecks.click(mc.screen,"screen.immersive_brewing.plan.show_route");
+            });
+            add(prefix+"plans_shot",ticks(3),()->{
+                VisualChecks.selectedLongestPlan((KettlePlanScreen)mc.screen,checks,prefix+"plans");shot(mc,prefix+"plans");
+            });
+        }
         for (String language : List.of("en_us", "es_es", "pt_br", "ru_ru", "zh_cn")) {
             add("language_" + language, ticks(2), () -> {
                 mc.getLanguageManager().setSelected(language);
@@ -899,8 +1278,17 @@ public final class ClientSmokeTest {
                 add("notebook_" + language + "_" + tab, ticks(3), () -> {
                     mc.setScreen(new NotebookScreen());
                     checks.put("tab_" + language + "_" + tab, VisualChecks.notebookTab(mc.screen, tab));
+                    if (tab.equals("recipes") || tab.equals("reagents")) mc.screen.children().stream()
+                            .filter(net.minecraft.client.gui.components.EditBox.class::isInstance)
+                            .map(net.minecraft.client.gui.components.EditBox.class::cast).forEach(box -> box.setValue(""));
                 });
                 add("notebook_shot_" + language + "_" + tab, ticks(3), () -> shot(mc, language + "_notebook_" + tab));
+                if (tab.equals("recipes") || tab.equals("reagents")) {
+                    add("notebook_empty_" + language + "_" + tab, ticks(2), () -> mc.screen.children().stream()
+                            .filter(net.minecraft.client.gui.components.EditBox.class::isInstance)
+                            .map(net.minecraft.client.gui.components.EditBox.class::cast).forEach(box -> box.setValue("zzzz_no_match")));
+                    add("notebook_empty_shot_" + language + "_" + tab, ticks(3), () -> shot(mc, language + "_notebook_" + tab + "_empty"));
+                }
             }
             add("notebook_scroll_" + language, ticks(2), () -> {
                 VisualChecks.notebookTab(mc.screen, "start");
@@ -923,7 +1311,9 @@ public final class ClientSmokeTest {
                 // The compact layout keeps the route on its own page.
                 if (mc.screen.width < 480 || mc.screen.height < 300) VisualChecks.click(mc.screen, "screen.immersive_brewing.plan.show_route");
             });
-            add("plans_shot_" + language, ticks(3), () -> shot(mc, language + "_plans"));
+            add("plans_shot_" + language,ticks(3),()->{
+                VisualChecks.selectedLongestPlan((KettlePlanScreen)mc.screen,checks,language);shot(mc,language+"_plans");
+            });
             add("plans_scroll_" + language, ticks(2), () -> VisualChecks.scrollEnd(mc.screen, "detail", checks, language + "_plans", true));
             add("plans_bottom_" + language, ticks(3), () -> shot(mc, language + "_plans_bottom"));
             for (String station : List.of("mortar", "kettle", "alembic", "rack")) {
@@ -935,7 +1325,9 @@ public final class ClientSmokeTest {
                     player.connection.teleport(base.getX() + 0.5, base.getY(), base.getZ() + 3.5, 180F, 30F);
                 }));
                 add("workshop_open_" + language + "_" + station, ticks(5), () -> use(mc, at));
-                add("workshop_shot_" + language + "_" + station, () -> mc.screen instanceof WorkshopScreen,
+                // After the camera has glided in, so the capture shows the close-up each language is read in.
+                add("workshop_shot_" + language + "_" + station, () -> mc.screen instanceof WorkshopScreen
+                                && com.otectus.immersivebrewing.client.workshop.WorkshopCamera.phase() != com.otectus.immersivebrewing.client.workshop.WorkshopCamera.Phase.ENTERING,
                         () -> shot(mc, language + "_" + station + "_workshop"));
                 add("workshop_close_" + language + "_" + station, ticks(2), () -> {
                     if (mc.screen != null) mc.screen.onClose();
@@ -988,7 +1380,12 @@ public final class ClientSmokeTest {
     }
 
     private static void add(String name, BooleanSupplier ready, Runnable action) {
-        steps.add(new Step(name, ready, action));
+        steps.add(new Step(name, ready, action, STEP_TIMEOUT));
+    }
+
+    /** A step that may wait longer than the usual two minutes (a whole real-input batch). */
+    private static void addLong(String name, BooleanSupplier ready, Runnable action, int timeout) {
+        steps.add(new Step(name, ready, action, timeout));
     }
 
     private static BooleanSupplier always() {
@@ -1089,6 +1486,9 @@ public final class ClientSmokeTest {
     }
 
     private static void applyVariant(Minecraft mc) {
+        // The desktop may take the window's focus during a run: the pause menu would then pause the integrated server
+        // under a waiting step. Never pause on focus loss in a smoke run (the working view still drops held input).
+        mc.options.pauseOnLostFocus = false;
         boolean accessible = "accessible".equals(VARIANT);
         com.otectus.immersivebrewing.config.ClientConfig.PALETTE.set("colorblind".equals(VARIANT)
                 ? com.otectus.immersivebrewing.config.ClientConfig.Palette.COLORBLIND_SAFE
@@ -1105,6 +1505,12 @@ public final class ClientSmokeTest {
         // Hands-on options start from their defaults each run (the tutorial stage persists in the client config).
         com.otectus.immersivebrewing.config.ClientConfig.TUTORIAL_STAGE.set(0);
         com.otectus.immersivebrewing.config.ClientConfig.CAMERA_MODE.set(com.otectus.immersivebrewing.config.ClientConfig.CameraMode.FOCUS);
+        // The keyboard-only run also covers the eye-position camera (handoff 15.3 item 7); every other run the default.
+        com.otectus.immersivebrewing.config.ClientConfig.CAMERA_STYLE.set(KEYBOARD ? com.otectus.immersivebrewing.config.ClientConfig.CameraStyle.EYE
+                : com.otectus.immersivebrewing.config.ClientConfig.CameraStyle.AUTO);
+        com.otectus.immersivebrewing.config.ClientConfig.GUIDANCE.set(com.otectus.immersivebrewing.config.ClientConfig.Guidance.AUTO);
+        com.otectus.immersivebrewing.config.ClientConfig.HANDS.set(com.otectus.immersivebrewing.config.ClientConfig.HandStyle.ARMS);
+        com.otectus.immersivebrewing.config.ClientConfig.ARM_OPACITY.set(.45);
         com.otectus.immersivebrewing.config.ClientConfig.HOLD_TO_GRAB.set(false);
         com.otectus.immersivebrewing.config.ClientConfig.MIRROR_TOOLS.set(false);
         com.otectus.immersivebrewing.config.ClientConfig.PART_HINTS.set(true);
@@ -1156,7 +1562,9 @@ public final class ClientSmokeTest {
         mc.getToasts().clear();
         VisualChecks.widgets(mc.screen, checks, name);
         checks.put("shot_size_" + name, mc.getWindow().getGuiScaledWidth() + "x" + mc.getWindow().getGuiScaledHeight());
-        if ("visual".equals(VARIANT)) checks.put("minimum_gui_" + name,
+        if ("visual".equals(VARIANT) && name.equals("header_detailed_wide")) checks.put("wide_gui_" + name,
+                mc.getWindow().getGuiScaledWidth() == 640 && mc.getWindow().getGuiScaledHeight() == 480);
+        else if ("visual".equals(VARIANT) && !name.matches("scale[1-4]_.*")) checks.put("minimum_gui_" + name,
                 mc.getWindow().getGuiScaledWidth() == 320 && mc.getWindow().getGuiScaledHeight() == 240);
         pendingShot = name;
         pendingFrames = 3;
@@ -1174,6 +1582,24 @@ public final class ClientSmokeTest {
         pendingShot = null;
         Screenshot.grab(mc.gameDirectory, file + ".png", mc.getMainRenderTarget(), msg -> log("screenshot " + file));
         checks.put("shot_" + name, true);
+    }
+
+    @SubscribeEvent
+    public static void footageFrame(TickEvent.RenderTickEvent event) {
+        if (OUTPUT != null && event.phase == TickEvent.Phase.END) Footage.frame();
+    }
+
+    /** Every screen opened during a real-input journey other than the working view (handoff 15.4: there must be none). */
+    @SubscribeEvent
+    public static void journeyScreen(net.minecraftforge.client.event.ScreenEvent.Opening event) {
+        if (OUTPUT == null || !JOURNEY.active() || event.getNewScreen() == null || event.getNewScreen() instanceof WorkshopScreen) return;
+        journeyScreens.add(event.getNewScreen().getClass().getSimpleName());
+    }
+
+    @SubscribeEvent
+    public static void observerTick(TickEvent.ServerTickEvent event) {
+        ObserverBrewer brewer = observer;
+        if (OUTPUT != null && brewer != null && event.phase == TickEvent.Phase.END) brewer.tick();
     }
 
     private static boolean allPassed() {

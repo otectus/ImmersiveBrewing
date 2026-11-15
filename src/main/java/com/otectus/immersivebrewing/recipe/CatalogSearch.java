@@ -49,6 +49,9 @@ public final class CatalogSearch {
         if(entry==null)return;
         pending.remove(player.getUUID());
         selected.put(player.getUUID(),new Selection(player.level().dimension(),kettle.getBlockPos(),key,input.copyWithCount(1)));
+        // The chosen route is pinned to the Kettle's recipe page, with ghosts for what it still needs (handoff 6.2).
+        kettle.setup().pin(key,input,servings,player.getUUID(),player.level().getGameTime());
+        kettle.markWorkshopDirty(true);
         ModNetwork.sendTo(player,new PlanListS2C(kettle.getBlockPos(),input.copyWithCount(1),servings,null,List.of(entry),index.generation(),PlanListS2C.SELECTED_ROUTE,0,1,false,0,""));
     }
     public static void repeat(ServerPlayer player,String text,ItemStack input,int servings) {

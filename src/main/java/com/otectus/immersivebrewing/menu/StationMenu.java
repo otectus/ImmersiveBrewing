@@ -22,12 +22,20 @@ public abstract class StationMenu extends AbstractContainerMenu {
     @Nullable
     protected final StationBlockEntity station;
     protected final int stationSlots;
+    /**
+     * Stands in for the station's inventory on a client that has not received the block entity yet (a station placed a
+     * moment before its menu opened): the menu still has the server's slot layout, so the contents the server sends land
+     * in the right slots instead of overflowing the player's.
+     */
+    @Nullable
+    private final net.minecraftforge.items.ItemStackHandler placeholder;
 
     protected StationMenu(@Nullable MenuType<?> type, int id, Inventory inventory, BlockPos pos, int stationSlots) {
         super(type, id);
         this.pos = pos;
         this.station = inventory.player.level().getBlockEntity(pos) instanceof StationBlockEntity be ? be : null;
         this.stationSlots = stationSlots;
+        this.placeholder = station == null ? new net.minecraftforge.items.ItemStackHandler(stationSlots) : null;
     }
 
     public BlockPos pos() {
@@ -40,7 +48,10 @@ public abstract class StationMenu extends AbstractContainerMenu {
     }
 
     protected void addStationSlot(int index, int x, int y, boolean takeOnly) {
-        if (station == null) return;
+        if (station == null) {
+            addSlot(new SlotItemHandler(placeholder, index, x, y));
+            return;
+        }
         StationBlockEntity owner = station;
         addSlot(new SlotItemHandler(station.inventory(), index, x, y) {
             @Override

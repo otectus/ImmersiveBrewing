@@ -65,12 +65,14 @@ class WorkshopProcessTest {
                 boolean stir = stirs && stage == KettleProcess.Stage.REACTING && (p.undissolved() > 0.02 || p.mixTrouble() > 0.15);
                 if (stir && tick % samplesEvery == 0) {
                     // Circular motion at the requested speed around the vessel centre; one sample per samplesEvery ticks.
+                    // A competent hand follows the family's posture cue (version 2 rules read it).
                     double radiusPx = 3.0;
                     angle += speedPx * 0.05 * samplesEvery / radiusPx;
-                    track.sample(Math.cos(angle) * radiusPx / WorkshopParts.KETTLE_HX, Math.sin(angle) * radiusPx / WorkshopParts.KETTLE_HZ, true, tick);
+                    track.sample(Math.cos(angle) * radiusPx / WorkshopParts.KETTLE_HX, Math.sin(angle) * radiusPx / WorkshopParts.KETTLE_HZ, true,
+                            p.setup().family().posture() > 0, tick);
                 }
                 double px = stir ? track.take(tick) : 0;
-                p.tick(px, track.broadness());
+                p.tick(px, track.broadness(), track.depth());
                 if (p.readyToFinalize()) return tick / 20.0;
             }
             return -1;

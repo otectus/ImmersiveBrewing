@@ -29,9 +29,16 @@ import java.util.UUID;
  *
  * <p>Ownership is not here: portions are positions in the owning ledger's {@code inputs} list (same order), so the
  * process never holds a second copy of a potion.
+ *
+ * <p>Version 2 (the close-up workshop) adds the paddle's posture to the families whose cue names it
+ * ({@link ReactionFamily#mixRate(double, double, double, double, double, boolean, double)}). A batch saved by version 1
+ * keeps its version and its original rules until it is bottled; it is never rewritten into version 2.
  */
 public final class KettleProcess {
-    public static final int VERSION = 1;
+    /** The rules new batches use. */
+    public static final int VERSION = 2;
+    /** The oldest saved process this build still reads and finishes under its own rules. */
+    public static final int OLDEST = 1;
     public static final int BURNER_STEPS = 8;
     public static final int MAX_SERVINGS = 6;
     public static final int MAX_STEPS = 8;
@@ -143,11 +150,14 @@ public final class KettleProcess {
     private int control = -1;
     private long ticks;
     private final List<UUID> participants = new ArrayList<>();
+    /** The rules this batch runs under (its saved version). */
+    private final int rules;
 
-    private KettleProcess(Setup setup, List<Integer> slots, List<Portion> portions) {
+    private KettleProcess(Setup setup, List<Integer> slots, List<Portion> portions, int rules) {
         this.setup = setup;
         this.slots = slots;
         this.portions = portions;
+        this.rules = rules;
     }
 
     /** A new batch: every serving staged in its rack position. */
@@ -159,7 +169,7 @@ public final class KettleProcess {
             slots.add(s);
             portions.add(Portion.STAGED);
         }
-        KettleProcess p = new KettleProcess(setup, slots, portions);
+        KettleProcess p = new KettleProcess(setup, slots, portions, VERSION);
         p.temp = 0.05;
         if (brewer != null) p.participants.add(brewer);
         return p;
@@ -167,6 +177,11 @@ public final class KettleProcess {
 
     public Setup setup() {
         return setup;
+    }
+
+    /** The rules this batch runs under: {@link #VERSION}, or an older version it was saved with. */
+    public int rules() {
+        return rules;
     }
 
     // ---- portions ----
@@ -274,6 +289,11 @@ public final class KettleProcess {
      * {@link ToolTrack}); {@code broad} its recent breadth.
      */
     public void tick(double stirPx, double broad) {
+        tick(stirPx, broad, 0);
+    }
+
+    /** {@link #tick(double, double)} with the recent share of strokes swept along the bottom (version 2 rules only). */
+    public void tick(double stirPx, double broad, double depth) {
         ticks++;
         int charged = count(Portion.CHARGED) + count(Portion.READY);
         flame += (burner / (double) BURNER_STEPS - flame) * Math.min(1, 8 * DT);
@@ -299,7 +319,9 @@ public final class KettleProcess {
             double dissolve = stirPx * 0.02 * (0.3 + 0.7 * tf) + 0.035 * Math.max(0.25, tf) * DT;
             undissolved = Math.max(0, undissolved - dissolve);
         }
-        mixTrouble = Credit.clamp01(mixTrouble + setup.family().mixRate(circ, temp, undissolved, broad, mixTrouble, reacting) * DT);
+        double mixRate = rules >= 2 ? setup.family().mixRate(circ, temp, undissolved, broad, mixTrouble, reacting, depth)
+                : setup.family().mixRate(circ, temp, undissolved, broad, mixTrouble, reacting);
+        mixTrouble = Credit.clamp01(mixTrouble + mixRate * DT);
         heatTrouble = Credit.clamp01(heatTrouble + setup.family().heatRate(temp, heatTrouble) * DT);
 
         if (reacting) {
@@ -381,7 +403,7 @@ public final class KettleProcess {
         double worst = Math.max(heatLoss, Math.max(mixLoss, doseLoss));
         if (worst < 0.02) return "tip.immersive_brewing.workshop.kettle.clean." + setup.family().serialized();
         if (worst == heatLoss) return thermalOver >= thermalUnder ? "tip.immersive_brewing.workshop.kettle.too_hot" : "tip.immersive_brewing.workshop.kettle.too_cool";
-        if (worst == mixLoss) return "tip.immersive_brewing.workshop.kettle.trouble." + setup.family().serialized();
+        if (worst == mixLoss) return "tip.immersive_brewing.workshop.kettle.trouble." + setup.family().serialized() + legacyWording();
         return "tip.immersive_brewing.workshop.kettle.dose_cold";
     }
 
@@ -447,7 +469,7 @@ public final class KettleProcess {
             case REACTING -> {
                 if (temp < 0.2) yield base + "too_cold";
                 if (temp > setup.workHigh()) yield base + "too_hot";
-                if (mixTrouble > 0.35 || heatTrouble > 0.35) yield setup.family().troubleKey();
+                if (mixTrouble > 0.35 || heatTrouble > 0.35) yield setup.family().troubleKey() + legacyWording();
                 if (undissolved > 0.3) yield base + "dissolve";
                 if (temp < setup.idealLow()) yield base + "warmer";
                 yield base + "reacting";
@@ -456,11 +478,19 @@ public final class KettleProcess {
             case RESTING -> {
                 if (burner > 2 || temp > setup.restMax()) yield base + "ease_heat";
                 if (circ > CALM) yield base + "stop_stirring";
-                if (trouble() > SETTLED) yield setup.family().troubleKey();
+                if (trouble() > SETTLED) yield setup.family().troubleKey() + legacyWording();
                 yield base + "resting";
             }
             case READY -> base + "ready";
         };
+    }
+
+    /**
+     * Version 1 ignores the paddle's posture, so its sediment cue must not ask for the bottom to be swept (handoff 8.3:
+     * never advertise a depth the rules do not read).
+     */
+    private String legacyWording() {
+        return rules < 2 && setup.family() == ReactionFamily.DENSE_SEDIMENT ? ".broad" : "";
     }
 
     // ---- participants (handoff 16: the brewer and helpers who did productive work) ----
@@ -486,7 +516,7 @@ public final class KettleProcess {
     public CompoundTag save() {
         CompoundTag t = new CompoundTag();
         t.putString("kind", "kettle");
-        t.putInt("version", VERSION);
+        t.putInt("version", rules);
         t.put("setup", setup.save());
         t.putIntArray("slots", slots.stream().mapToInt(Integer::intValue).toArray());
         byte[] states = new byte[portions.size()];
@@ -523,7 +553,9 @@ public final class KettleProcess {
     public static KettleProcess load(CompoundTag t) {
         if (!"kettle".equals(t.getString("kind"))) throw new IllegalArgumentException("not a kettle process");
         int version = t.getInt("version");
-        if (version != VERSION) throw new IllegalArgumentException("kettle process version " + version + " is not " + VERSION);
+        if (version < OLDEST || version > VERSION) {
+            throw new IllegalArgumentException("kettle process version " + version + " is not " + OLDEST + ".." + VERSION);
+        }
         Setup setup = Setup.load(t.getCompound("setup"));
         int[] slotArray = t.getIntArray("slots");
         byte[] states = t.getByteArray("portions");
@@ -537,7 +569,7 @@ public final class KettleProcess {
             slots.add(slotArray[i]);
             portions.add(Portion.values()[states[i]]);
         }
-        KettleProcess p = new KettleProcess(setup, slots, portions);
+        KettleProcess p = new KettleProcess(setup, slots, portions, version);
         p.doses = Math.max(0, Math.min(setup.steps(), t.getInt("doses")));
         ListTag credits = t.getList("doseCredit", Tag.TAG_DOUBLE);
         for (int i = 0; i < Math.min(setup.steps(), credits.size()); i++) p.doseCredit[i] = finite(credits.getDouble(i), 0, 1);
@@ -604,6 +636,8 @@ public final class KettleProcess {
         t.putByteArray("portions", states);
         t.putByteArray("slots", at);
         t.putString("cue", cueKey());
+        t.putByte("rules", (byte) rules);
+        t.putByte("mix", q(mixTrouble));
     }
 
     static byte q(double v) {

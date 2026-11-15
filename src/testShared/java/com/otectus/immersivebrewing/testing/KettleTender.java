@@ -16,7 +16,8 @@ import java.util.Random;
 /**
  * Reference kettle players for the hands-on workshop, acting only through intents (never touching the process):
  * {@link #competent} pours the batch, warms to the middle of the band, doses once the liquid is warm, stirs at the
- * reaction's comfortable pace while there is something to incorporate, eases off to rest and fills every bottle.
+ * reaction's comfortable pace (with the paddle down along the bottom where the family's cue asks for it) while there is
+ * something to incorporate, eases off to rest and fills every bottle.
  * {@link #rough} runs the burner hot, doses at once and thrashes the paddle. {@link #idle} never acts. Never shipped.
  */
 public final class KettleTender {
@@ -102,7 +103,9 @@ public final class KettleTender {
             double speed = style == Style.ROUGH ? 32 + random.nextDouble() * 8 : comfortable(p.setup().family());
             double radius = 0.55, radiusPx = radius * (WorkshopParts.KETTLE_HX + WorkshopParts.KETTLE_HZ) / 2;
             angle += speed / radiusPx / 20.0;
-            WorkshopResult r = hand.sample(WorkshopParts.K_PADDLE, Math.cos(angle) * radius, Math.sin(angle) * radius, true, Effort.NORMAL);
+            // A competent brewer follows the material's cue about the paddle's posture (version 2 rules read it).
+            boolean deep = style == Style.COMPETENT && p.setup().family().posture() > 0;
+            WorkshopResult r = hand.sample(WorkshopParts.K_PADDLE, Math.cos(angle) * radius, Math.sin(angle) * radius, true, Effort.NORMAL, deep);
             if (r.kind() == WorkshopResult.Kind.IGNORED && style == Style.COMPETENT) holding = false;
         } else if (holding && stage == KettleProcess.Stage.RESTING) {
             release(hand);
